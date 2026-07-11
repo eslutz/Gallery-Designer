@@ -675,25 +675,6 @@ select:focus,
   font-size: 0.82rem;
 }
 
-.piece-drag-preview {
-  position: fixed;
-  top: -1000px;
-  left: -1000px;
-  display: grid;
-  place-items: center;
-  padding: 6px;
-  border: 2px solid var(--piece-selected-stroke);
-  border-radius: 8px;
-  background: var(--piece-fill);
-  color: var(--piece-label);
-  font-weight: 800;
-  text-align: center;
-  box-shadow: var(--drag-preview-shadow);
-  overflow: hidden;
-  pointer-events: none;
-  z-index: -1;
-}
-
 .preview-piece-label {
   display: grid;
   max-width: 100%;

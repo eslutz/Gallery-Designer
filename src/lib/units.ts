@@ -40,16 +40,27 @@ export function roundToSizePrecision(value: number): number {
 }
 
 export function formatMeasurement(valueIn: number, unit: Unit): string {
+  if (!Number.isFinite(valueIn)) {
+    return unit === 'cm' ? '0.0 cm' : '0 in';
+  }
+
   if (unit === 'cm') {
     return `${fromInches(valueIn, 'cm').toFixed(1)} cm`;
   }
 
-  const rounded = roundToPrecision(valueIn);
-  const whole = Math.trunc(rounded);
-  const fraction = Math.round((rounded - whole) / DEFAULT_INCREMENT_IN);
+  const rounded = Number(roundToPrecision(valueIn).toFixed(3));
+  const sign = rounded < 0 ? '-' : '';
+  const absolute = Math.abs(rounded);
+  let whole = Math.trunc(absolute);
+  let fraction = Math.round((absolute - whole) / DEFAULT_INCREMENT_IN);
+
+  if (fraction === 8) {
+    whole += 1;
+    fraction = 0;
+  }
 
   if (fraction === 0) {
-    return `${whole} in`;
+    return `${sign}${whole} in`;
   }
 
   const denominator = 8;
@@ -58,7 +69,7 @@ export function formatMeasurement(valueIn: number, unit: Unit): string {
   const reducedDenominator = denominator / divisor;
   const fractionLabel = `${numerator}/${reducedDenominator}`;
 
-  return whole === 0 ? `${fractionLabel} in` : `${whole} ${fractionLabel} in`;
+  return whole === 0 ? `${sign}${fractionLabel} in` : `${sign}${whole} ${fractionLabel} in`;
 }
 
 export function displayValue(valueIn: number, unit: Unit): string {
@@ -84,7 +95,20 @@ function parseFraction(value: string): number {
 }
 
 function gcd(a: number, b: number): number {
-  return b === 0 ? a : gcd(b, a % b);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) {
+    return 1;
+  }
+
+  let x = Math.abs(Math.round(a));
+  let y = Math.abs(Math.round(b));
+
+  while (y !== 0) {
+    const next = x % y;
+    x = y;
+    y = next;
+  }
+
+  return x || 1;
 }
 
 function trimNumber(value: number): string {

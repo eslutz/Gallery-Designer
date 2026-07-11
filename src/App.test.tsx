@@ -9,7 +9,6 @@ describe('Gallery Designer app', () => {
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.style.colorScheme = '';
     document.body.classList.remove('suppress-text-selection');
-    document.querySelectorAll('.piece-drag-preview').forEach((element) => element.remove());
     window.matchMedia = vi.fn(
       (query: string) =>
         ({
@@ -113,7 +112,7 @@ describe('Gallery Designer app', () => {
     expect(within(portrait).getByText('10 in x 20 in')).toHaveClass('staged-piece-size');
   });
 
-  it('uses rendered drag previews for staged pieces and pointer previews for wall pieces', () => {
+  it('uses the rendered wall-scale pointer preview for staged and wall pieces', () => {
     render(<App />);
 
     const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
@@ -135,36 +134,16 @@ describe('Gallery Designer app', () => {
           toJSON: () => ({}),
         }) as DOMRect,
     );
+    mockCanvasProjection(canvas);
+    mockPointerTarget(canvas);
 
-    const stagedTransfer = createDataTransfer();
-    fireEvent.dragStart(screen.getByRole('button', { name: /Drag Piece 1 from staging/i }), {
-      dataTransfer: stagedTransfer,
-    });
-
-    expect(stagedTransfer.setDragImage).toHaveBeenCalled();
+    const stagedPiece = screen.getByRole('button', { name: /Drag Piece 1 from staging/i });
+    fireEvent.pointerDown(stagedPiece, { pointerId: 1, clientX: 0, clientY: 0 });
+    const stagedPreview = screen.getByTestId('wall-drag-preview');
+    expect(stagedPreview).toHaveStyle({ width: '32px', height: '40px' });
     expect(document.body).toHaveClass('suppress-text-selection');
-    expect(stagedTransfer.setDragImage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        style: expect.objectContaining({
-          width: '32px',
-          height: '40px',
-        }) as CSSStyleDeclaration,
-      }) as HTMLElement,
-      16,
-      20,
-    );
-    fireEvent.dragEnd(screen.getByRole('button', { name: /Drag Piece 1 from staging/i }));
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 0, clientY: 0 });
     expect(document.body).not.toHaveClass('suppress-text-selection');
-
-    const dropTransfer = createDataTransfer();
-    fireEvent.dragStart(screen.getByRole('button', { name: /Drag Piece 1 from staging/i }), {
-      dataTransfer: dropTransfer,
-    });
-    fireEvent.drop(canvas, {
-      dataTransfer: dropTransfer,
-      clientX: 0,
-      clientY: 0,
-    });
 
     expect(screen.getByRole('button', { name: /^Move Piece 1$/i })).not.toHaveAttribute(
       'draggable',
@@ -175,32 +154,19 @@ describe('Gallery Designer app', () => {
     render(<App />);
 
     fireEvent.change(screen.getByLabelText('Grid size (in)'), { target: { value: '10' } });
-    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
-
-    const dataTransfer = createDataTransfer();
-    const stagedPiece = screen.getByRole('button', { name: /Drag Piece 1 from staging/i });
-    fireEvent.dragStart(stagedPiece, { dataTransfer });
-    fireEvent.drop(canvas, { dataTransfer, clientX: 0, clientY: 0 });
+    placeStagedPieceOnWall();
 
     const placedPiece = screen.getByRole('button', { name: /^Move Piece 1$/i });
     const placedX = Number(placedPiece.getAttribute('x'));
     const placedY = Number(placedPiece.getAttribute('y'));
-    expect(placedX % 10).toBe(0);
-    expect(placedY % 10).toBe(0);
+    expect(Math.abs(placedX % 10)).toBe(0);
+    expect(Math.abs(placedY % 10)).toBe(0);
   });
 
   it('does not make wall pieces browser-focusable', () => {
     render(<App />);
 
-    const dataTransfer = createDataTransfer();
-    fireEvent.dragStart(screen.getByRole('button', { name: /Drag Piece 1 from staging/i }), {
-      dataTransfer,
-    });
-    fireEvent.drop(screen.getByRole('img', { name: /Scaled gallery wall layout/i }), {
-      dataTransfer,
-      clientX: 0,
-      clientY: 0,
-    });
+    placeStagedPieceOnWall();
 
     expect(screen.getByRole('button', { name: /^Move Piece 1$/i })).not.toHaveAttribute('tabindex');
   });
@@ -208,15 +174,7 @@ describe('Gallery Designer app', () => {
   it('nudges a selected placed art piece with arrow keys outside the canvas focus target', () => {
     render(<App />);
 
-    const dataTransfer = createDataTransfer();
-    fireEvent.dragStart(screen.getByRole('button', { name: /Drag Piece 1 from staging/i }), {
-      dataTransfer,
-    });
-    fireEvent.drop(screen.getByRole('img', { name: /Scaled gallery wall layout/i }), {
-      dataTransfer,
-      clientX: 0,
-      clientY: 0,
-    });
+    placeStagedPieceOnWall();
 
     const piece = screen.getByRole('button', { name: /^Move Piece 1$/i });
     const startX = Number(piece.getAttribute('x'));
@@ -232,15 +190,7 @@ describe('Gallery Designer app', () => {
   it('does not nudge a piece while editing a form field', () => {
     render(<App />);
 
-    const dataTransfer = createDataTransfer();
-    fireEvent.dragStart(screen.getByRole('button', { name: /Drag Piece 1 from staging/i }), {
-      dataTransfer,
-    });
-    fireEvent.drop(screen.getByRole('img', { name: /Scaled gallery wall layout/i }), {
-      dataTransfer,
-      clientX: 0,
-      clientY: 0,
-    });
+    placeStagedPieceOnWall();
 
     const piece = screen.getByRole('button', { name: /^Move Piece 1$/i });
     const startX = piece.getAttribute('x');
@@ -252,15 +202,7 @@ describe('Gallery Designer app', () => {
   it('moves pieces from staging to the wall and back to staging with drag and pointer drop', () => {
     render(<App />);
 
-    const dataTransfer = createDataTransfer();
-    fireEvent.dragStart(screen.getByRole('button', { name: /Drag Piece 1 from staging/i }), {
-      dataTransfer,
-    });
-    fireEvent.drop(screen.getByRole('img', { name: /Scaled gallery wall layout/i }), {
-      dataTransfer,
-      clientX: 0,
-      clientY: 0,
-    });
+    placeStagedPieceOnWall();
 
     expect(
       screen.queryByRole('button', { name: /Drag Piece 1 from staging/i }),
@@ -290,15 +232,9 @@ describe('Gallery Designer app', () => {
     });
     const wallPiece = screen.getByRole('button', { name: /^Move Piece 1$/i });
 
-    fireEvent.pointerDown(wallPiece, {
-      pointerId: 1,
-      clientX: 20,
-      clientY: 20,
-    });
-    fireEvent.pointerUp(window, {
-      pointerId: 1,
-      clientX: 20,
-      clientY: 200,
+    startWallPieceDrag(wallPiece, 20, 20);
+    act(() => {
+      window.dispatchEvent(new MouseEvent('pointerup', { clientX: 20, clientY: 200 }));
     });
 
     expect(screen.getByRole('button', { name: /Drag Piece 1 from staging/i })).toBeInTheDocument();
@@ -309,24 +245,11 @@ describe('Gallery Designer app', () => {
   it('prevents native text selection while a wall-piece drag leaves the canvas', () => {
     render(<App />);
 
-    const dataTransfer = createDataTransfer();
-    fireEvent.dragStart(screen.getByRole('button', { name: /Drag Piece 1 from staging/i }), {
-      dataTransfer,
-    });
     const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
-    fireEvent.drop(canvas, { dataTransfer, clientX: 0, clientY: 0 });
-    canvas.getScreenCTM = vi.fn(
-      () =>
-        ({
-          inverse: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }),
-        }) as DOMMatrix,
-    );
+    placeStagedPieceOnWall();
+    mockCanvasProjection(canvas);
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /^Move Piece 1$/i }), {
-      pointerId: 1,
-      clientX: 20,
-      clientY: 20,
-    });
+    startWallPieceDrag(screen.getByRole('button', { name: /^Move Piece 1$/i }), 20, 20);
     const pointerMove = new Event('pointermove', { cancelable: true });
     window.dispatchEvent(pointerMove);
 
@@ -336,25 +259,47 @@ describe('Gallery Designer app', () => {
   it('keeps a newly placed piece selected after its next pointer pick-up', () => {
     render(<App />);
 
-    const dataTransfer = createDataTransfer();
-    fireEvent.dragStart(screen.getByRole('button', { name: /Drag Piece 1 from staging/i }), {
-      dataTransfer,
-    });
     const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
-    fireEvent.drop(canvas, { dataTransfer, clientX: 0, clientY: 0 });
+    placeStagedPieceOnWall();
+    mockCanvasProjection(canvas);
+
+    const wallPiece = screen.getByRole('button', { name: /^Move Piece 1$/i });
+    startWallPieceDrag(wallPiece, 20, 20);
+    expect(screen.getByTestId('wall-drag-preview')).toBeInTheDocument();
+    fireEvent.click(wallPiece);
+
+    expect(wallPiece.closest('g')).toHaveClass('selected');
+  });
+
+  it('places a staged piece with pointer drag and immediately starts the next wall-piece drag', () => {
+    render(<App />);
+
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
     canvas.getScreenCTM = vi.fn(
       () =>
         ({
           inverse: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }),
         }) as DOMMatrix,
     );
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: vi.fn(() => canvas),
+    });
+
+    const stagedPiece = screen.getByRole('button', { name: /Drag Piece 1 from staging/i });
+    act(() => {
+      fireEvent.pointerDown(stagedPiece, { pointerId: 1, clientX: 20, clientY: 120 });
+      window.dispatchEvent(new MouseEvent('pointermove', { clientX: 60, clientY: 60 }));
+      window.dispatchEvent(new MouseEvent('pointerup', { clientX: 60, clientY: 60 }));
+    });
 
     const wallPiece = screen.getByRole('button', { name: /^Move Piece 1$/i });
-    fireEvent.pointerDown(wallPiece, { pointerId: 1, clientX: 20, clientY: 20 });
-    expect(screen.getByTestId('wall-drag-preview')).toBeInTheDocument();
-    fireEvent.click(wallPiece);
-
     expect(wallPiece.closest('g')).toHaveClass('selected');
+
+    startWallPieceDrag(wallPiece, 60, 60);
+
+    expect(screen.getByTestId('wall-drag-preview')).toBeInTheDocument();
+    expect(document.body).toHaveClass('suppress-text-selection');
   });
 
   it('allows decimal piece sizes while typing', async () => {
@@ -372,15 +317,7 @@ describe('Gallery Designer app', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const dataTransfer = createDataTransfer();
-    fireEvent.dragStart(screen.getByRole('button', { name: /Drag Piece 1 from staging/i }), {
-      dataTransfer,
-    });
-    fireEvent.drop(screen.getByRole('img', { name: /Scaled gallery wall layout/i }), {
-      dataTransfer,
-      clientX: 0,
-      clientY: 0,
-    });
+    placeStagedPieceOnWall();
 
     expect(screen.getByRole('button', { name: /^Move Piece 1$/i })).toBeInTheDocument();
 
@@ -436,31 +373,18 @@ describe('Gallery Designer app', () => {
     expect(wallGuides[0]).toHaveAttribute('stroke-dasharray');
     expect(wallGuides[0]).toHaveAttribute('stroke-width', '0.25');
 
-    const dataTransfer = createDataTransfer();
     fireEvent.click(screen.getByLabelText('Art piece buffer'));
-    fireEvent.dragStart(screen.getByRole('button', { name: /Drag Piece 1 from staging/i }), {
-      dataTransfer,
-    });
-    expect(dataTransfer.setDragImage).toHaveBeenCalledWith(
-      expect.objectContaining({ className: expect.stringContaining('art-piece-buffer-preview') }),
-      expect.any(Number),
-      expect.any(Number),
-    );
-    fireEvent.drop(screen.getByRole('img', { name: /Scaled gallery wall layout/i }), {
-      dataTransfer,
-      clientX: 0,
-      clientY: 0,
-    });
+    const stagedPiece = screen.getByRole('button', { name: /Drag Piece 1 from staging/i });
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    mockCanvasProjection(canvas);
+    mockPointerTarget(canvas);
+    fireEvent.pointerDown(stagedPiece, { pointerId: 1, clientX: 0, clientY: 0 });
+    expect(screen.getByTestId('wall-drag-preview')).toHaveClass('art-piece-buffer-preview');
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 0, clientY: 0 });
 
     expect(container.querySelectorAll('.art-piece-buffer-guide')).toHaveLength(0);
 
-    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
-    canvas.getScreenCTM = vi.fn(
-      () =>
-        ({
-          inverse: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }),
-        }) as DOMMatrix,
-    );
+    mockCanvasProjection(canvas);
     const wallPiece = screen.getByRole('button', { name: /^Move Piece 1$/i });
     wallPiece.getBoundingClientRect = vi.fn(
       () =>
@@ -476,11 +400,7 @@ describe('Gallery Designer app', () => {
           toJSON: () => ({}),
         }) as DOMRect,
     );
-    fireEvent.pointerDown(wallPiece, {
-      pointerId: 1,
-      clientX: 20,
-      clientY: 20,
-    });
+    startWallPieceDrag(wallPiece, 20, 20);
     const wallPreview = screen.getByTestId('wall-drag-preview');
     expect(wallPreview).toHaveClass('art-piece-buffer-preview');
     expect(getComputedStyle(wallPreview).overflow).toBe('visible');
@@ -558,48 +478,9 @@ describe('Gallery Designer app', () => {
 
     fireEvent.change(screen.getByLabelText('Grid size (in)'), { target: { value: '10' } });
 
-    const dataTransfer = createDataTransfer();
-    fireEvent.dragStart(screen.getByRole('button', { name: /Drag Piece 1 from staging/i }), {
-      dataTransfer,
-    });
-    fireEvent.drop(screen.getByRole('img', { name: /Scaled gallery wall layout/i }), {
-      dataTransfer,
-      clientX: 0,
-      clientY: 0,
-    });
-
     const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
-    canvas.getScreenCTM = vi.fn(
-      () =>
-        ({
-          a: 1,
-          b: 0,
-          c: 0,
-          d: 1,
-          e: 0,
-          f: 0,
-          m11: 1,
-          m12: 0,
-          m21: 0,
-          m22: 1,
-          m41: 0,
-          m42: 0,
-          inverse: () => ({
-            a: 1,
-            b: 0,
-            c: 0,
-            d: 1,
-            e: 0,
-            f: 0,
-            m11: 1,
-            m12: 0,
-            m21: 0,
-            m22: 1,
-            m41: 0,
-            m42: 0,
-          }),
-        }) as DOMMatrix,
-    );
+    placeStagedPieceOnWall();
+    mockCanvasProjection(canvas);
 
     const wallPiece = screen.getByRole('button', { name: /^Move Piece 1$/i });
     wallPiece.getBoundingClientRect = vi.fn(
@@ -638,7 +519,7 @@ describe('Gallery Designer app', () => {
     expect(preview).toHaveTextContent('Piece 1');
     expect(preview).toHaveClass('wall-drag-preview');
     expect(preview).toHaveStyle({ width: '64px', height: '80px' });
-    expect(preview).toHaveStyle({ left: '108px', top: '100px' });
+    expect(preview).toHaveStyle({ left: '58px', top: '60px' });
     expect(wallPiece).toHaveAttribute('x', initialX);
     expect(wallPiece).toHaveAttribute('y', initialY);
   });
@@ -649,19 +530,9 @@ describe('Gallery Designer app', () => {
     fireEvent.change(screen.getByLabelText('Piece 1 label'), {
       target: { value: 'The Walking Dead' },
     });
-    const dataTransfer = createDataTransfer();
-    fireEvent.dragStart(
-      screen.getByRole('button', { name: /Drag The Walking Dead from staging/i }),
-      { dataTransfer },
-    );
     const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
-    fireEvent.drop(canvas, { dataTransfer, clientX: 0, clientY: 0 });
-    canvas.getScreenCTM = vi.fn(
-      () =>
-        ({
-          inverse: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }),
-        }) as DOMMatrix,
-    );
+    placeStagedPieceOnWall(/Drag The Walking Dead from staging/i);
+    mockCanvasProjection(canvas);
 
     const wallPiece = screen.getByRole('button', { name: /^Move The Walking Dead$/i });
     wallPiece.getBoundingClientRect = vi.fn(
@@ -678,7 +549,7 @@ describe('Gallery Designer app', () => {
           toJSON: () => ({}),
         }) as DOMRect,
     );
-    fireEvent.pointerDown(wallPiece, { pointerId: 1, clientX: 20, clientY: 20 });
+    startWallPieceDrag(wallPiece, 20, 20);
 
     const preview = screen.getByTestId('wall-drag-preview');
     expect(preview.querySelectorAll('.preview-piece-label-line')).toHaveLength(3);
@@ -771,18 +642,7 @@ describe('Gallery Designer app', () => {
     fireEvent.change(screen.getByLabelText('Piece 1 label'), {
       target: { value: 'The Walking Dead' },
     });
-    const dataTransfer = createDataTransfer();
-    fireEvent.dragStart(
-      screen.getByRole('button', { name: /Drag The Walking Dead from staging/i }),
-      {
-        dataTransfer,
-      },
-    );
-    fireEvent.drop(screen.getByRole('img', { name: /Scaled gallery wall layout/i }), {
-      dataTransfer,
-      clientX: 0,
-      clientY: 0,
-    });
+    placeStagedPieceOnWall(/Drag The Walking Dead from staging/i);
 
     expect(container.querySelectorAll('.piece-label tspan').length).toBeGreaterThan(1);
     expect(container.querySelector('clipPath[id^="piece-label-clip-"]')).toBeInTheDocument();
@@ -794,20 +654,7 @@ describe('Gallery Designer app', () => {
     fireEvent.change(screen.getByLabelText('Piece 1 label'), {
       target: { value: 'Supercalifragilisticexpialidocious Print' },
     });
-    const dataTransfer = createDataTransfer();
-    fireEvent.dragStart(
-      screen.getByRole('button', {
-        name: /Drag Supercalifragilisticexpialidocious Print from staging/i,
-      }),
-      {
-        dataTransfer,
-      },
-    );
-    fireEvent.drop(screen.getByRole('img', { name: /Scaled gallery wall layout/i }), {
-      dataTransfer,
-      clientX: 0,
-      clientY: 0,
-    });
+    placeStagedPieceOnWall(/Drag Supercalifragilisticexpialidocious Print from staging/i);
 
     const lines = Array.from(container.querySelectorAll('.piece-label tspan')).map(
       (line) => line.textContent,
@@ -829,15 +676,7 @@ describe('Gallery Designer app', () => {
     fireEvent.change(screen.getByLabelText('Piece 1 height'), {
       target: { value: '6' },
     });
-    const dataTransfer = createDataTransfer();
-    fireEvent.dragStart(screen.getByRole('button', { name: /Drag MCFN from staging/i }), {
-      dataTransfer,
-    });
-    fireEvent.drop(screen.getByRole('img', { name: /Scaled gallery wall layout/i }), {
-      dataTransfer,
-      clientX: 0,
-      clientY: 0,
-    });
+    placeStagedPieceOnWall(/Drag MCFN from staging/i);
 
     const pieceRect = container.querySelector('.piece rect[aria-label="Move MCFN"]');
     const label = container.querySelector('.outside-piece-label');
@@ -858,25 +697,71 @@ describe('Gallery Designer app', () => {
   });
 });
 
-function createDataTransfer(): DataTransfer {
-  const values = new Map<string, string>();
-  return {
-    dropEffect: 'move',
-    effectAllowed: 'all',
-    files: [] as unknown as FileList,
-    items: [] as unknown as DataTransferItemList,
-    types: [],
-    clearData: vi.fn((type?: string) => {
-      if (type) {
-        values.delete(type);
-      } else {
-        values.clear();
-      }
-    }),
-    getData: vi.fn((type: string) => values.get(type) ?? ''),
-    setData: vi.fn((type: string, value: string) => {
-      values.set(type, value);
-    }),
-    setDragImage: vi.fn(),
-  };
+function mockCanvasProjection(canvas: HTMLElement) {
+  canvas.getScreenCTM = vi.fn(
+    () =>
+      ({
+        a: 1,
+        b: 0,
+        c: 0,
+        d: 1,
+        e: 0,
+        f: 0,
+        inverse: () => ({
+          a: 1,
+          b: 0,
+          c: 0,
+          d: 1,
+          e: 0,
+          f: 0,
+        }),
+      }) as DOMMatrix,
+  );
+}
+
+function mockPointerTarget(element: Element) {
+  Object.defineProperty(document, 'elementFromPoint', {
+    configurable: true,
+    value: vi.fn(() => element),
+  });
+}
+
+function startWallPieceDrag(piece: Element, clientX: number, clientY: number) {
+  act(() => {
+    piece.dispatchEvent(
+      new MouseEvent('pointerdown', {
+        bubbles: true,
+        clientX,
+        clientY,
+      }),
+    );
+  });
+}
+
+function placeStagedPieceOnWall(
+  name: RegExp | string = /Drag Piece 1 from staging/i,
+  point = { clientX: 0, clientY: 0 },
+) {
+  const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+  mockCanvasProjection(canvas);
+  mockPointerTarget(canvas);
+  const stagedPiece = screen.getByRole('button', { name });
+  act(() => {
+    fireEvent.pointerDown(stagedPiece, {
+      pointerId: 1,
+      clientX: point.clientX,
+      clientY: point.clientY,
+    });
+    window.dispatchEvent(
+      new MouseEvent('pointermove', {
+        clientX: point.clientX,
+        clientY: point.clientY,
+        cancelable: true,
+      }),
+    );
+    window.dispatchEvent(
+      new MouseEvent('pointerup', { clientX: point.clientX, clientY: point.clientY }),
+    );
+  });
+  return canvas;
 }

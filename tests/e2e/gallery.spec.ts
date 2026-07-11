@@ -64,7 +64,11 @@ test('immediately picks up a piece placed from the staging tray without selectin
 
   const stagedPiece = page.getByRole('button', { name: 'Drag Piece 1 from staging' });
   const canvas = page.getByRole('img', { name: 'Scaled gallery wall layout' });
-  await stagedPiece.dragTo(canvas, { targetPosition: { x: 220, y: 180 } });
+  const canvasBox = await canvas.boundingBox();
+  if (!canvasBox) {
+    throw new Error('Staged piece or canvas was not visible enough to drag.');
+  }
+  await pointerDrag(page, stagedPiece, canvasBox.x + 220, canvasBox.y + 180);
 
   const wallPiece = page.getByRole('button', { name: 'Move Piece 1', exact: true });
   await expect(wallPiece).toBeVisible();
@@ -73,12 +77,12 @@ test('immediately picks up a piece placed from the staging tray without selectin
     throw new Error('Placed art piece did not have a visible bounding box.');
   }
 
-  await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(before.x + before.width / 2 + 36, before.y + before.height / 2 + 24, {
-    steps: 4,
-  });
-  await page.mouse.up();
+  await pointerDrag(
+    page,
+    wallPiece,
+    before.x + before.width / 2 + 36,
+    before.y + before.height / 2 + 24,
+  );
 
   const after = await wallPiece.boundingBox();
   expect(after).not.toBeNull();
@@ -86,3 +90,65 @@ test('immediately picks up a piece placed from the staging tray without selectin
   await expect(page.locator('.piece.selected')).toHaveCount(1);
   expect(await page.evaluate(() => window.getSelection()?.toString() ?? '')).toBe('');
 });
+
+async function pointerDrag(
+  page: import('@playwright/test').Page,
+  source: import('@playwright/test').Locator,
+  targetX: number,
+  targetY: number,
+) {
+  const sourceBox = await source.boundingBox();
+  if (!sourceBox) {
+    throw new Error('Pointer drag source was not visible.');
+  }
+  const startX = sourceBox.x + sourceBox.width / 2;
+  const startY = sourceBox.y + sourceBox.height / 2;
+
+  await source.dispatchEvent('pointerdown', {
+    bubbles: true,
+    cancelable: true,
+    pointerId: 1,
+    pointerType: 'mouse',
+    isPrimary: true,
+    button: 0,
+    buttons: 1,
+    clientX: startX,
+    clientY: startY,
+  });
+  await page.evaluate(
+    ({ x, y }) => {
+      window.dispatchEvent(
+        new PointerEvent('pointermove', {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 1,
+          pointerType: 'mouse',
+          isPrimary: true,
+          button: 0,
+          buttons: 1,
+          clientX: x,
+          clientY: y,
+        }),
+      );
+    },
+    { x: targetX, y: targetY },
+  );
+  await page.evaluate(
+    ({ x, y }) => {
+      window.dispatchEvent(
+        new PointerEvent('pointerup', {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 1,
+          pointerType: 'mouse',
+          isPrimary: true,
+          button: 0,
+          buttons: 0,
+          clientX: x,
+          clientY: y,
+        }),
+      );
+    },
+    { x: targetX, y: targetY },
+  );
+}

@@ -53,7 +53,6 @@ import type {
 } from './types';
 
 const STORAGE_KEY = 'gallery-designer-state-v1';
-const PIECE_DRAG_MIME = 'application/x-gallery-piece-id';
 const STAGING_SCALE_PX_PER_IN = 4;
 const DRAG_PREVIEW_SCALE_PX_PER_IN = 3;
 const SUPPRESS_TEXT_SELECTION_CLASS = 'suppress-text-selection';
@@ -71,9 +70,10 @@ interface GalleryState {
 
 interface DragState {
   pieceId: string;
-  startPoint: DOMPoint;
-  startPlacement: Placement;
-  latestPlacement: Placement;
+  source: 'staging' | 'wall';
+  startPoint: DOMPoint | null;
+  startPlacement: Placement | null;
+  latestPlacement: Placement | null;
   previewWidthPx: number;
   previewHeightPx: number;
 }
@@ -187,20 +187,11 @@ export default function App() {
       finishPieceDrag(event);
     }
 
-    function handleWindowDragEnd() {
-      setWallDragPreview(null);
-      stopSuppressingTextSelection();
-    }
-
     window.addEventListener('pointermove', handleWindowPointerMove);
     window.addEventListener('pointerup', handleWindowPointerUp);
-    window.addEventListener('dragend', handleWindowDragEnd);
-    window.addEventListener('drop', handleWindowDragEnd);
     return () => {
       window.removeEventListener('pointermove', handleWindowPointerMove);
       window.removeEventListener('pointerup', handleWindowPointerUp);
-      window.removeEventListener('dragend', handleWindowDragEnd);
-      window.removeEventListener('drop', handleWindowDragEnd);
     };
   });
 
@@ -425,67 +416,36 @@ export default function App() {
     }));
   }
 
-  function handlePieceDragStart(event: React.DragEvent, pieceId: string) {
+  function handleStagedPiecePointerDown(
+    event: React.PointerEvent<HTMLButtonElement>,
+    pieceId: string,
+  ) {
     const piece = state.pieces.find((candidate) => candidate.id === pieceId);
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData(PIECE_DRAG_MIME, pieceId);
-    event.dataTransfer.setData('text/plain', pieceId);
-    startSuppressingTextSelection();
-    if (piece) {
-      const size = getRenderedPieceSize(piece);
-      setPieceDragImage(
-        event.dataTransfer,
-        piece,
-        size,
-        state.features.artPieceBuffer
-          ? getPreviewBufferGapPx(piece, size, state.features.artPieceBufferGapIn)
-          : 0,
-      );
+    if (!piece) {
+      return;
+    }
+    event.preventDefault();
+    if (typeof event.currentTarget.setPointerCapture === 'function') {
+      event.currentTarget.setPointerCapture(event.pointerId);
     }
     selectPiece(pieceId);
-  }
 
-  function handleWallDragOver(event: React.DragEvent<SVGSVGElement>) {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-    const pieceId = getDraggedPieceId(event.dataTransfer);
-    const piece = state.pieces.find((candidate) => candidate.id === pieceId);
-    if (!piece) {
+    const placement = getPointerPlacement(event, piece);
+    if (!placement) {
       return;
     }
-
-    const placement = getDropPlacement(event, piece);
-    if (placement) {
-      showSnappedPreview(placement, piece, getRenderedPieceSize(piece), event);
-    }
-  }
-
-  function handleWallDrop(event: React.DragEvent<SVGSVGElement>) {
-    event.preventDefault();
-    const pieceId = getDraggedPieceId(event.dataTransfer);
-    const piece = state.pieces.find((candidate) => candidate.id === pieceId);
-    if (!piece) {
-      return;
-    }
-
-    const placement = getDropPlacement(event, piece);
-    if (placement) {
-      commitPiecePlacement(placement);
-    }
-    setWallDragPreview(null);
-  }
-
-  function handleStagingDragOver(event: React.DragEvent<HTMLElement>) {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-  }
-
-  function handleStagingDrop(event: React.DragEvent<HTMLElement>) {
-    event.preventDefault();
-    const pieceId = getDraggedPieceId(event.dataTransfer);
-    if (pieceId && state.pieces.some((piece) => piece.id === pieceId)) {
-      removePlacement(pieceId);
-    }
+    const size = getRenderedPieceSize(piece);
+    dragRef.current = {
+      pieceId,
+      source: 'staging',
+      startPoint: null,
+      startPlacement: null,
+      latestPlacement: placement,
+      previewWidthPx: size.widthPx,
+      previewHeightPx: size.heightPx,
+    };
+    startSuppressingTextSelection();
+    showSnappedPreview(placement, piece, size, event);
   }
 
   function handleSectionPointerDown(
@@ -536,6 +496,7 @@ export default function App() {
     const rect = event.currentTarget.getBoundingClientRect();
     dragRef.current = {
       pieceId: placement.pieceId,
+      source: 'wall',
       startPoint: point,
       startPlacement: placement,
       latestPlacement: placement,
@@ -599,7 +560,10 @@ export default function App() {
     const drag = dragRef.current;
     if (drag && event && pointerIsOverStagingTray(event)) {
       removePlacement(drag.pieceId);
-    } else if (drag) {
+    } else if (
+      drag?.latestPlacement &&
+      (drag.source === 'wall' || (event && pointerIsOverWallCanvas(event)))
+    ) {
       commitPiecePlacement(drag.latestPlacement);
     }
     dragRef.current = null;
@@ -613,6 +577,13 @@ export default function App() {
   ): boolean {
     const element = document.elementFromPoint(event.clientX, event.clientY);
     return element?.closest('[aria-label="Art staging tray"]') !== null;
+  }
+
+  function pointerIsOverWallCanvas(
+    event: Pick<React.PointerEvent | PointerEvent, 'clientX' | 'clientY'>,
+  ): boolean {
+    const element = document.elementFromPoint(event.clientX, event.clientY);
+    return element?.closest('.wall-canvas') !== null;
   }
 
   function handleCanvasKeyDown(event: KeyboardEvent) {
@@ -642,8 +613,12 @@ export default function App() {
   }
 
   function clientPointToSvg(
-    event: Pick<React.PointerEvent | React.DragEvent, 'clientX' | 'clientY'>,
+    event: Pick<React.PointerEvent | PointerEvent, 'clientX' | 'clientY'>,
   ): DOMPoint | null {
+    if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) {
+      return null;
+    }
+
     const svg = svgRef.current;
     if (!svg) {
       return null;
@@ -686,14 +661,27 @@ export default function App() {
       return;
     }
 
-    drag.latestPlacement = {
-      ...drag.startPlacement,
-      xIn: roundToPrecision(drag.startPlacement.xIn + point.x - drag.startPoint.x),
-      yIn: roundToPrecision(drag.startPlacement.yIn + point.y - drag.startPoint.y),
-    };
+    const piece = state.pieces.find((candidate) => candidate.id === drag.pieceId);
+    if (!piece) {
+      return;
+    }
+
+    if (drag.source === 'staging') {
+      drag.latestPlacement = getPointerPlacement(event, piece);
+    } else if (drag.startPlacement && drag.startPoint) {
+      drag.latestPlacement = {
+        ...drag.startPlacement,
+        xIn: roundToPrecision(drag.startPlacement.xIn + point.x - drag.startPoint.x),
+        yIn: roundToPrecision(drag.startPlacement.yIn + point.y - drag.startPoint.y),
+      };
+    }
+
+    if (!drag.latestPlacement) {
+      return;
+    }
     showSnappedPreview(
       drag.latestPlacement,
-      state.pieces.find((piece) => piece.id === drag.pieceId),
+      piece,
       { widthPx: drag.previewWidthPx, heightPx: drag.previewHeightPx },
       event,
     );
@@ -703,7 +691,7 @@ export default function App() {
     placement: Placement,
     piece: ArtPiece | undefined,
     size: { widthPx: number; heightPx: number },
-    fallbackPoint: Pick<React.PointerEvent | React.DragEvent | PointerEvent, 'clientX' | 'clientY'>,
+    fallbackPoint: Pick<React.PointerEvent | PointerEvent, 'clientX' | 'clientY'>,
   ) {
     if (!piece) {
       return;
@@ -751,8 +739,8 @@ export default function App() {
     };
   }
 
-  function getDropPlacement(
-    event: Pick<React.DragEvent, 'clientX' | 'clientY'>,
+  function getPointerPlacement(
+    event: Pick<React.PointerEvent | PointerEvent, 'clientX' | 'clientY'>,
     piece: ArtPiece,
   ): Placement | null {
     const point = clientPointToSvg(event);
@@ -1037,8 +1025,6 @@ export default function App() {
               selectedSectionId={selectedSectionId}
               features={state.features}
               unit={state.unit}
-              onDragOver={handleWallDragOver}
-              onDrop={handleWallDrop}
               onSectionPointerDown={handleSectionPointerDown}
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
@@ -1050,9 +1036,7 @@ export default function App() {
               selectedPieceId={state.selectedPieceId}
               unit={state.unit}
               onSelect={togglePieceSelection}
-              onDragStart={handlePieceDragStart}
-              onDragOver={handleStagingDragOver}
-              onDrop={handleStagingDrop}
+              onPointerDown={handleStagedPiecePointerDown}
             />
           </div>
 
@@ -1186,35 +1170,6 @@ function stopSuppressingTextSelection() {
   document.body.classList.remove(SUPPRESS_TEXT_SELECTION_CLASS);
 }
 
-function setPieceDragImage(
-  dataTransfer: DataTransfer,
-  piece: ArtPiece,
-  size: { widthPx: number; heightPx: number },
-  artPieceBufferGapPx: number,
-) {
-  if (typeof dataTransfer.setDragImage !== 'function') {
-    return;
-  }
-
-  const preview = document.createElement('div');
-  preview.className = 'piece-drag-preview';
-  preview.style.width = `${size.widthPx}px`;
-  preview.style.height = `${size.heightPx}px`;
-  if (artPieceBufferGapPx > 0) {
-    preview.classList.add('art-piece-buffer-preview');
-    preview.style.setProperty('--art-piece-buffer-gap', `${artPieceBufferGapPx}px`);
-    preview.style.overflow = 'visible';
-  }
-  const label = getPreviewPieceLabelLayout(piece, size);
-  if (label.placement === 'outside') {
-    preview.style.overflow = 'visible';
-  }
-  appendPreviewPieceLabel(preview, label);
-  document.body.append(preview);
-  dataTransfer.setDragImage(preview, size.widthPx / 2, size.heightPx / 2);
-  window.setTimeout(() => preview.remove(), 0);
-}
-
 interface PreviewPieceLabelLayout {
   lines: string[];
   fontSizePx: number;
@@ -1239,25 +1194,6 @@ function getPreviewPieceLabelLayout(
   };
 }
 
-function appendPreviewPieceLabel(container: HTMLElement, layout: PreviewPieceLabelLayout) {
-  const label = document.createElement('span');
-  label.className =
-    layout.placement === 'inside'
-      ? 'preview-piece-label'
-      : 'preview-piece-label outside-preview-piece-label';
-  label.style.fontSize = `${layout.fontSizePx}px`;
-  label.style.lineHeight = `${layout.lineHeightPx}px`;
-
-  for (const line of layout.lines) {
-    const lineElement = document.createElement('span');
-    lineElement.className = 'preview-piece-label-line';
-    lineElement.textContent = line;
-    label.append(lineElement);
-  }
-
-  container.append(label);
-}
-
 function getPreviewBufferGapPx(
   piece: ArtPiece,
   size: { widthPx: number; heightPx: number },
@@ -1271,10 +1207,6 @@ function getPreviewBufferGapPx(
     (scale) => Number.isFinite(scale) && scale > 0,
   );
   return scales.length > 0 ? Math.min(...scales) * gapIn : 0;
-}
-
-function getDraggedPieceId(dataTransfer: DataTransfer): string {
-  return dataTransfer.getData(PIECE_DRAG_MIME) || dataTransfer.getData('text/plain');
 }
 
 function getUnplacedPieceIssues(pieces: ArtPiece[], placements: Placement[]): string[] {
@@ -1522,31 +1454,21 @@ function StagingTray({
   selectedPieceId,
   unit,
   onSelect,
-  onDragStart,
-  onDragOver,
-  onDrop,
+  onPointerDown,
 }: {
   pieces: ArtPiece[];
   placements: Placement[];
   selectedPieceId: string;
   unit: Unit;
   onSelect: (pieceId: string) => void;
-  onDragStart: (event: React.DragEvent, pieceId: string) => void;
-  onDragOver: (event: React.DragEvent<HTMLElement>) => void;
-  onDrop: (event: React.DragEvent<HTMLElement>) => void;
+  onPointerDown: (event: React.PointerEvent<HTMLButtonElement>, pieceId: string) => void;
 }) {
   const stagedPieces = pieces.filter(
     (piece) => !placements.some((placement) => placement.pieceId === piece.id),
   );
 
   return (
-    <section
-      className="staging-tray"
-      role="region"
-      aria-label="Art staging tray"
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-    >
+    <section className="staging-tray" role="region" aria-label="Art staging tray">
       <div className="staging-header">
         <div className="panel-title">
           <PackageOpen size={18} />
@@ -1561,10 +1483,9 @@ function StagingTray({
               type="button"
               key={piece.id}
               className={`staged-piece ${piece.id === selectedPieceId ? 'selected' : ''}`}
-              draggable
               aria-label={`Drag ${piece.label} from staging`}
               onClick={() => onSelect(piece.id)}
-              onDragStart={(event) => onDragStart(event, piece.id)}
+              onPointerDown={(event) => onPointerDown(event, piece.id)}
             >
               <span
                 className="staged-piece-preview"
@@ -1601,8 +1522,6 @@ function WallCanvas({
   selectedSectionId,
   features,
   unit,
-  onDragOver,
-  onDrop,
   onSectionPointerDown,
   onPointerDown,
   onPointerMove,
@@ -1616,8 +1535,6 @@ function WallCanvas({
   selectedSectionId: string;
   features: EditorFeatures;
   unit: Unit;
-  onDragOver: (event: React.DragEvent<SVGSVGElement>) => void;
-  onDrop: (event: React.DragEvent<SVGSVGElement>) => void;
   onSectionPointerDown: (event: React.PointerEvent<SVGRectElement>, section: WallSection) => void;
   onPointerDown: (event: React.PointerEvent<SVGRectElement>, placement: Placement) => void;
   onPointerMove: (event: React.PointerEvent<SVGSVGElement>) => void;
@@ -1644,8 +1561,6 @@ function WallCanvas({
       role="img"
       aria-label="Scaled gallery wall layout"
       viewBox={viewBox}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}

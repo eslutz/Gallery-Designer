@@ -31,6 +31,15 @@ describe('measurement units', () => {
     expect(formatMeasurement(29.375, 'in')).toBe('29 3/8 in');
   });
 
+  it('formats negative fractional inch values without recursive fraction errors', () => {
+    expect(formatMeasurement(-8.125, 'in')).toBe('-8 1/8 in');
+  });
+
+  it('formats non-finite inch values as zero instead of hanging fraction reduction', () => {
+    expect(formatMeasurement(Number.NaN, 'in')).toBe('0 in');
+    expect(formatMeasurement(Number.POSITIVE_INFINITY, 'in')).toBe('0 in');
+  });
+
   it('formats metric output to one decimal centimeter', () => {
     expect(formatMeasurement(12, 'cm')).toBe('30.5 cm');
   });
