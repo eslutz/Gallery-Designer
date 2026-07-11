@@ -6,6 +6,23 @@ import App from './App';
 describe('Gallery Designer app', () => {
   beforeEach(() => {
     localStorage.clear();
+    document.documentElement.removeAttribute('data-theme');
+    document.documentElement.style.colorScheme = '';
+    document.body.classList.remove('suppress-text-selection');
+    document.querySelectorAll('.piece-drag-preview').forEach((element) => element.remove());
+    window.matchMedia = vi.fn(
+      (query: string) =>
+        ({
+          matches: query.includes('prefers-color-scheme: dark'),
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        }) as unknown as MediaQueryList,
+    );
   });
 
   it('creates a multi-section wall, adds pieces, auto-places them, and shows export-ready measurements', async () => {
@@ -208,7 +225,7 @@ describe('Gallery Designer app', () => {
     fireEvent.keyDown(window, { key: 'ArrowRight' });
     fireEvent.keyDown(window, { key: 'ArrowDown', shiftKey: true });
 
-    expect(Number(piece.getAttribute('x'))).toBe(startX + 0.125);
+    expect(Number(piece.getAttribute('x'))).toBe(startX + 0.25);
     expect(Number(piece.getAttribute('y'))).toBe(startY + 1);
   });
 
@@ -673,8 +690,19 @@ describe('Gallery Designer app', () => {
 
     const editorControls = screen.getByRole('toolbar', { name: /Editor controls/i });
     expect(editorControls).toContainElement(screen.getByLabelText('Units'));
+    expect(editorControls).toContainElement(screen.getByLabelText('Theme'));
     expect(editorControls).toContainElement(screen.getByRole('button', { name: /Auto-place/i }));
     expect(editorControls).toContainElement(screen.getByRole('button', { name: /Reset wall/i }));
+    const toolbarItems = Array.from(editorControls.children).map((element) =>
+      element.textContent?.trim(),
+    );
+    expect(toolbarItems).toEqual([
+      expect.stringContaining('Units'),
+      expect.stringContaining('Auto-place pieces'),
+      expect.stringContaining('Reset wall'),
+      expect.stringContaining('Theme'),
+    ]);
+    expect(screen.getByLabelText('Theme').closest('label')).toHaveClass('theme-field');
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     const exportPanel = screen.getByRole('complementary', { name: /Details and export/i });
     const exportTitle = within(exportPanel).getByRole('heading', { name: /^Export$/i });
@@ -694,6 +722,29 @@ describe('Gallery Designer app', () => {
     );
   });
 
+  it('lets the user choose light, dark, or system theme modes and persists the choice', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const themeSelect = screen.getByLabelText('Theme');
+    expect(themeSelect).toHaveValue('system');
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
+    expect(document.documentElement.style.colorScheme).toBe('dark');
+
+    await user.selectOptions(themeSelect, 'light');
+
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light');
+    expect(document.documentElement.style.colorScheme).toBe('light');
+    expect(JSON.parse(localStorage.getItem('gallery-designer-state-v1') ?? '{}')).toMatchObject({
+      themeMode: 'light',
+    });
+
+    await user.selectOptions(themeSelect, 'dark');
+
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
+    expect(document.documentElement.style.colorScheme).toBe('dark');
+  });
+
   it('groups unplaced export warnings that share the same piece label', async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -708,6 +759,11 @@ describe('Gallery Designer app', () => {
 
   it('renders wall section labels outside the wall and wraps art labels inside pieces', () => {
     const { container } = render(<App />);
+
+    expect(container.querySelector('#minor-grid path')).toHaveAttribute(
+      'stroke',
+      'var(--grid-line)',
+    );
 
     const sectionLabel = container.querySelector('.section-label');
     expect(Number(sectionLabel?.getAttribute('y'))).toBeLessThan(0);

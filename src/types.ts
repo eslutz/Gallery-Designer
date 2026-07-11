@@ -1,5 +1,7 @@
 export type Unit = 'in' | 'cm';
 
+export type ThemeMode = 'light' | 'dark' | 'system';
+
 export type CornerDirection = 'none' | 'left' | 'right';
 
 export interface WallSection {

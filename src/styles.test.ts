@@ -18,4 +18,19 @@ describe('application typography', () => {
     expect(stylesheet).toMatch(/font-family:\s*var\(--font-interface\)/);
     expect(stylesheet).toMatch(/h1,\s*h2,\s*h3,\s*\.section-label\s*{[^}]*var\(--font-heading\)/s);
   });
+
+  it('defines light, dark, and system-aware theme tokens', () => {
+    expect(stylesheet).toMatch(/:root\s*{[^}]*color-scheme:\s*light/s);
+    expect(stylesheet).toMatch(/--page-background:/);
+    expect(stylesheet).toMatch(/--panel-background:/);
+    expect(stylesheet).toMatch(/:root\[data-theme='dark'\]\s*{[^}]*color-scheme:\s*dark/s);
+    expect(stylesheet).toMatch(/@media\s*\(prefers-color-scheme:\s*dark\)/);
+  });
+
+  it('keeps dark mode grid lines subtle and pushes the theme picker to the row end', () => {
+    expect(stylesheet).toMatch(
+      /:root\[data-theme='dark'\]\s*{[^}]*--grid-line:\s*rgba\([^)]*,\s*0\.16\)/s,
+    );
+    expect(stylesheet).toMatch(/\.theme-field\s*{[^}]*margin-left:\s*auto/s);
+  });
 });

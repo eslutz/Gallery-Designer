@@ -42,7 +42,15 @@ import {
   normalizeWallSections,
   validateWallSections,
 } from './lib/wall';
-import type { ArtPiece, EditorFeatures, HookSpec, Placement, Unit, WallSection } from './types';
+import type {
+  ArtPiece,
+  EditorFeatures,
+  HookSpec,
+  Placement,
+  ThemeMode,
+  Unit,
+  WallSection,
+} from './types';
 
 const STORAGE_KEY = 'gallery-designer-state-v1';
 const PIECE_DRAG_MIME = 'application/x-gallery-piece-id';
@@ -52,6 +60,7 @@ const SUPPRESS_TEXT_SELECTION_CLASS = 'suppress-text-selection';
 
 interface GalleryState {
   unit: Unit;
+  themeMode: ThemeMode;
   sections: WallSection[];
   pieces: ArtPiece[];
   placements: Placement[];
@@ -86,6 +95,7 @@ interface WallDragPreview {
 
 const defaultState: GalleryState = {
   unit: 'in',
+  themeMode: 'system',
   sections: [
     {
       id: 'section-1',
@@ -148,6 +158,21 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state]);
+
+  useEffect(() => {
+    const darkScheme = window.matchMedia?.('(prefers-color-scheme: dark)');
+
+    function applyTheme() {
+      const resolvedTheme =
+        state.themeMode === 'system' ? (darkScheme?.matches ? 'dark' : 'light') : state.themeMode;
+      document.documentElement.dataset.theme = resolvedTheme;
+      document.documentElement.style.colorScheme = resolvedTheme;
+    }
+
+    applyTheme();
+    darkScheme?.addEventListener?.('change', applyTheme);
+    return () => darkScheme?.removeEventListener?.('change', applyTheme);
+  }, [state.themeMode]);
 
   useEffect(() => {
     function handleWindowPointerMove(event: PointerEvent) {
@@ -597,7 +622,7 @@ export default function App() {
     if (!selectedPiece || !selectedPlacement) {
       return;
     }
-    const step = event.shiftKey ? 1 : 1 / 8;
+    const step = event.shiftKey ? 1 : 1 / 4;
     const deltas: Record<string, [number, number]> = {
       ArrowUp: [0, -step],
       ArrowDown: [0, step],
@@ -984,6 +1009,22 @@ export default function App() {
               <RotateCcw size={18} />
               Reset wall
             </button>
+            <label className="field compact theme-field">
+              Theme
+              <select
+                value={state.themeMode}
+                onChange={(event) =>
+                  setState((current) => ({
+                    ...current,
+                    themeMode: event.target.value as ThemeMode,
+                  }))
+                }
+              >
+                <option value="system">System</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </label>
           </div>
 
           <div className="canvas-card">
@@ -1614,7 +1655,7 @@ function WallCanvas({
           <path
             d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`}
             fill="none"
-            stroke="#dbe5de"
+            stroke="var(--grid-line)"
             strokeWidth="0.18"
           />
         </pattern>
