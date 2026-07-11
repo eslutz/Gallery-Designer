@@ -817,9 +817,12 @@ export default function App() {
   return (
     <main className="app-shell" onPointerDown={handlePagePointerDown}>
       <header className="topbar">
-        <div>
-          <h1>Gallery Designer</h1>
-          <p>Plan a continuous wall, place art to scale, and export installation measurements.</p>
+        <div className="brand-lockup">
+          <img className="brand-logo" src="/gallery-wall-logo.svg" alt="" aria-hidden="true" />
+          <div className="brand-copy">
+            <h1>Gallery Designer</h1>
+            <p>Plan a continuous wall, place art to scale, and export installation measurements.</p>
+          </div>
         </div>
       </header>
 

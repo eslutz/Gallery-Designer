@@ -34,6 +34,15 @@ describe('Gallery Designer app', () => {
     expect(screen.getByRole('button', { name: /Export PDF/i })).toBeEnabled();
   });
 
+  it('renders the gallery-wall logo decoratively in the header', () => {
+    const { container } = render(<App />);
+
+    const logo = container.querySelector<HTMLImageElement>('.brand-logo');
+    expect(logo).toHaveAttribute('src', '/gallery-wall-logo.svg');
+    expect(logo).toHaveAttribute('alt', '');
+    expect(logo).toHaveAttribute('aria-hidden', 'true');
+  });
+
   it('uses a staging tray for unplaced pieces and no longer renders a place-on-first-wall action', async () => {
     const user = userEvent.setup();
     render(<App />);
