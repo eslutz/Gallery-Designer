@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applicationThemeOptions,
   DEFAULT_APPLICATION_THEME,
   getApplicationThemeLabel,
   resolveApplicationTheme,
@@ -26,5 +27,15 @@ describe('application theme helpers', () => {
     expect(getApplicationThemeLabel('aubergine')).toBe('Aubergine');
     expect(getApplicationThemeLabel('terracotta')).toBe('Terracotta');
     expect(getApplicationThemeLabel('slate')).toBe('Slate');
+  });
+
+  it('lists application themes alphabetically by label', () => {
+    expect(applicationThemeOptions.map(({ label }) => label)).toEqual([
+      'Aubergine',
+      'Coastal Blue',
+      'Evergreen',
+      'Slate',
+      'Terracotta',
+    ]);
   });
 });

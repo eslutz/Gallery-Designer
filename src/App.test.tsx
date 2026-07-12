@@ -567,8 +567,8 @@ describe('Gallery Designer app', () => {
 
     const editorControls = screen.getByRole('toolbar', { name: /Editor controls/i });
     expect(editorControls).toContainElement(screen.getByLabelText('Units'));
-    expect(editorControls).toContainElement(screen.getByLabelText('Color mode'));
-    expect(editorControls).toContainElement(screen.getByLabelText('Application theme'));
+    expect(editorControls).toContainElement(screen.getByLabelText('Appearance'));
+    expect(editorControls).toContainElement(screen.getByLabelText('Theme'));
     expect(editorControls).toContainElement(screen.getByRole('button', { name: /Auto-place/i }));
     expect(editorControls).toContainElement(screen.getByRole('button', { name: /Reset wall/i }));
     const toolbarItems = Array.from(editorControls.children).map((element) =>
@@ -577,8 +577,8 @@ describe('Gallery Designer app', () => {
     expect(toolbarItems[0]).toContain('Units');
     expect(toolbarItems[1]).toBe('Auto-place pieces');
     expect(toolbarItems[2]).toBe('Reset wall');
-    expect(toolbarItems[3]).toContain('Color mode');
-    expect(toolbarItems[3]).toContain('Application theme');
+    expect(toolbarItems[3]).toContain('Appearance');
+    expect(toolbarItems[3]).toContain('Theme');
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     const exportPanel = screen.getByRole('complementary', { name: /Details and export/i });
     const exportTitle = within(exportPanel).getByRole('heading', { name: /^Export$/i });
@@ -602,8 +602,8 @@ describe('Gallery Designer app', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const modeSelect = screen.getByLabelText('Color mode');
-    const themeSelect = screen.getByLabelText('Application theme');
+    const modeSelect = screen.getByLabelText('Appearance');
+    const themeSelect = screen.getByLabelText('Theme');
     expect(modeSelect).toHaveValue('system');
     expect(themeSelect).toHaveValue('slate');
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark');

@@ -11,11 +11,11 @@ const applicationThemeLabels: Record<ApplicationTheme, string> = {
 };
 
 export const applicationThemeOptions: Array<{ value: ApplicationTheme; label: string }> = [
-  { value: 'evergreen', label: 'Evergreen' },
-  { value: 'coastal-blue', label: 'Coastal Blue' },
   { value: 'aubergine', label: 'Aubergine' },
-  { value: 'terracotta', label: 'Terracotta' },
+  { value: 'coastal-blue', label: 'Coastal Blue' },
+  { value: 'evergreen', label: 'Evergreen' },
   { value: 'slate', label: 'Slate' },
+  { value: 'terracotta', label: 'Terracotta' },
 ];
 
 export function resolveApplicationTheme(value: string | undefined): ApplicationTheme {

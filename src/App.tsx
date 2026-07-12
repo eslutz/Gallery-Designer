@@ -1010,7 +1010,7 @@ export default function App() {
             </button>
             <div className="appearance-controls">
               <label className="field compact">
-                Color mode
+                Appearance
                 <select
                   value={state.themeMode}
                   onChange={(event) =>
@@ -1026,7 +1026,7 @@ export default function App() {
                 </select>
               </label>
               <label className="field compact">
-                Application theme
+                Theme
                 <select
                   value={state.applicationTheme}
                   onChange={(event) =>
