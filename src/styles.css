@@ -634,6 +634,7 @@ select:focus,
   color: var(--piece-label);
   box-shadow: none;
   text-align: center;
+  touch-action: none;
   overflow: visible;
 }
 

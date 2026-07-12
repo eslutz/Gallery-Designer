@@ -33,4 +33,8 @@ describe('application typography', () => {
     );
     expect(stylesheet).toMatch(/\.theme-field\s*{[^}]*margin-left:\s*auto/s);
   });
+
+  it('prevents touch panning from taking over staged piece drags', () => {
+    expect(stylesheet).toMatch(/\.staged-piece\s*{[^}]*touch-action:\s*none;/s);
+  });
 });

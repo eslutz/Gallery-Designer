@@ -91,6 +91,16 @@ test('immediately picks up a piece placed from the staging tray without selectin
   expect(await page.evaluate(() => window.getSelection()?.toString() ?? '')).toBe('');
 });
 
+test('mobile staged pieces keep touch drags from becoming page scrolls', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+
+  await expect(page.getByRole('button', { name: 'Drag Piece 1 from staging' })).toHaveCSS(
+    'touch-action',
+    'none',
+  );
+});
+
 async function pointerDrag(
   page: import('@playwright/test').Page,
   source: import('@playwright/test').Locator,
