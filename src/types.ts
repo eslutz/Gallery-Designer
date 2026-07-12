@@ -2,6 +2,8 @@ export type Unit = 'in' | 'cm';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
+export type ApplicationTheme = 'evergreen' | 'coastal-blue' | 'aubergine' | 'terracotta' | 'slate';
+
 export type CornerDirection = 'none' | 'left' | 'right';
 
 export interface WallSection {

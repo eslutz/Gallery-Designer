@@ -34,6 +34,8 @@ describe('design JSON files', () => {
 
     const json = serializeDesignFile({
       unit: 'in',
+      themeMode: 'dark',
+      applicationTheme: 'slate',
       sections,
       pieces,
       placements,
@@ -43,6 +45,8 @@ describe('design JSON files', () => {
 
     expect(parseDesignFile(json)).toEqual({
       unit: 'in',
+      themeMode: 'dark',
+      applicationTheme: 'slate',
       sections,
       pieces,
       placements,
@@ -53,5 +57,26 @@ describe('design JSON files', () => {
 
   it('rejects invalid design JSON with a clear error', () => {
     expect(() => parseDesignFile('{"unit":"yards"}')).toThrow('Design file is missing sections.');
+  });
+
+  it('defaults missing theme settings to system and slate', () => {
+    const parsed = parseDesignFile(
+      JSON.stringify({
+        sections: [
+          {
+            id: 'section-1',
+            name: 'Section 1',
+            widthIn: 96,
+            heightIn: 84,
+            cornerAfter: 'none',
+          },
+        ],
+        pieces: [{ id: 'piece-1', label: 'Piece 1', widthIn: 16, heightIn: 20 }],
+        placements: [],
+      }),
+    );
+
+    expect(parsed.themeMode).toBe('system');
+    expect(parsed.applicationTheme).toBe('slate');
   });
 });

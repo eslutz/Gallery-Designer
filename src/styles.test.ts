@@ -29,12 +29,31 @@ describe('application typography', () => {
 
   it('keeps dark mode grid lines subtle and pushes the theme picker to the row end', () => {
     expect(stylesheet).toMatch(
-      /:root\[data-theme='dark'\]\s*{[^}]*--grid-line:\s*rgba\([^)]*,\s*0\.16\)/s,
+      /:root\[data-theme='dark'\]\s*{[^}]*--grid-line:\s*rgba\([^)]*,\s*0\.08\)/s,
     );
-    expect(stylesheet).toMatch(/\.theme-field\s*{[^}]*margin-left:\s*auto/s);
+    expect(stylesheet).toMatch(/\.appearance-controls\s*{[^}]*margin-left:\s*auto/s);
   });
 
   it('prevents touch panning from taking over staged piece drags', () => {
     expect(stylesheet).toMatch(/\.staged-piece\s*{[^}]*touch-action:\s*none;/s);
+  });
+
+  it('defines the application theme selectors and matching art-piece colors', () => {
+    expect(stylesheet).toMatch(/:root\[data-palette='coastal-blue'\]\s*{[^}]*--piece-fill:/s);
+    expect(stylesheet).toMatch(/:root\[data-palette='aubergine'\]\s*{[^}]*--piece-fill:/s);
+    expect(stylesheet).toMatch(/:root\[data-palette='terracotta'\]\s*{[^}]*--piece-fill:/s);
+    expect(stylesheet).toMatch(/:root\[data-palette='slate'\]\s*{[^}]*--piece-fill:/s);
+    expect(stylesheet).toMatch(
+      /:root\[data-theme='dark'\]\[data-palette='coastal-blue'\]\s*{[^}]*--piece-fill:/s,
+    );
+    expect(stylesheet).toMatch(
+      /:root\[data-theme='dark'\]\[data-palette='aubergine'\]\s*{[^}]*--piece-fill:/s,
+    );
+    expect(stylesheet).toMatch(
+      /:root\[data-theme='dark'\]\[data-palette='terracotta'\]\s*{[^}]*--piece-fill:/s,
+    );
+    expect(stylesheet).toMatch(
+      /:root\[data-theme='dark'\]\[data-palette='slate'\]\s*{[^}]*--piece-fill:/s,
+    );
   });
 });

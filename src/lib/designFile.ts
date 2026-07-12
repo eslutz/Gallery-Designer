@@ -1,8 +1,18 @@
-import type { ArtPiece, EditorFeatures, Placement, Unit, WallSection } from '../types';
+import type {
+  ApplicationTheme,
+  ArtPiece,
+  EditorFeatures,
+  Placement,
+  ThemeMode,
+  Unit,
+  WallSection,
+} from '../types';
 import { normalizeWallSections } from './wall';
 
 export interface DesignFileState {
   unit: Unit;
+  themeMode: ThemeMode;
+  applicationTheme: ApplicationTheme;
   sections: WallSection[];
   pieces: ArtPiece[];
   placements: Placement[];
@@ -22,6 +32,8 @@ export function serializeDesignFile(state: DesignFileState): string {
     version: 1,
     exportedAt: new Date().toISOString(),
     unit: state.unit,
+    themeMode: state.themeMode,
+    applicationTheme: state.applicationTheme,
     sections: normalizeWallSections(state.sections),
     pieces: state.pieces,
     placements: state.placements,
@@ -54,6 +66,8 @@ export function parseDesignFile(raw: string): DesignFileState {
   }
 
   const unit = parsed.unit === 'cm' ? 'cm' : 'in';
+  const themeMode = parseThemeMode(parsed.themeMode);
+  const applicationTheme = parseApplicationTheme(parsed.applicationTheme);
   const sections = normalizeWallSections(parsed.sections.map(parseSection));
   const pieces = parsed.pieces.map(parsePiece);
   const placements = parsed.placements.map(parsePlacement).filter((placement) => {
@@ -69,6 +83,8 @@ export function parseDesignFile(raw: string): DesignFileState {
 
   return {
     unit,
+    themeMode,
+    applicationTheme,
     sections,
     pieces,
     placements,
@@ -132,6 +148,28 @@ function parseFeatures(value: unknown): EditorFeatures {
     artPieceBuffer: typeof parsed.artPieceBuffer === 'boolean' ? parsed.artPieceBuffer : false,
     artPieceBufferGapIn: Math.max(0.125, finiteNumber(parsed.artPieceBufferGapIn, 2)),
   };
+}
+
+function parseApplicationTheme(value: unknown): ApplicationTheme {
+  if (
+    value === 'evergreen' ||
+    value === 'coastal-blue' ||
+    value === 'aubergine' ||
+    value === 'terracotta' ||
+    value === 'slate'
+  ) {
+    return value;
+  }
+
+  return 'slate';
+}
+
+function parseThemeMode(value: unknown): ThemeMode {
+  if (value === 'light' || value === 'dark' || value === 'system') {
+    return value;
+  }
+
+  return 'system';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

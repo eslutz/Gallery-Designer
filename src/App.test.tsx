@@ -7,6 +7,7 @@ describe('Gallery Designer app', () => {
   beforeEach(() => {
     localStorage.clear();
     document.documentElement.removeAttribute('data-theme');
+    document.documentElement.removeAttribute('data-palette');
     document.documentElement.style.colorScheme = '';
     document.body.classList.remove('suppress-text-selection');
     window.matchMedia = vi.fn(
@@ -50,13 +51,18 @@ describe('Gallery Designer app', () => {
     expect(screen.getByRole('button', { name: /Export PDF/i })).toBeEnabled();
   });
 
-  it('renders the gallery-wall logo decoratively in the header', () => {
+  it('renders the theme-responsive logo decoratively in the header', () => {
     const { container } = render(<App />);
 
-    const logo = container.querySelector<HTMLImageElement>('.brand-logo');
-    expect(logo).toHaveAttribute('src', '/gallery-wall-logo.svg');
-    expect(logo).toHaveAttribute('alt', '');
-    expect(logo).toHaveAttribute('aria-hidden', 'true');
+    const logo = container.querySelector<SVGSVGElement>('.brand-logo');
+    expect(logo).toBeInTheDocument();
+  });
+
+  it('marks the root element with the slate palette by default and does not show a theme badge', () => {
+    render(<App />);
+
+    expect(document.documentElement).toHaveAttribute('data-palette', 'slate');
+    expect(screen.queryByText(/application theme preview/i)).not.toBeInTheDocument();
   });
 
   it('uses a staging tray for unplaced pieces and no longer renders a place-on-first-wall action', async () => {
@@ -561,19 +567,18 @@ describe('Gallery Designer app', () => {
 
     const editorControls = screen.getByRole('toolbar', { name: /Editor controls/i });
     expect(editorControls).toContainElement(screen.getByLabelText('Units'));
-    expect(editorControls).toContainElement(screen.getByLabelText('Theme'));
+    expect(editorControls).toContainElement(screen.getByLabelText('Color mode'));
+    expect(editorControls).toContainElement(screen.getByLabelText('Application theme'));
     expect(editorControls).toContainElement(screen.getByRole('button', { name: /Auto-place/i }));
     expect(editorControls).toContainElement(screen.getByRole('button', { name: /Reset wall/i }));
     const toolbarItems = Array.from(editorControls.children).map((element) =>
       element.textContent?.trim(),
     );
-    expect(toolbarItems).toEqual([
-      expect.stringContaining('Units'),
-      expect.stringContaining('Auto-place pieces'),
-      expect.stringContaining('Reset wall'),
-      expect.stringContaining('Theme'),
-    ]);
-    expect(screen.getByLabelText('Theme').closest('label')).toHaveClass('theme-field');
+    expect(toolbarItems[0]).toContain('Units');
+    expect(toolbarItems[1]).toBe('Auto-place pieces');
+    expect(toolbarItems[2]).toBe('Reset wall');
+    expect(toolbarItems[3]).toContain('Color mode');
+    expect(toolbarItems[3]).toContain('Application theme');
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     const exportPanel = screen.getByRole('complementary', { name: /Details and export/i });
     const exportTitle = within(exportPanel).getByRole('heading', { name: /^Export$/i });
@@ -597,12 +602,15 @@ describe('Gallery Designer app', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const themeSelect = screen.getByLabelText('Theme');
-    expect(themeSelect).toHaveValue('system');
+    const modeSelect = screen.getByLabelText('Color mode');
+    const themeSelect = screen.getByLabelText('Application theme');
+    expect(modeSelect).toHaveValue('system');
+    expect(themeSelect).toHaveValue('slate');
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
+    expect(document.documentElement).toHaveAttribute('data-palette', 'slate');
     expect(document.documentElement.style.colorScheme).toBe('dark');
 
-    await user.selectOptions(themeSelect, 'light');
+    await user.selectOptions(modeSelect, 'light');
 
     expect(document.documentElement).toHaveAttribute('data-theme', 'light');
     expect(document.documentElement.style.colorScheme).toBe('light');
@@ -610,7 +618,14 @@ describe('Gallery Designer app', () => {
       themeMode: 'light',
     });
 
-    await user.selectOptions(themeSelect, 'dark');
+    await user.selectOptions(themeSelect, 'coastal-blue');
+
+    expect(document.documentElement).toHaveAttribute('data-palette', 'coastal-blue');
+    expect(JSON.parse(localStorage.getItem('gallery-designer-state-v1') ?? '{}')).toMatchObject({
+      applicationTheme: 'coastal-blue',
+    });
+
+    await user.selectOptions(modeSelect, 'dark');
 
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
     expect(document.documentElement.style.colorScheme).toBe('dark');

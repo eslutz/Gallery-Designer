@@ -15,6 +15,11 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { autoPlacePieces } from './lib/autoPlace';
+import {
+  applicationThemeOptions,
+  type ApplicationTheme,
+  resolveApplicationTheme,
+} from './lib/applicationTheme';
 import { parseDesignFile, serializeDesignFile } from './lib/designFile';
 import { downloadPdf, downloadSvgAsPng } from './lib/exportDesign';
 import { buildMeasurementInstructions } from './lib/measurements';
@@ -60,6 +65,7 @@ const SUPPRESS_TEXT_SELECTION_CLASS = 'suppress-text-selection';
 interface GalleryState {
   unit: Unit;
   themeMode: ThemeMode;
+  applicationTheme: ApplicationTheme;
   sections: WallSection[];
   pieces: ArtPiece[];
   placements: Placement[];
@@ -96,6 +102,7 @@ interface WallDragPreview {
 const defaultState: GalleryState = {
   unit: 'in',
   themeMode: 'system',
+  applicationTheme: 'slate',
   sections: [
     {
       id: 'section-1',
@@ -158,6 +165,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state]);
+
+  useEffect(() => {
+    document.documentElement.dataset.palette = state.applicationTheme;
+  }, [state.applicationTheme]);
 
   useEffect(() => {
     const darkScheme = window.matchMedia?.('(prefers-color-scheme: dark)');
@@ -831,7 +842,7 @@ export default function App() {
     <main className="app-shell" onPointerDown={handlePagePointerDown}>
       <header className="topbar">
         <div className="brand-lockup">
-          <img className="brand-logo" src="/gallery-wall-logo.svg" alt="" aria-hidden="true" />
+          <BrandLogo />
           <div className="brand-copy">
             <h1>Gallery Designer</h1>
             <p>Plan a continuous wall, place art to scale, and export installation measurements.</p>
@@ -997,22 +1008,42 @@ export default function App() {
               <RotateCcw size={18} />
               Reset wall
             </button>
-            <label className="field compact theme-field">
-              Theme
-              <select
-                value={state.themeMode}
-                onChange={(event) =>
-                  setState((current) => ({
-                    ...current,
-                    themeMode: event.target.value as ThemeMode,
-                  }))
-                }
-              >
-                <option value="system">System</option>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-              </select>
-            </label>
+            <div className="appearance-controls">
+              <label className="field compact">
+                Color mode
+                <select
+                  value={state.themeMode}
+                  onChange={(event) =>
+                    setState((current) => ({
+                      ...current,
+                      themeMode: event.target.value as ThemeMode,
+                    }))
+                  }
+                >
+                  <option value="system">System</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+              </label>
+              <label className="field compact">
+                Application theme
+                <select
+                  value={state.applicationTheme}
+                  onChange={(event) =>
+                    setState((current) => ({
+                      ...current,
+                      applicationTheme: resolveApplicationTheme(event.target.value),
+                    }))
+                  }
+                >
+                  {applicationThemeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           </div>
 
           <div className="canvas-card">
@@ -1070,6 +1101,50 @@ export default function App() {
         artPieceBufferGapIn={state.features.artPieceBufferGapIn}
       />
     </main>
+  );
+}
+
+function BrandLogo() {
+  return (
+    <svg className="brand-logo" viewBox="0 0 56 48" aria-hidden="true" focusable="false">
+      <path
+        d="M3 3h50v25H31v17H3z"
+        fill="var(--piece-selected-fill)"
+        stroke="var(--wall-edge)"
+        strokeLinejoin="round"
+        strokeWidth="3"
+      />
+      <rect
+        x="9"
+        y="9"
+        width="11"
+        height="13"
+        rx="1.5"
+        fill="var(--piece-fill)"
+        stroke="var(--primary-background)"
+        strokeWidth="2.5"
+      />
+      <rect
+        x="26"
+        y="9"
+        width="19"
+        height="11"
+        rx="1.5"
+        fill="var(--piece-fill)"
+        stroke="var(--primary-background)"
+        strokeWidth="2.5"
+      />
+      <rect
+        x="9"
+        y="28"
+        width="15"
+        height="10"
+        rx="1.5"
+        fill="var(--piece-fill)"
+        stroke="var(--primary-background)"
+        strokeWidth="2.5"
+      />
+    </svg>
   );
 }
 
@@ -1918,6 +1993,11 @@ function loadState(): GalleryState {
     return {
       ...defaultState,
       ...parsed,
+      themeMode:
+        parsed.themeMode === 'light' || parsed.themeMode === 'dark' || parsed.themeMode === 'system'
+          ? parsed.themeMode
+          : defaultState.themeMode,
+      applicationTheme: resolveApplicationTheme(parsed.applicationTheme),
       sections: normalizeWallSections(parsed.sections),
       features: { ...defaultState.features, ...(parsed.features ?? {}) },
       message: defaultState.message,
