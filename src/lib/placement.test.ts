@@ -53,13 +53,17 @@ describe('placement constraints', () => {
     });
   });
 
-  it('does not report manual outside-wall and collision issues', () => {
+  it('reports manual outside-wall and collision issues before export', () => {
     const placements: Placement[] = [
       { pieceId: 'one', sectionId: 'a', xIn: 160, yIn: 10 },
       { pieceId: 'two', sectionId: 'a', xIn: 160, yIn: 10 },
     ];
 
-    expect(getPlacementIssues(sections, pieces, placements)).toEqual([]);
+    expect(getPlacementIssues(sections, pieces, placements)).toEqual([
+      'One extends beyond the wall boundary.',
+      'Two extends beyond the wall boundary.',
+      'One touches or overlaps Two.',
+    ]);
   });
 
   it('reports outside-wall and collision issues for automatic placement', () => {

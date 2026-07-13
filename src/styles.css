@@ -42,6 +42,7 @@
   --focus-ring: rgba(47, 125, 89, 0.14);
   --primary-background: #245b46;
   --primary-text: #ffffff;
+  --secondary-text: var(--primary-background);
   --secondary-background: #edf5ef;
   --secondary-border: #c8dacd;
   --icon-text: #506159;
@@ -377,6 +378,7 @@
   --focus-ring: rgba(191, 109, 67, 0.14);
   --primary-background: #b45f39;
   --primary-text: #ffffff;
+  --secondary-text: #7d3d24;
   --secondary-background: #fbf0ea;
   --secondary-border: #e1c9ba;
   --icon-text: #7b665d;
@@ -421,6 +423,7 @@
   --focus-ring: rgba(224, 154, 114, 0.22);
   --primary-background: #e09a72;
   --primary-text: #1d120f;
+  --secondary-text: #e9b99f;
   --secondary-background: #2a1a17;
   --secondary-border: #5b4036;
   --icon-text: #e2c4b6;
@@ -573,6 +576,11 @@ button:disabled {
   opacity: 0.55;
 }
 
+button:not(:disabled):hover,
+button:not(:disabled):active {
+  filter: brightness(0.97);
+}
+
 .app-shell {
   display: flex;
   flex-direction: column;
@@ -628,6 +636,13 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+.toolbar-group {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(280px, 340px) minmax(560px, 1fr) minmax(280px, 360px);
@@ -649,8 +664,8 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-height: calc(100vh - 132px);
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
   padding: 16px;
 }
 
@@ -695,6 +710,11 @@ button:disabled {
   padding-top: 4px;
 }
 
+.feature-help,
+.persistence-note {
+  font-size: 0.8rem;
+}
+
 .toggle-field {
   display: flex;
   align-items: center;
@@ -732,6 +752,17 @@ button:disabled {
   font-weight: 700;
 }
 
+.field-error {
+  color: var(--issue-text);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+input[aria-invalid='true'] {
+  border-color: var(--issue-text);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--issue-text) 18%, transparent);
+}
+
 .field.compact {
   min-width: 124px;
 }
@@ -741,6 +772,13 @@ button:disabled {
   align-items: end;
   gap: 12px;
   margin-left: auto;
+}
+
+.zoom-controls {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .field-grid {
@@ -790,13 +828,14 @@ select:focus,
 
 .secondary {
   padding: 0 14px;
-  color: var(--primary-background);
+  color: var(--secondary-text);
   background: var(--secondary-background);
   border-color: var(--secondary-border);
 }
 
 .icon-button {
-  width: 38px;
+  width: 44px;
+  min-height: 44px;
   padding: 0;
   color: var(--icon-text);
   background: var(--icon-background);
@@ -833,6 +872,28 @@ select:focus,
   min-height: 460px;
   padding: 14px;
   overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.wall-canvas-shell {
+  position: relative;
+}
+
+.zoom-controls-overlay {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--panel-border) 70%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-background) 88%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--panel-shadow);
 }
 
 .canvas-card .staging-tray {
@@ -856,6 +917,14 @@ select:focus,
 .wall-canvas * {
   -webkit-user-select: none;
   user-select: none;
+}
+
+.wall-pan-surface {
+  cursor: grab;
+}
+
+.wall-pan-surface:active {
+  cursor: grabbing;
 }
 
 .wall-section {
@@ -910,6 +979,14 @@ select:focus,
   fill: var(--piece-selected-fill);
   stroke: var(--piece-selected-stroke);
   stroke-width: 0.62;
+}
+
+.wall-section:focus-visible,
+.piece rect:focus-visible {
+  outline: none;
+  stroke: var(--focus-color);
+  stroke-width: 1.2;
+  filter: drop-shadow(0 0 2px var(--focus-color));
 }
 
 .piece-label {
@@ -986,7 +1063,7 @@ select:focus,
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: var(--piece-label);
+  color: var(--text-primary);
   box-shadow: none;
   text-align: center;
   touch-action: none;
@@ -1021,8 +1098,7 @@ select:focus,
 
 .staged-piece-name {
   font-weight: 900;
-  overflow-wrap: normal;
-  word-break: normal;
+  overflow-wrap: anywhere;
 }
 
 .staged-piece-size,
@@ -1086,6 +1162,33 @@ select:focus,
   margin: 0;
   color: var(--text-muted);
   font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.status-message {
+  min-height: 1.4em;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.status-panel {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  background: var(--panel-background);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  box-shadow: var(--panel-shadow);
+}
+
+.status-panel-label {
+  margin: 0;
+  color: var(--panel-title);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .export-actions {
@@ -1162,7 +1265,48 @@ th {
   text-transform: uppercase;
 }
 
-@media (max-width: 1020px) {
+.measurement-cards {
+  display: none;
+}
+
+.measurement-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--table-border);
+  border-radius: 8px;
+  background: var(--panel-solid);
+}
+
+.measurement-card h3,
+.measurement-card p {
+  margin: 0;
+}
+
+.measurement-card dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.measurement-card dl div {
+  display: grid;
+  gap: 2px;
+}
+
+.measurement-card dt {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.measurement-card dd {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 1200px) {
   .workspace {
     grid-template-columns: 1fr;
   }
@@ -1199,6 +1343,12 @@ th {
     flex-direction: column;
   }
 
+  .toolbar-group,
+  .view-controls,
+  .appearance-controls {
+    width: 100%;
+  }
+
   .appearance-controls {
     margin-left: 0;
     width: 100%;
@@ -1213,7 +1363,13 @@ th {
   }
 
   .workspace {
+    display: flex;
+    flex-direction: column;
     padding: 12px;
+  }
+
+  .editor-column {
+    order: -1;
   }
 
   .field-grid {
@@ -1230,5 +1386,44 @@ th {
 
   .wall-canvas {
     min-height: 340px;
+  }
+
+  .measurements-table {
+    display: none;
+  }
+
+  .measurement-cards {
+    display: grid;
+    gap: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .primary,
+  .secondary,
+  .icon-button,
+  input,
+  select,
+  .setup-panel,
+  .utility-panel,
+  .measurements-panel,
+  .canvas-card {
+    border: 1px solid ButtonText;
+  }
+
+  .wall-section:focus-visible,
+  .piece rect:focus-visible {
+    outline: 2px solid Highlight;
   }
 }

@@ -85,11 +85,36 @@ describe('Gallery Designer app', () => {
     expect(screen.getByRole('button', { name: /Drag Piece 2 from staging/i })).toBeInTheDocument();
   });
 
+  it('explains local persistence and feature behavior', () => {
+    render(<App />);
+
+    expect(screen.getByText(/saved locally in this browser/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/snap settings apply while dragging or nudging pieces/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/buffer guides reserve installation clearance/i)).toBeInTheDocument();
+  });
+
   it('does not render manual wall section position fields', () => {
     render(<App />);
 
     expect(screen.queryByLabelText('Section 1 X position')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Section 1 Y position')).not.toBeInTheDocument();
+  });
+
+  it('keeps exterior edge keys unique when the wall has multiple sections', async () => {
+    const user = userEvent.setup();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: /Add wall section/i }));
+
+    expect(
+      consoleError.mock.calls.some(([message]) =>
+        String(message).includes('Encountered two children with the same key'),
+      ),
+    ).toBe(false);
+    consoleError.mockRestore();
   });
 
   it('shows staged art pieces at their scaled proportions', async () => {
@@ -169,12 +194,30 @@ describe('Gallery Designer app', () => {
     expect(Math.abs(placedY % 10)).toBe(0);
   });
 
-  it('does not make wall pieces browser-focusable', () => {
+  it('makes wall pieces browser-focusable', () => {
     render(<App />);
 
     placeStagedPieceOnWall();
 
-    expect(screen.getByRole('button', { name: /^Move Piece 1$/i })).not.toHaveAttribute('tabindex');
+    expect(screen.getByRole('button', { name: /^Move Piece 1$/i })).toHaveAttribute(
+      'tabindex',
+      '0',
+    );
+  });
+
+  it('activates and nudges canvas controls from the keyboard', () => {
+    render(<App />);
+
+    const section = screen.getByRole('button', { name: /^Move Section 1$/i });
+    fireEvent.keyDown(section, { key: 'Enter' });
+    expect(section.closest('.wall-section')).toHaveClass('selected');
+
+    placeStagedPieceOnWall();
+    const piece = screen.getByRole('button', { name: /^Move Piece 1$/i });
+    const startX = Number(piece.getAttribute('x'));
+    fireEvent.keyDown(piece, { key: 'ArrowRight' });
+    expect(Number(piece.getAttribute('x'))).toBe(startX + 0.25);
+    expect(piece).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('nudges a selected placed art piece with arrow keys outside the canvas focus target', () => {
@@ -203,6 +246,41 @@ describe('Gallery Designer app', () => {
     fireEvent.keyDown(screen.getByLabelText('Piece 1 width'), { key: 'ArrowRight' });
 
     expect(piece).toHaveAttribute('x', startX ?? '');
+  });
+
+  it('does not let section focus trigger the selected piece nudge handler', () => {
+    render(<App />);
+
+    placeStagedPieceOnWall();
+    const piece = screen.getByRole('button', { name: /^Move Piece 1$/i });
+    const section = screen.getByRole('button', { name: /^Move Section 1$/i });
+    const startX = piece.getAttribute('x');
+
+    fireEvent.keyDown(section, { key: 'ArrowRight' });
+
+    expect(piece).toHaveAttribute('x', startX ?? '');
+  });
+
+  it('falls back safely when persisted state contains invalid arrays', () => {
+    localStorage.setItem(
+      'gallery-designer-state-v1',
+      JSON.stringify({ sections: [], pieces: [], placements: null }),
+    );
+
+    expect(() => render(<App />)).not.toThrow();
+    expect(screen.getByLabelText('Section 1 name')).toBeInTheDocument();
+  });
+
+  it('keeps editing available when browser persistence is unavailable', async () => {
+    const user = userEvent.setup();
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('Storage unavailable');
+    });
+
+    expect(() => render(<App />)).not.toThrow();
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    expect(screen.getByLabelText('Piece 2 label')).toBeInTheDocument();
+    setItem.mockRestore();
   });
 
   it('moves pieces from staging to the wall and back to staging with drag and pointer drop', () => {
@@ -334,6 +412,26 @@ describe('Gallery Designer app', () => {
     expect(screen.getByText(/Piece 1 has not been placed/i)).toBeInTheDocument();
   });
 
+  it('lets users undo a reset that removed placements', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    placeStagedPieceOnWall();
+    await user.click(screen.getByRole('button', { name: /Reset wall/i }));
+    await user.click(screen.getByRole('button', { name: /Undo last change/i }));
+
+    expect(screen.getByRole('button', { name: /^Move Piece 1$/i })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/Restored the previous change/i);
+  });
+
+  it('explains an empty measurements table before any placement', () => {
+    render(<App />);
+
+    expect(
+      screen.getByText(/Place a piece on the wall to see installation measurements/i),
+    ).toBeInTheDocument();
+  });
+
   it('shows configurable snapping features', async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -354,6 +452,8 @@ describe('Gallery Designer app', () => {
     expect(screen.getByLabelText('Alignment tolerance (in)')).toBeInTheDocument();
     expect(screen.getByLabelText('Wall edge buffer gap (in)')).toBeInTheDocument();
     expect(screen.getByLabelText('Art piece buffer gap (in)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Wall edge buffer gap (in)')).toBeDisabled();
+    expect(screen.getByLabelText('Art piece buffer gap (in)')).toBeDisabled();
 
     await user.clear(screen.getByLabelText('Grid size (in)'));
     await user.type(screen.getByLabelText('Grid size (in)'), '2.5');
@@ -365,6 +465,34 @@ describe('Gallery Designer app', () => {
     expect(screen.getByLabelText('Alignment tolerance (cm)')).toBeInTheDocument();
     expect(screen.getByLabelText('Wall edge buffer gap (cm)')).toHaveValue('5.1');
     expect(screen.getByLabelText('Art piece buffer gap (cm)')).toHaveValue('5.1');
+  });
+
+  it('gives repeated setup controls contextual accessible names', () => {
+    render(<App />);
+
+    expect(screen.getByLabelText('Section 1 corner after')).toBeInTheDocument();
+    expect(screen.getByLabelText('Hooks for Piece 1')).toBeInTheDocument();
+  });
+
+  it('associates invalid dimensions with their input', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const width = screen.getByLabelText('Section 1 width');
+    await user.clear(width);
+    await user.type(width, '0');
+    await user.tab();
+
+    expect(width).toHaveAttribute('aria-invalid', 'true');
+    expect(width).toHaveAttribute('aria-describedby');
+    expect(
+      within(width.closest('label') as HTMLElement).getByText(/positive width/i),
+    ).toBeInTheDocument();
+
+    await user.clear(width);
+    await user.type(width, 'abc');
+    await user.tab();
+    expect(width).toHaveAttribute('aria-invalid', 'true');
   });
 
   it('shows wall buffer guides persistently and art buffer guides only while moving a piece', () => {
@@ -525,7 +653,7 @@ describe('Gallery Designer app', () => {
     expect(preview).toHaveTextContent('Piece 1');
     expect(preview).toHaveClass('wall-drag-preview');
     expect(preview).toHaveStyle({ width: '64px', height: '80px' });
-    expect(preview).toHaveStyle({ left: '58px', top: '60px' });
+    expect(preview).toHaveStyle({ left: '108px', top: '110px' });
     expect(wallPiece).toHaveAttribute('x', initialX);
     expect(wallPiece).toHaveAttribute('y', initialY);
   });
@@ -566,20 +694,45 @@ describe('Gallery Designer app', () => {
     render(<App />);
 
     const editorControls = screen.getByRole('toolbar', { name: /Editor controls/i });
+    const canvasCard = document.querySelector('.canvas-card');
+    expect(canvasCard).toBeInTheDocument();
     expect(editorControls).toContainElement(screen.getByLabelText('Units'));
     expect(editorControls).toContainElement(screen.getByLabelText('Appearance'));
     expect(editorControls).toContainElement(screen.getByLabelText('Theme'));
     expect(editorControls).toContainElement(screen.getByRole('button', { name: /Auto-place/i }));
     expect(editorControls).toContainElement(screen.getByRole('button', { name: /Reset wall/i }));
-    const toolbarItems = Array.from(editorControls.children).map((element) =>
-      element.textContent?.trim(),
+    expect(screen.getByRole('group', { name: /Placement controls/i })).toContainElement(
+      screen.getByRole('button', { name: /Auto-place/i }),
     );
-    expect(toolbarItems[0]).toContain('Units');
-    expect(toolbarItems[1]).toBe('Auto-place pieces');
-    expect(toolbarItems[2]).toBe('Reset wall');
-    expect(toolbarItems[3]).toContain('Appearance');
-    expect(toolbarItems[3]).toContain('Theme');
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: /View controls/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: /Wall zoom controls/i })).toContainElement(
+      screen.getByRole('button', { name: /Zoom out/i }),
+    );
+    expect(screen.getByRole('group', { name: /Wall zoom controls/i })).toContainElement(
+      screen.getByRole('button', { name: /Fit wall/i }),
+    );
+    expect(screen.getByRole('group', { name: /Wall zoom controls/i })).toContainElement(
+      screen.getByRole('button', { name: /Zoom in/i }),
+    );
+    expect(canvasCard).toContainElement(screen.getByRole('group', { name: /Wall zoom controls/i }));
+    const rightPanel = screen.getByRole('complementary', { name: /Details and export/i });
+    const statusPanel = within(rightPanel).getByRole('status').closest('.status-panel');
+    expect(statusPanel).toBeInTheDocument();
+    expect(Array.from(rightPanel.children).indexOf(statusPanel as Element)).toBe(1);
+    expect(
+      within(statusPanel?.previousElementSibling as Element).getByRole('heading', {
+        name: /Features/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(statusPanel?.nextElementSibling as Element).getByRole('heading', {
+        name: /^Export$/i,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: /Appearance controls/i })).toContainElement(
+      screen.getByLabelText('Theme'),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(/Enter wall and art dimensions/i);
     const exportPanel = screen.getByRole('complementary', { name: /Details and export/i });
     const exportTitle = within(exportPanel).getByRole('heading', { name: /^Export$/i });
     expect(exportTitle.closest('.panel-title')).toBeInTheDocument();
@@ -596,6 +749,53 @@ describe('Gallery Designer app', () => {
       'title',
       expect.stringContaining('Piece 1 has not been placed.'),
     );
+  });
+
+  it('zooms and pans the wall canvas with wheel gestures', () => {
+    render(<App />);
+
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    canvas.getBoundingClientRect = vi.fn(
+      () =>
+        ({
+          width: 248,
+          height: 244,
+          x: 0,
+          y: 0,
+          top: 0,
+          right: 248,
+          bottom: 244,
+          left: 0,
+          toJSON: () => ({}),
+        }) as DOMRect,
+    );
+    canvas.getScreenCTM = vi.fn(
+      () =>
+        ({
+          inverse: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }),
+        }) as DOMMatrix,
+    );
+
+    const initialViewBox = parseViewBox(canvas.getAttribute('viewBox'));
+
+    fireEvent.wheel(canvas, { ctrlKey: true, deltaY: -160, clientX: 40, clientY: 40 });
+
+    const zoomedViewBox = parseViewBox(canvas.getAttribute('viewBox'));
+    expect(zoomedViewBox.width).toBeLessThan(initialViewBox.width);
+    expect(zoomedViewBox.height).toBeLessThan(initialViewBox.height);
+
+    fireEvent.wheel(canvas, { deltaY: 80, deltaX: 0, clientX: 120, clientY: 120 });
+
+    const wheelPannedViewBox = parseViewBox(canvas.getAttribute('viewBox'));
+    expect(wheelPannedViewBox.y).toBeGreaterThan(zoomedViewBox.y);
+
+    expect(canvas.querySelector('.wall-pan-surface')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Fit wall/i }));
+
+    const resetViewBox = parseViewBox(canvas.getAttribute('viewBox'));
+    expect(resetViewBox.width).toBeCloseTo(initialViewBox.width, 5);
+    expect(resetViewBox.height).toBeCloseTo(initialViewBox.height, 5);
   });
 
   it('lets the user choose light, dark, or system theme modes and persists the choice', async () => {
@@ -755,7 +955,7 @@ function startWallPieceDrag(piece: Element, clientX: number, clientY: number) {
 
 function placeStagedPieceOnWall(
   name: RegExp | string = /Drag Piece 1 from staging/i,
-  point = { clientX: 0, clientY: 0 },
+  point = { clientX: 50, clientY: 50 },
 ) {
   const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
   mockCanvasProjection(canvas);
@@ -779,4 +979,18 @@ function placeStagedPieceOnWall(
     );
   });
   return canvas;
+}
+
+function parseViewBox(viewBox: string | null): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
+  if (!viewBox) {
+    throw new Error('Expected a viewBox.');
+  }
+
+  const [x, y, width, height] = viewBox.split(' ').map(Number);
+  return { x, y, width, height };
 }

@@ -93,10 +93,7 @@ export function getPlacementIssues(
   pieces: ArtPiece[],
   placements: Placement[],
 ): string[] {
-  void sections;
-  void pieces;
-  void placements;
-  return [];
+  return getAutoPlacementIssues(sections, pieces, placements);
 }
 
 export function getAutoPlacementIssues(

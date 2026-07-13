@@ -3,6 +3,7 @@ import {
   FileImage,
   FileJson,
   FileText,
+  Maximize2,
   Move,
   PackageOpen,
   Plus,
@@ -11,9 +12,11 @@ import {
   SlidersHorizontal,
   Trash2,
   Upload,
+  ZoomIn,
+  ZoomOut,
   Wand2,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { autoPlacePieces } from './lib/autoPlace';
 import {
   applicationThemeOptions,
@@ -61,6 +64,12 @@ const STORAGE_KEY = 'gallery-designer-state-v1';
 const STAGING_SCALE_PX_PER_IN = 4;
 const DRAG_PREVIEW_SCALE_PX_PER_IN = 3;
 const SUPPRESS_TEXT_SELECTION_CLASS = 'suppress-text-selection';
+const DEFAULT_WALL_PADDING_IN = 14;
+const DEFAULT_WALL_LABEL_GAP_IN = 10;
+const MIN_WALL_ZOOM = 0.5;
+const MAX_WALL_ZOOM = 4;
+const ZOOM_BUTTON_FACTOR = 1.2;
+const WALL_MOUSE_PAN_ID = -2;
 
 interface GalleryState {
   unit: Unit;
@@ -99,6 +108,37 @@ interface WallDragPreview {
   heightPx: number;
 }
 
+interface WallViewBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface WallZoomState {
+  scale: number;
+  centerX: number;
+  centerY: number;
+}
+
+interface WallZoomGesture {
+  pointers: Map<number, { clientX: number; clientY: number }>;
+  startDistance: number;
+  startScale: number;
+}
+
+interface WallPanState {
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  startCenterX: number;
+  startCenterY: number;
+  viewBoxWidth: number;
+  viewBoxHeight: number;
+  canvasWidthPx: number;
+  canvasHeightPx: number;
+}
+
 const defaultState: GalleryState = {
   unit: 'in',
   themeMode: 'system',
@@ -134,12 +174,55 @@ export default function App() {
   const [state, setState] = useState<GalleryState>(() => loadState());
   const [selectedSectionId, setSelectedSectionId] = useState('');
   const [wallDragPreview, setWallDragPreview] = useState<WallDragPreview | null>(null);
+  const [undoState, setUndoState] = useState<GalleryState | null>(null);
+  const [wallZoom, setWallZoom] = useState<WallZoomState>(() =>
+    getDefaultWallZoomState(getWallCanvasBaseViewBox(defaultState.sections, defaultState.features)),
+  );
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const wallDisplayRef = useRef<HTMLDivElement | null>(null);
+  const wallBaseViewBoxRef = useRef<WallViewBox | null>(null);
+  const wallZoomRef = useRef(wallZoom);
+  const wallViewBoxRef = useRef<WallViewBox | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const sectionDragRef = useRef<SectionDragState | null>(null);
+  const wallZoomGestureRef = useRef<WallZoomGesture | null>(null);
+  const wallPanRef = useRef<WallPanState | null>(null);
+  const interactionHandlersRef = useRef<{
+    updateWallZoomGesture: (event: PointerEvent) => boolean;
+    updateWallPan: (
+      event: Pick<PointerEvent, 'clientX' | 'clientY'> & { pointerId?: number },
+    ) => boolean;
+    updateWallMousePan: (event: MouseEvent) => boolean;
+    updatePointerDrag: (event: { clientX: number; clientY: number }) => void;
+    finishPieceDrag: (event?: { clientX: number; clientY: number; pointerId?: number }) => void;
+    finishWallPan: (event?: { pointerId?: number }) => void;
+    finishWallMousePan: () => void;
+    handleWallWheelInput: (event: {
+      altKey: boolean;
+      clientX: number;
+      clientY: number;
+      ctrlKey: boolean;
+      deltaMode: number;
+      deltaX: number;
+      deltaY: number;
+      metaKey: boolean;
+    }) => void;
+    handleCanvasKeyDown: (event: KeyboardEvent) => void;
+  } | null>(null);
 
   const wallIssues = useMemo(() => validateWallSections(state.sections), [state.sections]);
+  const wallBaseViewBox = useMemo(
+    () => getWallCanvasBaseViewBox(state.sections, state.features),
+    [state.sections, state.features],
+  );
+  const wallViewBox = useMemo(
+    () => getWallZoomedViewBox(wallBaseViewBox, wallZoom),
+    [wallBaseViewBox, wallZoom],
+  );
+  wallBaseViewBoxRef.current = wallBaseViewBox;
+  wallZoomRef.current = wallZoom;
+  wallViewBoxRef.current = wallViewBox;
   const placementIssues = useMemo(
     () => getPlacementIssues(state.sections, state.pieces, state.placements),
     [state.sections, state.pieces, state.placements],
@@ -162,8 +245,24 @@ export default function App() {
   );
   const readyToExport = allIssues.length === 0 && state.pieces.length > 0;
 
+  interactionHandlersRef.current = {
+    updateWallZoomGesture,
+    updateWallPan,
+    updateWallMousePan,
+    updatePointerDrag,
+    finishPieceDrag,
+    finishWallPan,
+    finishWallMousePan,
+    handleWallWheelInput,
+    handleCanvasKeyDown,
+  };
+
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      // Persistence is a convenience; a full or unavailable store must not break editing.
+    }
   }, [state]);
 
   useEffect(() => {
@@ -187,29 +286,165 @@ export default function App() {
 
   useEffect(() => {
     function handleWindowPointerMove(event: PointerEvent) {
+      const handlers = interactionHandlersRef.current;
+      if (!handlers) {
+        return;
+      }
+      if (handlers.updateWallZoomGesture(event)) {
+        event.preventDefault();
+        return;
+      }
+      if (handlers.updateWallPan(event)) {
+        event.preventDefault();
+        return;
+      }
       const drag = dragRef.current;
       if (drag) {
         event.preventDefault();
-        updatePointerDrag(event);
+        handlers.updatePointerDrag(event);
       }
     }
 
     function handleWindowPointerUp(event: PointerEvent) {
-      finishPieceDrag(event);
+      interactionHandlersRef.current?.finishPieceDrag(event);
+      interactionHandlersRef.current?.finishWallPan(event);
+    }
+
+    function handleWindowMouseMove(event: MouseEvent) {
+      if (interactionHandlersRef.current?.updateWallMousePan(event)) {
+        event.preventDefault();
+      }
+    }
+
+    function handleWindowMouseUp() {
+      interactionHandlersRef.current?.finishWallMousePan();
     }
 
     window.addEventListener('pointermove', handleWindowPointerMove);
     window.addEventListener('pointerup', handleWindowPointerUp);
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
     return () => {
       window.removeEventListener('pointermove', handleWindowPointerMove);
       window.removeEventListener('pointerup', handleWindowPointerUp);
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
     };
-  });
+  }, []);
 
   useEffect(() => {
-    window.addEventListener('keydown', handleCanvasKeyDown);
-    return () => window.removeEventListener('keydown', handleCanvasKeyDown);
-  });
+    const handleKeyDown = (event: KeyboardEvent) => {
+      interactionHandlersRef.current?.handleCanvasKeyDown(event);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    setWallZoom((current) =>
+      current.scale === 1
+        ? {
+            ...current,
+            centerX: wallBaseViewBox.x + wallBaseViewBox.width / 2,
+            centerY: wallBaseViewBox.y + wallBaseViewBox.height / 2,
+          }
+        : current,
+    );
+  }, [wallBaseViewBox.x, wallBaseViewBox.y, wallBaseViewBox.width, wallBaseViewBox.height]);
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) {
+      return;
+    }
+    const canvas = svg;
+
+    function handleNativePointerDown(event: PointerEvent) {
+      if (
+        event.button !== 0 ||
+        dragRef.current ||
+        sectionDragRef.current ||
+        wallPanRef.current ||
+        !isWallPanTarget(event.target) ||
+        !Number.isFinite(event.clientX) ||
+        !Number.isFinite(event.clientY)
+      ) {
+        return;
+      }
+
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) {
+        return;
+      }
+
+      event.preventDefault();
+      startWallPan(event, getPointerId(event), rect);
+    }
+
+    function handleNativePointerMove(event: PointerEvent) {
+      if (interactionHandlersRef.current?.updateWallPan(event)) {
+        event.preventDefault();
+      }
+    }
+
+    function handleNativePointerUp(event: PointerEvent) {
+      interactionHandlersRef.current?.finishWallPan(event);
+    }
+
+    function handleNativeMouseDown(event: MouseEvent) {
+      if (
+        event.button !== 0 ||
+        dragRef.current ||
+        sectionDragRef.current ||
+        wallPanRef.current ||
+        !isWallPanTarget(event.target) ||
+        !Number.isFinite(event.clientX) ||
+        !Number.isFinite(event.clientY)
+      ) {
+        return;
+      }
+
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) {
+        return;
+      }
+
+      event.preventDefault();
+      startWallPan(event, WALL_MOUSE_PAN_ID, rect);
+    }
+
+    window.addEventListener('pointerdown', handleNativePointerDown, true);
+    window.addEventListener('pointermove', handleNativePointerMove);
+    window.addEventListener('pointerup', handleNativePointerUp);
+    window.addEventListener('mousedown', handleNativeMouseDown, true);
+    return () => {
+      window.removeEventListener('pointerdown', handleNativePointerDown, true);
+      window.removeEventListener('pointermove', handleNativePointerMove);
+      window.removeEventListener('pointerup', handleNativePointerUp);
+      window.removeEventListener('mousedown', handleNativeMouseDown, true);
+    };
+  }, []);
+
+  useEffect(() => {
+    const display = wallDisplayRef.current;
+    if (!display) {
+      return;
+    }
+    const displayPanel = display;
+
+    function handleDisplayWheel(event: WheelEvent) {
+      if (!(event.target instanceof Node) || !displayPanel.contains(event.target)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      interactionHandlersRef.current?.handleWallWheelInput(event);
+    }
+
+    displayPanel.addEventListener('wheel', handleDisplayWheel, { passive: false });
+    return () => displayPanel.removeEventListener('wheel', handleDisplayWheel);
+  }, []);
 
   function selectPiece(pieceId: string) {
     setState((current) => ({ ...current, selectedPieceId: pieceId }));
@@ -338,6 +573,7 @@ export default function App() {
   }
 
   function removePiece(pieceId: string) {
+    setUndoState(state);
     setState((current) => {
       const nextPieces = current.pieces.filter((piece) => piece.id !== pieceId);
       return {
@@ -367,6 +603,7 @@ export default function App() {
   function commitPiecePlacement(proposedPlacement: Placement) {
     setState((current) => {
       const section = getSectionById(current.sections, proposedPlacement.sectionId);
+      const piece = current.pieces.find((candidate) => candidate.id === proposedPlacement.pieceId);
       if (!section) {
         return current;
       }
@@ -379,7 +616,10 @@ export default function App() {
           ...current.placements.filter((candidate) => candidate.pieceId !== placement.pieceId),
           placement,
         ],
-        message: 'Placement updated.',
+        message:
+          piece && section
+            ? `Placed ${piece.label} on ${section.name}.`
+            : 'Placed a piece on the wall.',
       };
     });
   }
@@ -394,17 +634,48 @@ export default function App() {
         ),
         proposedPlacement,
       ],
-      message: 'Piece position adjusted.',
+      message: `Moved ${getPieceLabel(current, proposedPlacement.pieceId)} on the wall.`,
     }));
   }
 
   function resetWall() {
+    setUndoState(state);
     setState((current) => ({
       ...current,
       placements: [],
       selectedPieceId: current.pieces[0]?.id ?? '',
-      message: 'Wall reset. All pieces returned to the staging tray.',
+      message: 'Reset the wall. All pieces returned to the staging tray.',
     }));
+  }
+
+  function fitWallZoom() {
+    setWallZoom(getDefaultWallZoomState(wallBaseViewBox));
+    wallZoomGestureRef.current = null;
+  }
+
+  function zoomWallBy(factor: number) {
+    setWallZoom((current) =>
+      zoomWallStateAroundPoint(
+        wallBaseViewBox,
+        getWallZoomedViewBox(wallBaseViewBox, current),
+        clampWallZoomScale(current.scale * factor),
+      ),
+    );
+  }
+
+  function zoomWallAroundClientPoint(
+    nextScale: number,
+    focusPoint?: Pick<React.PointerEvent | PointerEvent | React.WheelEvent, 'clientX' | 'clientY'>,
+  ) {
+    const focusSvgPoint = focusPoint ? clientPointToSvg(focusPoint) : null;
+    setWallZoom((current) =>
+      zoomWallStateAroundPoint(
+        wallBaseViewBox,
+        getWallZoomedViewBox(wallBaseViewBox, current),
+        clampWallZoomScale(nextScale),
+        focusSvgPoint,
+      ),
+    );
   }
 
   function updateFeatures(patch: Partial<EditorFeatures>) {
@@ -414,7 +685,7 @@ export default function App() {
         ...current.features,
         ...patch,
       },
-      message: 'Feature settings updated.',
+      message: 'Updated snapping and buffer settings.',
     }));
   }
 
@@ -423,8 +694,155 @@ export default function App() {
       ...current,
       selectedPieceId: pieceId,
       placements: current.placements.filter((placement) => placement.pieceId !== pieceId),
-      message: 'Piece returned to the staging tray.',
+      message: `Returned ${getPieceLabel(current, pieceId)} to the staging tray.`,
     }));
+  }
+
+  function handleWallPointerDownCapture(event: React.PointerEvent<SVGSVGElement>) {
+    if (event.pointerType !== 'touch') {
+      if (wallZoom.scale > 1 && isWallPanTarget(event.target)) {
+        const rect = svgRef.current?.getBoundingClientRect();
+        if (rect && rect.width > 0 && rect.height > 0) {
+          event.preventDefault();
+          startWallPan(event, getPointerId(event), rect);
+        }
+      }
+      return;
+    }
+
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+
+    if (typeof event.currentTarget.setPointerCapture === 'function') {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+
+    const gesture = wallZoomGestureRef.current ?? {
+      pointers: new Map<number, { clientX: number; clientY: number }>(),
+      startDistance: 0,
+      startScale: wallZoom.scale,
+    };
+    gesture.pointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+    if (gesture.pointers.size >= 2) {
+      const points = [...gesture.pointers.values()].slice(0, 2);
+      gesture.startDistance = Math.max(0.01, distanceBetween(points[0], points[1]));
+      gesture.startScale = wallZoom.scale;
+    }
+    wallZoomGestureRef.current = gesture;
+  }
+
+  function handleWallWheelInput(event: {
+    altKey: boolean;
+    clientX: number;
+    clientY: number;
+    ctrlKey: boolean;
+    deltaMode: number;
+    deltaX: number;
+    deltaY: number;
+    metaKey: boolean;
+  }) {
+    if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+      panWallByWheel(event);
+      return;
+    }
+
+    const baseViewBox = wallBaseViewBoxRef.current;
+    if (!baseViewBox) {
+      return;
+    }
+
+    const factor = Math.exp(-event.deltaY * 0.0015);
+    const focusSvgPoint = clientPointToSvg(event);
+    setWallZoom((current) =>
+      zoomWallStateAroundPoint(
+        baseViewBox,
+        getWallZoomedViewBox(baseViewBox, current),
+        clampWallZoomScale(current.scale * factor),
+        focusSvgPoint,
+      ),
+    );
+  }
+
+  function handleWallPanPointerDown(event: React.PointerEvent<SVGRectElement>) {
+    if (
+      (typeof event.button === 'number' && event.button !== 0) ||
+      dragRef.current ||
+      sectionDragRef.current ||
+      !Number.isFinite(event.clientX) ||
+      !Number.isFinite(event.clientY)
+    ) {
+      return;
+    }
+
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      return;
+    }
+
+    event.preventDefault();
+    if (typeof event.currentTarget.setPointerCapture === 'function') {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    startWallPan(event, getPointerId(event), rect);
+  }
+
+  function handleWallPanMouseDown(event: React.MouseEvent<SVGRectElement>) {
+    if (
+      event.button !== 0 ||
+      dragRef.current ||
+      sectionDragRef.current ||
+      wallPanRef.current ||
+      !Number.isFinite(event.clientX) ||
+      !Number.isFinite(event.clientY)
+    ) {
+      return;
+    }
+
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      return;
+    }
+
+    event.preventDefault();
+    startWallPan(event, WALL_MOUSE_PAN_ID, rect);
+  }
+
+  function startWallPan(
+    event: { clientX: number; clientY: number },
+    pointerId: number,
+    rect: DOMRect,
+  ) {
+    const currentZoom = wallZoomRef.current;
+    const currentViewBox = wallViewBoxRef.current;
+    if (!currentViewBox) {
+      return;
+    }
+
+    wallPanRef.current = {
+      pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startCenterX: currentZoom.centerX,
+      startCenterY: currentZoom.centerY,
+      viewBoxWidth: currentViewBox.width,
+      viewBoxHeight: currentViewBox.height,
+      canvasWidthPx: rect.width,
+      canvasHeightPx: rect.height,
+    };
+    startSuppressingTextSelection();
+  }
+
+  function handleWallPanPointerMove(event: React.PointerEvent<SVGRectElement>) {
+    if (updateWallPan(event)) {
+      event.preventDefault();
+    }
+  }
+
+  function handleWallPanMouseMove(event: React.MouseEvent<SVGRectElement>) {
+    if (updateWallMousePan(event.nativeEvent)) {
+      event.preventDefault();
+    }
   }
 
   function handleStagedPiecePointerDown(
@@ -463,6 +881,15 @@ export default function App() {
     event: React.PointerEvent<SVGRectElement>,
     section: WallSection,
   ) {
+    if (wallZoom.scale > 1) {
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (rect && rect.width > 0 && rect.height > 0) {
+        event.preventDefault();
+        startWallPan(event, getPointerId(event), rect);
+      }
+      return;
+    }
+
     event.preventDefault();
     selectSection(section.id);
     const point = clientPointToSvg(event);
@@ -480,6 +907,18 @@ export default function App() {
     };
   }
 
+  function handleSectionMouseDown(event: React.MouseEvent<SVGRectElement>) {
+    if (wallZoom.scale <= 1) {
+      return;
+    }
+
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (rect && rect.width > 0 && rect.height > 0) {
+      event.preventDefault();
+      startWallPan(event, WALL_MOUSE_PAN_ID, rect);
+    }
+  }
+
   function handleAutoPlace() {
     const result = autoPlacePieces(state.sections, state.pieces);
     if (!result.ok) {
@@ -487,6 +926,7 @@ export default function App() {
       return;
     }
 
+    setUndoState(state);
     setState((current) => ({
       ...current,
       placements: result.placements,
@@ -496,6 +936,14 @@ export default function App() {
           ? 'Auto-placement created a grid layout.'
           : 'Auto-placement created an organic layout.',
     }));
+  }
+
+  function undoLastChange() {
+    if (!undoState) {
+      return;
+    }
+    setState({ ...undoState, message: 'Restored the previous change.' });
+    setUndoState(null);
   }
 
   function handlePointerDown(event: React.PointerEvent<SVGRectElement>, placement: Placement) {
@@ -528,6 +976,11 @@ export default function App() {
   }
 
   function handlePointerMove(event: React.PointerEvent<SVGSVGElement>) {
+    if (updateWallPan(event)) {
+      event.preventDefault();
+      return;
+    }
+
     const sectionDrag = sectionDragRef.current;
     if (sectionDrag) {
       const point = clientPointToSvg(event);
@@ -565,9 +1018,11 @@ export default function App() {
 
   function handlePointerUp(event?: React.PointerEvent<SVGSVGElement>) {
     finishPieceDrag(event);
+    finishWallPan(event);
   }
 
-  function finishPieceDrag(event?: Pick<React.PointerEvent | PointerEvent, 'clientX' | 'clientY'>) {
+  function finishPieceDrag(event?: { clientX: number; clientY: number; pointerId?: number }) {
+    finishWallZoomGesture(event);
     const drag = dragRef.current;
     if (drag && event && pointerIsOverStagingTray(event)) {
       removePlacement(drag.pieceId);
@@ -581,6 +1036,148 @@ export default function App() {
     sectionDragRef.current = null;
     setWallDragPreview(null);
     stopSuppressingTextSelection();
+  }
+
+  function finishWallZoomGesture(event?: { pointerId?: number }) {
+    const gesture = wallZoomGestureRef.current;
+    if (!gesture) {
+      return;
+    }
+
+    if (event && typeof event.pointerId === 'number') {
+      gesture.pointers.delete(event.pointerId);
+    }
+
+    if (gesture.pointers.size < 2) {
+      wallZoomGestureRef.current = null;
+    }
+  }
+
+  function finishWallPan(event?: { pointerId?: number }) {
+    const pan = wallPanRef.current;
+    if (!pan) {
+      return;
+    }
+    if (!event || getPointerId(event) === pan.pointerId) {
+      wallPanRef.current = null;
+      stopSuppressingTextSelection();
+    }
+  }
+
+  function finishWallMousePan() {
+    const pan = wallPanRef.current;
+    if (!pan || pan.pointerId !== WALL_MOUSE_PAN_ID) {
+      return;
+    }
+    wallPanRef.current = null;
+    stopSuppressingTextSelection();
+  }
+
+  function updateWallZoomGesture(
+    event: Pick<PointerEvent, 'pointerId' | 'clientX' | 'clientY'> & { pointerType?: string },
+  ): boolean {
+    const gesture = wallZoomGestureRef.current;
+    if (!gesture || gesture.pointers.size < 2) {
+      return false;
+    }
+
+    if (event.pointerType && event.pointerType !== 'touch') {
+      return false;
+    }
+
+    if (!gesture.pointers.has(event.pointerId)) {
+      return false;
+    }
+
+    gesture.pointers.set(event.pointerId, {
+      clientX: event.clientX,
+      clientY: event.clientY,
+    });
+
+    const points = [...gesture.pointers.values()].slice(0, 2);
+    if (points.length < 2) {
+      return false;
+    }
+
+    const currentDistance = distanceBetween(points[0], points[1]);
+    if (currentDistance <= 0 || gesture.startScale <= 0 || gesture.startDistance <= 0) {
+      return false;
+    }
+
+    const focusPoint = midpointBetween(points[0], points[1]);
+    const nextScale = clampWallZoomScale(
+      gesture.startScale * (currentDistance / gesture.startDistance),
+    );
+    zoomWallAroundClientPoint(nextScale, focusPoint);
+    return true;
+  }
+
+  function updateWallPan(
+    event: Pick<PointerEvent, 'clientX' | 'clientY'> & { pointerId?: number },
+  ): boolean {
+    const pan = wallPanRef.current;
+    if (
+      !pan ||
+      getPointerId(event) !== pan.pointerId ||
+      !Number.isFinite(event.clientX) ||
+      !Number.isFinite(event.clientY)
+    ) {
+      return false;
+    }
+
+    const deltaX = event.clientX - pan.startClientX;
+    const deltaY = event.clientY - pan.startClientY;
+    const nextCenter = clampWallZoomCenter(
+      wallBaseViewBox,
+      pan.viewBoxWidth,
+      pan.viewBoxHeight,
+      pan.startCenterX - (deltaX / pan.canvasWidthPx) * pan.viewBoxWidth,
+      pan.startCenterY - (deltaY / pan.canvasHeightPx) * pan.viewBoxHeight,
+    );
+
+    setWallZoom((current) => ({
+      ...current,
+      centerX: nextCenter.centerX,
+      centerY: nextCenter.centerY,
+    }));
+    return true;
+  }
+
+  function updateWallMousePan(event: MouseEvent): boolean {
+    const pan = wallPanRef.current;
+    if (pan?.pointerId !== WALL_MOUSE_PAN_ID) {
+      return false;
+    }
+    return updateWallPan({
+      pointerId: WALL_MOUSE_PAN_ID,
+      clientX: event.clientX,
+      clientY: event.clientY,
+    });
+  }
+
+  function panWallByWheel(event: { deltaMode: number; deltaX: number; deltaY: number }) {
+    const rect = svgRef.current?.getBoundingClientRect();
+    const baseViewBox = wallBaseViewBoxRef.current;
+    if (!rect || rect.width <= 0 || rect.height <= 0 || !baseViewBox) {
+      return;
+    }
+
+    const delta = normalizeWheelDelta(event);
+    setWallZoom((current) => {
+      const currentViewBox = getWallZoomedViewBox(baseViewBox, current);
+      const nextCenter = clampWallZoomCenter(
+        baseViewBox,
+        currentViewBox.width,
+        currentViewBox.height,
+        current.centerX + (delta.x / rect.width) * currentViewBox.width,
+        current.centerY + (delta.y / rect.height) * currentViewBox.height,
+      );
+      return {
+        ...current,
+        centerX: nextCenter.centerX,
+        centerY: nextCenter.centerY,
+      };
+    });
   }
 
   function pointerIsOverStagingTray(
@@ -599,6 +1196,9 @@ export default function App() {
 
   function handleCanvasKeyDown(event: KeyboardEvent) {
     if (isTextEntryTarget(event.target)) {
+      return;
+    }
+    if (event.target instanceof Element && event.target.closest('svg [role="button"]')) {
       return;
     }
     if (!selectedPiece || !selectedPlacement) {
@@ -623,9 +1223,69 @@ export default function App() {
     });
   }
 
-  function clientPointToSvg(
-    event: Pick<React.PointerEvent | PointerEvent, 'clientX' | 'clientY'>,
-  ): DOMPoint | null {
+  function handleSectionKeyDown(event: React.KeyboardEvent<SVGRectElement>, section: WallSection) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      selectSection(section.id);
+      return;
+    }
+
+    const step = event.shiftKey ? 1 : 1 / 4;
+    const deltas: Record<string, [number, number]> = {
+      ArrowUp: [0, -step],
+      ArrowDown: [0, step],
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+    };
+    const delta = deltas[event.key];
+    if (!delta) {
+      return;
+    }
+    event.preventDefault();
+    setSelectedSectionId(section.id);
+    setState((current) => ({
+      ...current,
+      sections: moveWallSection(
+        current.sections,
+        section.id,
+        applyWallSectionFeatures(
+          current.sections,
+          section.id,
+          { xIn: (section.xIn ?? 0) + delta[0], yIn: (section.yIn ?? 0) + delta[1] },
+          current.features,
+        ),
+      ),
+      message: 'Wall section moved. Sections snap together by shared edges.',
+    }));
+  }
+
+  function handlePieceKeyDown(event: React.KeyboardEvent<SVGRectElement>, placement: Placement) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      selectPiece(placement.pieceId);
+      return;
+    }
+
+    if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+      return;
+    }
+    event.preventDefault();
+    const step = event.shiftKey ? 1 : 1 / 4;
+    const deltas: Record<string, [number, number]> = {
+      ArrowUp: [0, -step],
+      ArrowDown: [0, step],
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+    };
+    const [deltaX, deltaY] = deltas[event.key];
+    nudgePiece({
+      ...placement,
+      xIn: roundToPrecision(placement.xIn + deltaX),
+      yIn: roundToPrecision(placement.yIn + deltaY),
+    });
+  }
+
+  function clientPointToSvg(event: { clientX: number; clientY: number }): DOMPoint | null {
     if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) {
       return null;
     }
@@ -663,9 +1323,7 @@ export default function App() {
     };
   }
 
-  function updatePointerDrag(
-    event: Pick<PointerEvent | React.PointerEvent, 'clientX' | 'clientY'>,
-  ) {
+  function updatePointerDrag(event: { clientX: number; clientY: number }) {
     const drag = dragRef.current;
     const point = clientPointToSvg(event);
     if (!drag || !point) {
@@ -751,7 +1409,7 @@ export default function App() {
   }
 
   function getPointerPlacement(
-    event: Pick<React.PointerEvent | PointerEvent, 'clientX' | 'clientY'>,
+    event: { clientX: number; clientY: number },
     piece: ArtPiece,
   ): Placement | null {
     const point = clientPointToSvg(event);
@@ -886,6 +1544,11 @@ export default function App() {
                     valueIn={section.widthIn}
                     unit={state.unit}
                     precision="size"
+                    error={
+                      !Number.isFinite(section.widthIn) || section.widthIn <= 0
+                        ? `${section.name} needs a positive width.`
+                        : undefined
+                    }
                     onChange={(widthIn) => updateSection(section.id, { widthIn })}
                   />
                   <NumberField
@@ -893,12 +1556,18 @@ export default function App() {
                     valueIn={section.heightIn}
                     unit={state.unit}
                     precision="size"
+                    error={
+                      !Number.isFinite(section.heightIn) || section.heightIn <= 0
+                        ? `${section.name} needs a positive height.`
+                        : undefined
+                    }
                     onChange={(heightIn) => updateSection(section.id, { heightIn })}
                   />
                 </div>
                 <label className="field">
                   Corner after
                   <select
+                    aria-label={`Section ${index + 1} corner after`}
                     value={section.cornerAfter}
                     onChange={(event) =>
                       updateSection(section.id, {
@@ -962,6 +1631,11 @@ export default function App() {
                     valueIn={piece.widthIn}
                     unit={state.unit}
                     precision="size"
+                    error={
+                      !Number.isFinite(piece.widthIn) || piece.widthIn <= 0
+                        ? `${piece.label} needs a positive width.`
+                        : undefined
+                    }
                     onChange={(widthIn) => updatePiece(piece.id, { widthIn })}
                   />
                   <NumberField
@@ -969,6 +1643,11 @@ export default function App() {
                     valueIn={piece.heightIn}
                     unit={state.unit}
                     precision="size"
+                    error={
+                      !Number.isFinite(piece.heightIn) || piece.heightIn <= 0
+                        ? `${piece.label} needs a positive height.`
+                        : undefined
+                    }
                     onChange={(heightIn) => updatePiece(piece.id, { heightIn })}
                   />
                 </div>
@@ -988,27 +1667,41 @@ export default function App() {
 
         <section className="editor-column">
           <div className="editor-toolbar" role="toolbar" aria-label="Editor controls">
-            <label className="field compact">
-              Units
-              <select
-                value={state.unit}
-                onChange={(event) =>
-                  setState((current) => ({ ...current, unit: event.target.value as Unit }))
-                }
+            <div className="toolbar-group" role="group" aria-label="Placement controls">
+              <label className="field compact">
+                Units
+                <select
+                  value={state.unit}
+                  onChange={(event) =>
+                    setState((current) => ({ ...current, unit: event.target.value as Unit }))
+                  }
+                >
+                  <option value="in">Inches</option>
+                  <option value="cm">Centimeters</option>
+                </select>
+              </label>
+              <button type="button" className="primary" onClick={handleAutoPlace}>
+                <Wand2 size={18} />
+                Auto-place pieces
+              </button>
+              <button type="button" className="secondary" onClick={resetWall}>
+                <RotateCcw size={18} />
+                Reset wall
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!undoState}
+                onClick={undoLastChange}
               >
-                <option value="in">Inches</option>
-                <option value="cm">Centimeters</option>
-              </select>
-            </label>
-            <button type="button" className="primary" onClick={handleAutoPlace}>
-              <Wand2 size={18} />
-              Auto-place pieces
-            </button>
-            <button type="button" className="secondary" onClick={resetWall}>
-              <RotateCcw size={18} />
-              Reset wall
-            </button>
-            <div className="appearance-controls">
+                Undo last change
+              </button>
+            </div>
+            <div
+              className="toolbar-group appearance-controls"
+              role="group"
+              aria-label="Appearance controls"
+            >
               <label className="field compact">
                 Appearance
                 <select
@@ -1045,22 +1738,65 @@ export default function App() {
               </label>
             </div>
           </div>
-
-          <div className="canvas-card">
-            <WallCanvas
-              svgRef={svgRef}
-              sections={state.sections}
-              pieces={state.pieces}
-              placements={state.placements}
-              selectedPieceId={state.selectedPieceId}
-              selectedSectionId={selectedSectionId}
-              features={state.features}
-              unit={state.unit}
-              onSectionPointerDown={handleSectionPointerDown}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-            />
+          <div className="canvas-card" ref={wallDisplayRef}>
+            <div className="wall-canvas-shell">
+              <WallCanvas
+                svgRef={svgRef}
+                sections={state.sections}
+                pieces={state.pieces}
+                placements={state.placements}
+                selectedPieceId={state.selectedPieceId}
+                selectedSectionId={selectedSectionId}
+                features={state.features}
+                unit={state.unit}
+                viewBox={wallViewBox}
+                onSectionPointerDown={handleSectionPointerDown}
+                onSectionMouseDown={handleSectionMouseDown}
+                onSectionKeyDown={handleSectionKeyDown}
+                onPointerDownCapture={handleWallPointerDownCapture}
+                onPanPointerDown={handleWallPanPointerDown}
+                onPanPointerMove={handleWallPanPointerMove}
+                onPanMouseDown={handleWallPanMouseDown}
+                onPanMouseMove={handleWallPanMouseMove}
+                onPointerDown={handlePointerDown}
+                onPieceKeyDown={handlePieceKeyDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+              />
+              <div
+                className="zoom-controls zoom-controls-overlay"
+                role="group"
+                aria-label="Wall zoom controls"
+              >
+                <button
+                  type="button"
+                  className="secondary icon-button"
+                  aria-label="Zoom out"
+                  title="Zoom out"
+                  onClick={() => zoomWallBy(1 / ZOOM_BUTTON_FACTOR)}
+                >
+                  <ZoomOut size={18} aria-hidden="true" focusable="false" />
+                </button>
+                <button
+                  type="button"
+                  className="secondary icon-button"
+                  aria-label="Fit wall"
+                  title="Fit wall"
+                  onClick={fitWallZoom}
+                >
+                  <Maximize2 size={18} aria-hidden="true" focusable="false" />
+                </button>
+                <button
+                  type="button"
+                  className="secondary icon-button"
+                  aria-label="Zoom in"
+                  title="Zoom in"
+                  onClick={() => zoomWallBy(ZOOM_BUTTON_FACTOR)}
+                >
+                  <ZoomIn size={18} aria-hidden="true" focusable="false" />
+                </button>
+              </div>
+            </div>
             <StagingTray
               pieces={state.pieces}
               placements={state.placements}
@@ -1076,6 +1812,12 @@ export default function App() {
 
         <aside className="right-panel" aria-label="Details and export">
           <FeatureControls features={state.features} unit={state.unit} onChange={updateFeatures} />
+          <section className="status-panel" aria-label="Latest update">
+            <p className="status-panel-label">Latest update</p>
+            <p className="status-message" role="status" aria-live="polite">
+              {state.message}
+            </p>
+          </section>
           <ExportPanel
             ready={readyToExport}
             issues={allIssues}
@@ -1148,6 +1890,10 @@ function BrandLogo() {
   );
 }
 
+function getPieceLabel(state: GalleryState, pieceId: string): string {
+  return state.pieces.find((piece) => piece.id === pieceId)?.label ?? 'Piece';
+}
+
 function shouldKeepSelection(target: EventTarget): boolean {
   if (!(target instanceof Element)) {
     return false;
@@ -1166,6 +1912,13 @@ function shouldKeepSelection(target: EventTarget): boolean {
         '.staged-piece',
       ].join(','),
     ),
+  );
+}
+
+function isWallPanTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    Boolean(target.closest('.wall-pan-surface, .wall-section, .wall-exterior-edge'))
   );
 }
 
@@ -1284,6 +2037,130 @@ function getPreviewBufferGapPx(
   return scales.length > 0 ? Math.min(...scales) * gapIn : 0;
 }
 
+function getWallCanvasBaseViewBox(sections: WallSection[], features: EditorFeatures): WallViewBox {
+  const wallBounds = getWallBounds(sections);
+  const bufferPadding = features.wallEdgeBuffer ? features.wallEdgeBufferGapIn : 0;
+  const padding = DEFAULT_WALL_PADDING_IN + bufferPadding;
+  return {
+    x: wallBounds.minX - padding,
+    y: wallBounds.minY - padding,
+    width: Math.max(1, wallBounds.width + padding * 2),
+    height: Math.max(1, wallBounds.height + padding * 2 + DEFAULT_WALL_LABEL_GAP_IN),
+  };
+}
+
+function getDefaultWallZoomState(baseViewBox: WallViewBox): WallZoomState {
+  return {
+    scale: 1,
+    centerX: baseViewBox.x + baseViewBox.width / 2,
+    centerY: baseViewBox.y + baseViewBox.height / 2,
+  };
+}
+
+function getWallZoomedViewBox(baseViewBox: WallViewBox, zoom: WallZoomState): WallViewBox {
+  const scale = clampWallZoomScale(zoom.scale);
+  const width = baseViewBox.width / scale;
+  const height = baseViewBox.height / scale;
+  return {
+    x: zoom.centerX - width / 2,
+    y: zoom.centerY - height / 2,
+    width,
+    height,
+  };
+}
+
+function zoomWallStateAroundPoint(
+  baseViewBox: WallViewBox,
+  currentViewBox: WallViewBox,
+  nextScale: number,
+  focusPoint?: { x: number; y: number } | null,
+): WallZoomState {
+  const scale = clampWallZoomScale(nextScale);
+  const nextWidth = baseViewBox.width / scale;
+  const nextHeight = baseViewBox.height / scale;
+  const focus = focusPoint ?? {
+    x: currentViewBox.x + currentViewBox.width / 2,
+    y: currentViewBox.y + currentViewBox.height / 2,
+  };
+  const relativeX = (focus.x - currentViewBox.x) / Math.max(0.01, currentViewBox.width);
+  const relativeY = (focus.y - currentViewBox.y) / Math.max(0.01, currentViewBox.height);
+
+  return {
+    scale,
+    ...clampWallZoomCenter(
+      baseViewBox,
+      nextWidth,
+      nextHeight,
+      focus.x + (0.5 - relativeX) * nextWidth,
+      focus.y + (0.5 - relativeY) * nextHeight,
+    ),
+  };
+}
+
+function clampWallZoomScale(scale: number): number {
+  return Math.min(MAX_WALL_ZOOM, Math.max(MIN_WALL_ZOOM, scale));
+}
+
+function clampWallZoomCenter(
+  baseViewBox: WallViewBox,
+  viewBoxWidth: number,
+  viewBoxHeight: number,
+  centerX: number,
+  centerY: number,
+): Pick<WallZoomState, 'centerX' | 'centerY'> {
+  return {
+    centerX: clampViewBoxCenter(baseViewBox.x, baseViewBox.width, viewBoxWidth, centerX),
+    centerY: clampViewBoxCenter(baseViewBox.y, baseViewBox.height, viewBoxHeight, centerY),
+  };
+}
+
+function clampViewBoxCenter(
+  baseStart: number,
+  baseSize: number,
+  viewBoxSize: number,
+  center: number,
+): number {
+  if (viewBoxSize >= baseSize) {
+    return baseStart + baseSize / 2;
+  }
+
+  const minCenter = baseStart + viewBoxSize / 2;
+  const maxCenter = baseStart + baseSize - viewBoxSize / 2;
+  return Math.min(maxCenter, Math.max(minCenter, center));
+}
+
+function normalizeWheelDelta(event: { deltaMode: number; deltaX: number; deltaY: number }): {
+  x: number;
+  y: number;
+} {
+  const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 240 : 1;
+  return {
+    x: event.deltaX * unit,
+    y: event.deltaY * unit,
+  };
+}
+
+function getPointerId(event: { pointerId?: number }): number {
+  return Number.isFinite(event.pointerId) ? Number(event.pointerId) : -1;
+}
+
+function distanceBetween(
+  first: { clientX: number; clientY: number },
+  second: { clientX: number; clientY: number },
+) {
+  return Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
+}
+
+function midpointBetween(
+  first: { clientX: number; clientY: number },
+  second: { clientX: number; clientY: number },
+) {
+  return {
+    clientX: (first.clientX + second.clientX) / 2,
+    clientY: (first.clientY + second.clientY) / 2,
+  };
+}
+
 function getUnplacedPieceIssues(pieces: ArtPiece[], placements: Placement[]): string[] {
   const placedPieceIds = new Set(placements.map((placement) => placement.pieceId));
   const countsByLabel = new Map<string, number>();
@@ -1315,12 +2192,16 @@ function NumberField({
   valueIn,
   unit,
   precision = 'position',
+  disabled = false,
+  error,
   onChange,
 }: {
   label: string;
   valueIn: number;
   unit: Unit;
   precision?: 'position' | 'size';
+  disabled?: boolean;
+  error?: string;
   onChange: (valueIn: number) => void;
 }) {
   const display =
@@ -1328,6 +2209,7 @@ function NumberField({
   const round = precision === 'size' ? roundToSizePrecision : roundToPrecision;
   const [draft, setDraft] = useState(display);
   const [focused, setFocused] = useState(false);
+  const errorId = useId();
 
   useEffect(() => {
     if (!focused) {
@@ -1340,6 +2222,9 @@ function NumberField({
       {label}
       <input
         aria-label={label}
+        aria-invalid={error ? 'true' : undefined}
+        aria-describedby={error ? errorId : undefined}
+        disabled={disabled}
         inputMode="decimal"
         value={draft}
         onFocus={() => setFocused(true)}
@@ -1356,6 +2241,11 @@ function NumberField({
           onChange(round(toInches(parseMeasurement(next), unit)));
         }}
       />
+      {error ? (
+        <span id={errorId} className="field-error" role="alert">
+          {error}
+        </span>
+      ) : null}
     </label>
   );
 }
@@ -1389,6 +2279,7 @@ function FeatureControls({
         precision="size"
         onChange={(gridSizeIn) => onChange({ gridSizeIn: Math.max(0.125, gridSizeIn) })}
       />
+      <p className="muted feature-help">Snap settings apply while dragging or nudging pieces.</p>
       <label className="toggle-field">
         <input
           type="checkbox"
@@ -1419,6 +2310,7 @@ function FeatureControls({
         valueIn={features.wallEdgeBufferGapIn}
         unit={unit}
         precision="size"
+        disabled={!features.wallEdgeBuffer}
         onChange={(wallEdgeBufferGapIn) =>
           onChange({ wallEdgeBufferGapIn: Math.max(0.125, wallEdgeBufferGapIn) })
         }
@@ -1436,10 +2328,14 @@ function FeatureControls({
         valueIn={features.artPieceBufferGapIn}
         unit={unit}
         precision="size"
+        disabled={!features.artPieceBuffer}
         onChange={(artPieceBufferGapIn) =>
           onChange({ artPieceBufferGapIn: Math.max(0.125, artPieceBufferGapIn) })
         }
       />
+      <p className="muted feature-help">
+        Buffer guides reserve installation clearance around walls and artwork.
+      </p>
     </section>
   );
 }
@@ -1460,6 +2356,7 @@ function HookControls({
       <label className="field">
         Hooks
         <select
+          aria-label={`Hooks for ${piece.label}`}
           value={count}
           onChange={(event) => {
             const next = Number(event.target.value);
@@ -1597,8 +2494,17 @@ function WallCanvas({
   selectedSectionId,
   features,
   unit,
+  viewBox,
   onSectionPointerDown,
+  onSectionMouseDown,
+  onSectionKeyDown,
+  onPointerDownCapture,
+  onPanPointerDown,
+  onPanPointerMove,
+  onPanMouseDown,
+  onPanMouseMove,
   onPointerDown,
+  onPieceKeyDown,
   onPointerMove,
   onPointerUp,
 }: {
@@ -1610,24 +2516,38 @@ function WallCanvas({
   selectedSectionId: string;
   features: EditorFeatures;
   unit: Unit;
+  viewBox: WallViewBox;
   onSectionPointerDown: (event: React.PointerEvent<SVGRectElement>, section: WallSection) => void;
+  onSectionMouseDown: (event: React.MouseEvent<SVGRectElement>, section: WallSection) => void;
+  onSectionKeyDown: (event: React.KeyboardEvent<SVGRectElement>, section: WallSection) => void;
+  onPointerDownCapture: (event: React.PointerEvent<SVGSVGElement>) => void;
+  onPanPointerDown: (event: React.PointerEvent<SVGRectElement>) => void;
+  onPanPointerMove: (event: React.PointerEvent<SVGRectElement>) => void;
+  onPanMouseDown: (event: React.MouseEvent<SVGRectElement>) => void;
+  onPanMouseMove: (event: React.MouseEvent<SVGRectElement>) => void;
   onPointerDown: (event: React.PointerEvent<SVGRectElement>, placement: Placement) => void;
+  onPieceKeyDown: (event: React.KeyboardEvent<SVGRectElement>, placement: Placement) => void;
   onPointerMove: (event: React.PointerEvent<SVGSVGElement>) => void;
   onPointerUp: (event: React.PointerEvent<SVGSVGElement>) => void;
 }) {
-  const layout = getWallLayout(sections);
-  const wallBounds = getWallBounds(sections);
-  const exteriorEdges = getWallExteriorEdges(sections);
+  const layout = useMemo(() => getWallLayout(sections), [sections]);
+  const sectionOffsets = useMemo(
+    () =>
+      new Map(
+        layout.map(({ section, offsetXIn, offsetYIn }) => [section.id, { offsetXIn, offsetYIn }]),
+      ),
+    [layout],
+  );
+  const piecesById = useMemo(() => new Map(pieces.map((piece) => [piece.id, piece])), [pieces]);
+  const exteriorEdges = useMemo(() => getWallExteriorEdges(sections), [sections]);
   const gridSize = features.snapToGrid ? Math.max(0.125, features.gridSizeIn) : 6;
-  const bufferPadding = features.wallEdgeBuffer ? features.wallEdgeBufferGapIn : 0;
-  const padding = 14 + bufferPadding;
-  const wallEdgeBufferPaths = features.wallEdgeBuffer
-    ? getInsetWallExteriorPaths(sections, features.wallEdgeBufferGapIn)
-    : [];
-  const viewBox = `${wallBounds.minX - padding} ${wallBounds.minY - padding} ${Math.max(
-    1,
-    wallBounds.width + padding * 2,
-  )} ${Math.max(1, wallBounds.height + padding * 2 + 10)}`;
+  const wallEdgeBufferPaths = useMemo(
+    () =>
+      features.wallEdgeBuffer
+        ? getInsetWallExteriorPaths(sections, features.wallEdgeBufferGapIn)
+        : [],
+    [features.wallEdgeBuffer, features.wallEdgeBufferGapIn, sections],
+  );
 
   return (
     <svg
@@ -1635,7 +2555,8 @@ function WallCanvas({
       className="wall-canvas"
       role="img"
       aria-label="Scaled gallery wall layout"
-      viewBox={viewBox}
+      viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
+      onPointerDownCapture={onPointerDownCapture}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
@@ -1651,11 +2572,16 @@ function WallCanvas({
         </pattern>
       </defs>
       <rect
-        x={wallBounds.minX - padding}
-        y={wallBounds.minY - padding}
-        width={wallBounds.width + padding * 2}
-        height={wallBounds.height + padding * 2}
+        x={viewBox.x}
+        y={viewBox.y}
+        width={viewBox.width}
+        height={viewBox.height}
         fill="url(#minor-grid)"
+        className="wall-pan-surface"
+        onPointerDown={onPanPointerDown}
+        onPointerMove={onPanPointerMove}
+        onMouseDown={onPanMouseDown}
+        onMouseMove={onPanMouseMove}
       />
       {layout.map(({ section, offsetXIn, offsetYIn }) => (
         <g key={section.id}>
@@ -1667,8 +2593,11 @@ function WallCanvas({
             className={section.id === selectedSectionId ? 'wall-section selected' : 'wall-section'}
             role="button"
             tabIndex={0}
+            aria-pressed={section.id === selectedSectionId}
             aria-label={`Move ${section.name}`}
             onPointerDown={(event) => onSectionPointerDown(event, section)}
+            onMouseDown={(event) => onSectionMouseDown(event, section)}
+            onKeyDown={(event) => onSectionKeyDown(event, section)}
           />
           <text x={offsetXIn + 2} y={offsetYIn - 2} className="section-label">
             {section.name} - {formatMeasurement(section.widthIn, unit)} x{' '}
@@ -1676,9 +2605,9 @@ function WallCanvas({
           </text>
         </g>
       ))}
-      {exteriorEdges.map((edge) => (
+      {exteriorEdges.map((edge, index) => (
         <line
-          key={`${edge.x1}-${edge.y1}-${edge.x2}-${edge.y2}`}
+          key={`wall-exterior-edge-${index}-${edge.x1}-${edge.y1}-${edge.x2}-${edge.y2}`}
           x1={edge.x1}
           y1={edge.y1}
           x2={edge.x2}
@@ -1696,12 +2625,13 @@ function WallCanvas({
         />
       ))}
       {placements.map((placement) => {
-        const piece = pieces.find((candidate) => candidate.id === placement.pieceId);
+        const piece = piecesById.get(placement.pieceId);
         if (!piece) {
           return null;
         }
-        const offsetX = getSectionOffsetX(sections, placement.sectionId);
-        const offsetY = getSectionOffsetY(sections, placement.sectionId);
+        const offset = sectionOffsets.get(placement.sectionId) ?? { offsetXIn: 0, offsetYIn: 0 };
+        const offsetX = offset.offsetXIn;
+        const offsetY = offset.offsetYIn;
         const selected = piece.id === selectedPieceId;
         const pieceX = offsetX + placement.xIn;
         const pieceY = offsetY + placement.yIn;
@@ -1732,8 +2662,11 @@ function WallCanvas({
               rx="0.8"
               focusable="false"
               role="button"
+              tabIndex={0}
+              aria-pressed={selected}
               aria-label={`Move ${piece.label}`}
               onPointerDown={(event) => onPointerDown(event, placement)}
+              onKeyDown={(event) => onPieceKeyDown(event, placement)}
             />
             <text
               x={pieceX + piece.widthIn / 2}
@@ -1777,8 +2710,8 @@ function fitPieceLabel(label: string, widthIn: number, heightIn: number) {
   const availableWidth = Math.max(0.5, widthIn - padding * 2);
   const availableHeight = Math.max(0.5, heightIn - padding * 2);
   const text = label.trim().replace(/\s+/g, ' ') || 'Untitled';
-  const fontSizes = [3, 2.5, 2, 1.6, 1.25, 1];
-  const minimumInsideFontSize = 1.25;
+  const fontSizes = [3, 2.5, 2, 1.6];
+  const minimumInsideFontSize = 1.6;
 
   for (const fontSize of fontSizes) {
     const lines = wrapLabelLines(text, availableWidth, fontSize);
@@ -1792,7 +2725,7 @@ function fitPieceLabel(label: string, widthIn: number, heightIn: number) {
     }
   }
 
-  return { lines: [text], fontSize: 1.35, padding, placement: 'outside' as const };
+  return { lines: [text], fontSize: 1.6, padding, placement: 'outside' as const };
 }
 
 function wrapLabelLines(label: string, availableWidth: number, fontSize: number): string[] {
@@ -1878,7 +2811,7 @@ function ExportPanel({
           PNG and PDF exports include the visual layout, piece table, and installation measurements.
         </p>
         {issues.length > 0 ? (
-          <ul className="issue-list">
+          <ul className="issue-list" role="alert" aria-live="assertive">
             {issues.map((issue) => (
               <li key={issue}>{issue}</li>
             ))}
@@ -1927,6 +2860,9 @@ function ExportPanel({
         <Download size={16} />
         Print exports are for installation; JSON files are for editing this design later.
       </div>
+      <p className="muted persistence-note">
+        Your current design is saved locally in this browser.
+      </p>
     </section>
   );
 }
@@ -1939,7 +2875,7 @@ function MeasurementsTable({
   return (
     <section className="measurements-panel">
       <h2>Installation measurements</h2>
-      <table aria-label="Installation measurements">
+      <table className="measurements-table" aria-label="Installation measurements">
         <thead>
           <tr>
             <th>Order</th>
@@ -1951,32 +2887,167 @@ function MeasurementsTable({
           </tr>
         </thead>
         <tbody>
-          {instructions.map((instruction) => (
-            <tr key={instruction.pieceId}>
-              <td>{instruction.order}</td>
-              <td>{instruction.pieceLabel}</td>
-              <td>{instruction.sectionName}</td>
-              <td>
-                {instruction.topReference.formatted} from {instruction.topReference.label}
-              </td>
-              <td>
-                {instruction.sideReference.formatted} from {instruction.sideReference.label}
-              </td>
-              <td>
-                {instruction.hooks.length === 0
-                  ? 'No hook data'
-                  : instruction.hooks
-                      .map(
-                        (hook) =>
-                          `${hook.label}: ${hook.formattedY} down, ${hook.formattedX} from ${hook.reference}`,
-                      )
-                      .join('; ')}
+          {instructions.length === 0 ? (
+            <tr>
+              <td colSpan={6} className="empty-measurements">
+                Place a piece on the wall to see installation measurements.
               </td>
             </tr>
-          ))}
+          ) : (
+            instructions.map((instruction) => (
+              <tr key={instruction.pieceId}>
+                <td>{instruction.order}</td>
+                <td>{instruction.pieceLabel}</td>
+                <td>{instruction.sectionName}</td>
+                <td>
+                  {instruction.topReference.formatted} from {instruction.topReference.label}
+                </td>
+                <td>
+                  {instruction.sideReference.formatted} from {instruction.sideReference.label}
+                </td>
+                <td>
+                  {instruction.hooks.length === 0
+                    ? 'No hook data'
+                    : instruction.hooks
+                        .map(
+                          (hook) =>
+                            `${hook.label}: ${hook.formattedY} down, ${hook.formattedX} from ${hook.reference}`,
+                        )
+                        .join('; ')}
+                </td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
+      {instructions.length > 0 ? (
+        <div className="measurement-cards" aria-label="Installation measurements">
+          {instructions.map((instruction) => (
+            <article className="measurement-card" key={instruction.pieceId}>
+              <h3>
+                {instruction.order}. {instruction.pieceLabel}
+              </h3>
+              <p className="muted">{instruction.sectionName}</p>
+              <dl>
+                <div>
+                  <dt>Top</dt>
+                  <dd>
+                    {instruction.topReference.formatted} from {instruction.topReference.label}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Side</dt>
+                  <dd>
+                    {instruction.sideReference.formatted} from {instruction.sideReference.label}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Hooks</dt>
+                  <dd>
+                    {instruction.hooks.length === 0
+                      ? 'No hook data'
+                      : instruction.hooks
+                          .map(
+                            (hook) =>
+                              `${hook.label}: ${hook.formattedY} down, ${hook.formattedX} from ${hook.reference}`,
+                          )
+                          .join('; ')}
+                  </dd>
+                </div>
+              </dl>
+            </article>
+          ))}
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isHookSpec(value: unknown): value is HookSpec | undefined {
+  if (value === undefined) {
+    return true;
+  }
+  if (!isRecord(value) || (value.count !== 1 && value.count !== 2)) {
+    return false;
+  }
+  return value.count === 1
+    ? isFiniteNumber(value.topOffsetIn) && isFiniteNumber(value.leftOffsetIn)
+    : isFiniteNumber(value.leftTopOffsetIn) &&
+        isFiniteNumber(value.leftSideOffsetIn) &&
+        isFiniteNumber(value.rightTopOffsetIn) &&
+        isFiniteNumber(value.rightSideOffsetIn);
+}
+
+function isEditorFeatures(value: unknown): value is EditorFeatures {
+  return (
+    isRecord(value) &&
+    typeof value.snapToGrid === 'boolean' &&
+    isFiniteNumber(value.gridSizeIn) &&
+    typeof value.snapToAlignment === 'boolean' &&
+    isFiniteNumber(value.alignmentToleranceIn) &&
+    typeof value.wallEdgeBuffer === 'boolean' &&
+    isFiniteNumber(value.wallEdgeBufferGapIn) &&
+    typeof value.artPieceBuffer === 'boolean' &&
+    isFiniteNumber(value.artPieceBufferGapIn)
+  );
+}
+
+function isPersistedGalleryState(value: unknown): value is Partial<GalleryState> {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (
+    !Array.isArray(value.sections) ||
+    !Array.isArray(value.pieces) ||
+    !Array.isArray(value.placements)
+  ) {
+    return false;
+  }
+  if (
+    !value.sections.every(
+      (section) =>
+        isRecord(section) &&
+        typeof section.id === 'string' &&
+        typeof section.name === 'string' &&
+        isFiniteNumber(section.widthIn) &&
+        isFiniteNumber(section.heightIn) &&
+        (section.cornerAfter === 'none' ||
+          section.cornerAfter === 'left' ||
+          section.cornerAfter === 'right') &&
+        (section.xIn === undefined || isFiniteNumber(section.xIn)) &&
+        (section.yIn === undefined || isFiniteNumber(section.yIn)),
+    )
+  ) {
+    return false;
+  }
+  if (
+    !value.pieces.every(
+      (piece) =>
+        isRecord(piece) &&
+        typeof piece.id === 'string' &&
+        typeof piece.label === 'string' &&
+        isFiniteNumber(piece.widthIn) &&
+        isFiniteNumber(piece.heightIn) &&
+        isHookSpec(piece.hookSpec),
+    )
+  ) {
+    return false;
+  }
+  return value.placements.every(
+    (placement) =>
+      isRecord(placement) &&
+      typeof placement.pieceId === 'string' &&
+      typeof placement.sectionId === 'string' &&
+      isFiniteNumber(placement.xIn) &&
+      isFiniteNumber(placement.yIn),
   );
 }
 
@@ -1986,8 +3057,8 @@ function loadState(): GalleryState {
     if (!raw) {
       return defaultState;
     }
-    const parsed = JSON.parse(raw) as GalleryState;
-    if (!Array.isArray(parsed.sections) || !Array.isArray(parsed.pieces)) {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isPersistedGalleryState(parsed)) {
       return defaultState;
     }
     return {
@@ -1998,8 +3069,9 @@ function loadState(): GalleryState {
           ? parsed.themeMode
           : defaultState.themeMode,
       applicationTheme: resolveApplicationTheme(parsed.applicationTheme),
-      sections: normalizeWallSections(parsed.sections),
-      features: { ...defaultState.features, ...(parsed.features ?? {}) },
+      sections: normalizeWallSections(parsed.sections ?? defaultState.sections),
+      unit: parsed.unit === 'cm' ? 'cm' : 'in',
+      features: isEditorFeatures(parsed.features) ? parsed.features : defaultState.features,
       message: defaultState.message,
     };
   } catch {

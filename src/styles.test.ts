@@ -56,4 +56,24 @@ describe('application typography', () => {
       /:root\[data-theme='dark'\]\[data-palette='slate'\]\s*{[^}]*--piece-fill:/s,
     );
   });
+
+  it('uses readable secondary controls and staging labels in the reviewed palettes', () => {
+    expect(stylesheet).toMatch(
+      /:root\[data-palette='terracotta'\]\s*{[^}]*--secondary-text:\s*#7d3d24/s,
+    );
+    expect(stylesheet).toMatch(/\.secondary\s*{[^}]*color:\s*var\(--secondary-text\)/s);
+    expect(stylesheet).toMatch(/\.staged-piece\s*{[^}]*color:\s*var\(--text-primary\)/s);
+  });
+
+  it('provides reduced-motion and forced-colors fallbacks', () => {
+    expect(stylesheet).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(stylesheet).toContain('@media (forced-colors: active)');
+  });
+
+  it('keeps setup content in normal page flow and gives icon controls touch-sized targets', () => {
+    expect(stylesheet).toMatch(
+      /\.setup-panel\s*{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s,
+    );
+    expect(stylesheet).toMatch(/\.icon-button\s*{[^}]*width:\s*44px;[^}]*min-height:\s*44px;/s);
+  });
 });

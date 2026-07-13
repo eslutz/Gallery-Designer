@@ -101,6 +101,96 @@ test('mobile staged pieces keep touch drags from becoming page scrolls', async (
   );
 });
 
+test('zoomed wall canvas supports wheel zoom and touchpad-style panning', async ({ page }) => {
+  await page.goto('/');
+
+  const canvas = page.getByRole('img', { name: 'Scaled gallery wall layout' });
+  const canvasBox = await canvas.boundingBox();
+  if (!canvasBox) {
+    throw new Error('Canvas was not visible enough to pan.');
+  }
+
+  const initialViewBox = await readCanvasViewBox(page);
+  await canvas.dispatchEvent('wheel', {
+    bubbles: true,
+    cancelable: true,
+    ctrlKey: true,
+    deltaY: -160,
+    clientX: canvasBox.x + 80,
+    clientY: canvasBox.y + 80,
+  });
+
+  const zoomedViewBox = await readCanvasViewBox(page);
+  expect(zoomedViewBox.width).toBeLessThan(initialViewBox.width);
+  expect(zoomedViewBox.height).toBeLessThan(initialViewBox.height);
+
+  await canvas.dispatchEvent('wheel', {
+    bubbles: true,
+    cancelable: true,
+    deltaY: 120,
+    clientX: canvasBox.x + canvasBox.width / 2,
+    clientY: canvasBox.y + canvasBox.height / 2,
+  });
+
+  const wheelPannedViewBox = await readCanvasViewBox(page);
+  expect(wheelPannedViewBox.y).toBeGreaterThan(zoomedViewBox.y);
+
+  await canvas.dispatchEvent('wheel', {
+    bubbles: true,
+    cancelable: true,
+    deltaX: 80,
+    deltaY: 0,
+    clientX: canvasBox.x + canvasBox.width / 2,
+    clientY: canvasBox.y + canvasBox.height / 2,
+  });
+
+  const horizontalPannedViewBox = await readCanvasViewBox(page);
+  expect(horizontalPannedViewBox.x).toBeGreaterThan(wheelPannedViewBox.x);
+
+  await page.evaluate(() => window.scrollTo(0, 80));
+  const scrolledCanvasBox = await canvas.boundingBox();
+  if (!scrolledCanvasBox) {
+    throw new Error('Canvas was not visible enough to test scroll capture.');
+  }
+  const pageScrollBefore = await page.evaluate(() => window.scrollY);
+  await page.mouse.move(
+    scrolledCanvasBox.x + scrolledCanvasBox.width / 2,
+    scrolledCanvasBox.y + scrolledCanvasBox.height / 2,
+  );
+  await page.mouse.wheel(0, 120);
+
+  expect(await page.evaluate(() => window.scrollY)).toBe(pageScrollBefore);
+});
+
+test('keeps intermediate widths within the viewport and uses mobile measurements cards', async ({
+  page,
+}) => {
+  for (const width of [1024, 1100, 1199]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      width,
+    );
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const editorBox = await page.locator('.editor-column').boundingBox();
+  const setupBox = await page.locator('.setup-panel').boundingBox();
+  expect(editorBox).not.toBeNull();
+  expect(setupBox).not.toBeNull();
+  expect(editorBox?.y).toBeLessThan(setupBox?.y ?? Number.POSITIVE_INFINITY);
+  await expect(page.locator('.measurements-table')).toHaveCSS('display', 'none');
+
+  const stagedPiece = page.getByRole('button', { name: 'Drag Piece 1 from staging' });
+  const canvas = page.getByRole('img', { name: 'Scaled gallery wall layout' });
+  const canvasBox = await canvas.boundingBox();
+  if (!canvasBox) {
+    throw new Error('Canvas was not visible enough to place a piece.');
+  }
+  await pointerDrag(page, stagedPiece, canvasBox.x + 120, canvasBox.y + 120);
+  await expect(page.locator('.measurement-cards')).toHaveCSS('display', 'grid');
+});
+
 async function pointerDrag(
   page: import('@playwright/test').Page,
   source: import('@playwright/test').Locator,
@@ -161,4 +251,15 @@ async function pointerDrag(
     },
     { x: targetX, y: targetY },
   );
+}
+
+async function readCanvasViewBox(page: import('@playwright/test').Page) {
+  return page.locator('.wall-canvas').evaluate((canvas) => {
+    const viewBox = canvas.getAttribute('viewBox');
+    if (!viewBox) {
+      throw new Error('Expected a canvas viewBox.');
+    }
+    const [x, y, width, height] = viewBox.split(' ').map(Number);
+    return { x, y, width, height };
+  });
 }

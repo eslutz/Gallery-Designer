@@ -1,4 +1,3 @@
-import jsPDF from 'jspdf';
 import type { MeasurementInstruction } from '../types';
 
 export async function downloadSvgAsPng(svg: SVGSVGElement, fileName: string): Promise<void> {
@@ -11,6 +10,7 @@ export async function downloadPdf(
   instructions: MeasurementInstruction[],
   issues: string[],
 ): Promise<void> {
+  const { default: jsPDF } = await import('jspdf');
   const dataUrl = await svgToPngDataUrl(svg);
   const doc = new jsPDF({ unit: 'pt', format: 'letter' });
   doc.setFont('helvetica', 'bold');
