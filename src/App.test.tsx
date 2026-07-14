@@ -77,6 +77,9 @@ describe('Gallery Designer app', () => {
     expect(screen.getByRole('complementary', { name: /Details and export/i })).toContainElement(
       screen.getByRole('heading', { name: /Features/i }),
     );
+    expect(screen.getByRole('complementary', { name: /Details and export/i })).toContainElement(
+      screen.getByRole('heading', { name: /Auto-placement/i }),
+    );
     expect(screen.queryByRole('button', { name: /Place on first wall/i })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Add art piece/i }));
@@ -93,6 +96,37 @@ describe('Gallery Designer app', () => {
       screen.getByText(/snap settings apply while dragging or nudging pieces/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/buffer guides reserve installation clearance/i)).toBeInTheDocument();
+  });
+
+  it('explains context and viewing height for available wall sections', () => {
+    render(<App />);
+
+    expect(screen.getByRole('button', { name: /context information/i })).toHaveAttribute(
+      'aria-describedby',
+    );
+    expect(screen.getByRole('button', { name: /viewing height information/i })).toHaveAttribute(
+      'aria-describedby',
+    );
+    expect(screen.getAllByRole('tooltip')[0]).toHaveTextContent(
+      /context sets placement priorities/i,
+    );
+    expect(screen.getAllByRole('tooltip')[1]).toHaveTextContent(/shifts the group vertically/i);
+  });
+
+  it('uses full-wall feature settings when placing pieces', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.selectOptions(screen.getByLabelText('Wall setup'), 'full-wall-with-features');
+    await user.click(screen.getByRole('button', { name: /Add furniture or feature/i }));
+    await user.selectOptions(screen.getByLabelText('Feature 1 type'), 'sofa');
+    await user.clear(screen.getByLabelText('Feature 1 width (in)'));
+    await user.type(screen.getByLabelText('Feature 1 width (in)'), '72');
+    await user.clear(screen.getByLabelText('Feature 1 left edge (in)'));
+    await user.type(screen.getByLabelText('Feature 1 left edge (in)'), '12');
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    expect(screen.getByRole('status')).toHaveTextContent(/full wall/i);
   });
 
   it('does not render manual wall section position fields', () => {
@@ -259,6 +293,109 @@ describe('Gallery Designer app', () => {
     fireEvent.keyDown(section, { key: 'ArrowRight' });
 
     expect(piece).toHaveAttribute('x', startX ?? '');
+  });
+
+  it('standardizes cursor affordances for draggable objects and pannable canvas space', () => {
+    render(<App />);
+
+    const appShell = document.querySelector('.app-shell');
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    const panSurface = canvas.querySelector('.wall-pan-surface');
+    const section = screen.getByRole('button', { name: /^Move Section 1$/i });
+    const stagedPiece = screen.getByRole('button', { name: /Drag Piece 1 from staging/i });
+
+    expect(appShell).not.toHaveClass('is-wall-pannable');
+    expect(section).toHaveClass('wall-section');
+    expect(stagedPiece).toHaveClass('staged-piece');
+
+    fireEvent.pointerDown(panSurface as Element, { pointerId: 1, clientX: 20, clientY: 20 });
+    expect(appShell).not.toHaveClass('is-panning-wall');
+
+    fireEvent.click(screen.getByRole('button', { name: /Zoom in/i }));
+
+    expect(appShell).toHaveClass('is-wall-pannable');
+  });
+
+  it('keeps drag cursor state active until pointer release', () => {
+    render(<App />);
+
+    const appShell = document.querySelector('.app-shell');
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    const stagedPiece = screen.getByRole('button', { name: /Drag Piece 1 from staging/i });
+
+    fireEvent.pointerDown(stagedPiece, { pointerId: 1, clientX: 20, clientY: 20 });
+    expect(appShell).toHaveClass('is-dragging-piece');
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 20, clientY: 20 });
+    expect(appShell).not.toHaveClass('is-dragging-piece');
+
+    mockCanvasProjection(canvas);
+    const section = screen.getByRole('button', { name: /^Move Section 1$/i });
+    act(() => {
+      section.dispatchEvent(
+        new MouseEvent('pointerdown', { bubbles: true, clientX: 0, clientY: 0 }),
+      );
+    });
+    expect(appShell).toHaveClass('is-dragging-section');
+    fireEvent.pointerUp(window, { pointerId: 2, clientX: 0, clientY: 0 });
+    expect(appShell).not.toHaveClass('is-dragging-section');
+  });
+
+  it('drags stepped wall sections from their rendered position while zoomed in', async () => {
+    localStorage.setItem(
+      'gallery-designer-state-v1',
+      JSON.stringify({
+        sections: [
+          {
+            id: 'section-1',
+            name: 'Section 1',
+            widthIn: 79,
+            heightIn: 60,
+            cornerAfter: 'none',
+            xIn: 0,
+            yIn: 0,
+          },
+          {
+            id: 'section-2',
+            name: 'Section 2',
+            widthIn: 59,
+            heightIn: 36,
+            cornerAfter: 'none',
+            xIn: 79,
+            yIn: 0,
+          },
+        ],
+        pieces: [{ id: 'piece-1', label: 'Piece 1', widthIn: 16, heightIn: 20 }],
+        placements: [],
+      }),
+    );
+    render(<App />);
+
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+
+    const section2 = screen.getByRole('button', { name: /^Move Section 2$/i });
+    expect(section2).toHaveAttribute('x', '79');
+    expect(section2).toHaveAttribute('y', '0');
+
+    fireEvent.click(screen.getByRole('button', { name: /Zoom in/i }));
+    mockCanvasProjection(canvas);
+    const zoomedSection2 = screen.getByRole('button', { name: /^Move Section 2$/i });
+    act(() => {
+      zoomedSection2.dispatchEvent(
+        new MouseEvent('pointerdown', { bubbles: true, clientX: 79, clientY: 1 }),
+      );
+    });
+    expect(screen.getByRole('button', { name: /^Move Section 2$/i })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    act(() => {
+      window.dispatchEvent(new MouseEvent('pointermove', { clientX: 20, clientY: 61 }));
+      window.dispatchEvent(new MouseEvent('pointerup', { clientX: 20, clientY: 61 }));
+    });
+
+    const movedSection2 = screen.getByRole('button', { name: /^Move Section 2$/i });
+    expect(movedSection2).toHaveAttribute('x', '20');
+    expect(movedSection2).toHaveAttribute('y', '60');
   });
 
   it('falls back safely when persisted state contains invalid arrays', () => {
@@ -718,10 +855,15 @@ describe('Gallery Designer app', () => {
     const rightPanel = screen.getByRole('complementary', { name: /Details and export/i });
     const statusPanel = within(rightPanel).getByRole('status').closest('.status-panel');
     expect(statusPanel).toBeInTheDocument();
-    expect(Array.from(rightPanel.children).indexOf(statusPanel as Element)).toBe(1);
+    expect(Array.from(rightPanel.children).indexOf(statusPanel as Element)).toBe(2);
     expect(
       within(statusPanel?.previousElementSibling as Element).getByRole('heading', {
         name: /Features/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(rightPanel.children[0]).getByRole('heading', {
+        name: /Auto-placement/i,
       }),
     ).toBeInTheDocument();
     expect(
@@ -913,25 +1055,29 @@ describe('Gallery Designer app', () => {
 });
 
 function mockCanvasProjection(canvas: HTMLElement) {
-  canvas.getScreenCTM = vi.fn(
-    () =>
-      ({
-        a: 1,
-        b: 0,
-        c: 0,
-        d: 1,
-        e: 0,
-        f: 0,
-        inverse: () => ({
+  Object.defineProperty(canvas, 'getScreenCTM', {
+    configurable: true,
+    writable: true,
+    value: vi.fn(
+      () =>
+        ({
           a: 1,
           b: 0,
           c: 0,
           d: 1,
           e: 0,
           f: 0,
-        }),
-      }) as DOMMatrix,
-  );
+          inverse: () => ({
+            a: 1,
+            b: 0,
+            c: 0,
+            d: 1,
+            e: 0,
+            f: 0,
+          }),
+        }) as DOMMatrix,
+    ),
+  });
 }
 
 function mockPointerTarget(element: Element) {

@@ -1,10 +1,13 @@
 import type {
   ApplicationTheme,
   ArtPiece,
+  AutoPlacementSettings,
   EditorFeatures,
   Placement,
   ThemeMode,
   Unit,
+  WallFeature,
+  WallFeatureType,
   WallSection,
 } from '../types';
 import { normalizeWallSections } from './wall';
@@ -17,6 +20,7 @@ export interface DesignFileState {
   pieces: ArtPiece[];
   placements: Placement[];
   features: EditorFeatures;
+  autoPlacementSettings: AutoPlacementSettings;
   selectedPieceId: string;
 }
 
@@ -38,6 +42,7 @@ export function serializeDesignFile(state: DesignFileState): string {
     pieces: state.pieces,
     placements: state.placements,
     features: state.features,
+    autoPlacementSettings: state.autoPlacementSettings,
     selectedPieceId: state.selectedPieceId,
   };
   return `${JSON.stringify(payload, null, 2)}\n`;
@@ -89,6 +94,7 @@ export function parseDesignFile(raw: string): DesignFileState {
     pieces,
     placements,
     features: parseFeatures(parsed.features),
+    autoPlacementSettings: parseAutoPlacementSettings(parsed.autoPlacementSettings),
     selectedPieceId,
   };
 }
@@ -148,6 +154,76 @@ function parseFeatures(value: unknown): EditorFeatures {
     artPieceBuffer: typeof parsed.artPieceBuffer === 'boolean' ? parsed.artPieceBuffer : false,
     artPieceBufferGapIn: Math.max(0.125, finiteNumber(parsed.artPieceBufferGapIn, 2)),
   };
+}
+
+function parseAutoPlacementSettings(value: unknown): AutoPlacementSettings {
+  const parsed = isRecord(value) ? value : {};
+  return {
+    wallSetupMode:
+      parsed.wallSetupMode === 'full-wall-with-features'
+        ? 'full-wall-with-features'
+        : 'available-sections',
+    context: parseAutoPlacementContext(parsed.context),
+    layoutPreference: parseAutoPlacementLayoutPreference(parsed.layoutPreference),
+    wallFeatures: Array.isArray(parsed.wallFeatures)
+      ? parsed.wallFeatures.map(parseWallFeature)
+      : [],
+  };
+}
+
+function parseAutoPlacementContext(value: unknown): AutoPlacementSettings['context'] {
+  if (!isRecord(value)) {
+    return { kind: 'blank', viewingPosture: 'seated' };
+  }
+  if (value.kind === 'hallway') {
+    return { kind: 'hallway' };
+  }
+  return {
+    kind: 'blank',
+    viewingPosture: value.viewingPosture === 'standing' ? 'standing' : 'seated',
+  };
+}
+
+function parseWallFeature(value: unknown): WallFeature {
+  const parsed = isRecord(value) ? value : {};
+  const feature: WallFeature = {
+    id: stringValue(parsed.id, 'feature'),
+    type: parseWallFeatureType(parsed.type),
+    name: stringValue(parsed.name, 'Wall feature'),
+    xIn: Math.max(0, finiteNumber(parsed.xIn, 0)),
+    widthIn: positiveNumber(parsed.widthIn, 'wall feature width'),
+    heightIn: Math.max(0, finiteNumber(parsed.heightIn, 0)),
+  };
+  return Number.isFinite(parsed.clearanceOverrideIn)
+    ? { ...feature, clearanceOverrideIn: Math.max(0, Number(parsed.clearanceOverrideIn)) }
+    : feature;
+}
+
+function parseWallFeatureType(value: unknown): WallFeatureType {
+  return value === 'sofa' ||
+    value === 'bed' ||
+    value === 'console' ||
+    value === 'desk' ||
+    value === 'bookcase' ||
+    value === 'fireplace' ||
+    value === 'tv' ||
+    value === 'window' ||
+    value === 'door' ||
+    value === 'custom'
+    ? value
+    : 'custom';
+}
+
+function parseAutoPlacementLayoutPreference(
+  value: unknown,
+): AutoPlacementSettings['layoutPreference'] {
+  return value === 'grid' ||
+    value === 'row' ||
+    value === 'stack' ||
+    value === 'salon' ||
+    value === 'auto'
+    ? value
+    : 'auto';
 }
 
 function parseApplicationTheme(value: unknown): ApplicationTheme {

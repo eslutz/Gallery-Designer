@@ -1,13 +1,129 @@
 import { describe, expect, it } from 'vitest';
 import { autoPlacePieces } from './autoPlace';
 import { getAutoPlacementIssues } from './placement';
-import type { ArtPiece, WallSection } from '../types';
+import type { ArtPiece, AutoPlacementSettings, WallSection } from '../types';
 
 const wall: WallSection[] = [
   { id: 'main', name: 'Main wall', widthIn: 120, heightIn: 96, cornerAfter: 'none' },
 ];
 
 describe('automatic placement', () => {
+  const blankSettings: AutoPlacementSettings = {
+    wallSetupMode: 'available-sections',
+    context: { kind: 'blank', viewingPosture: 'seated' },
+    layoutPreference: 'auto',
+    wallFeatures: [],
+  };
+
+  it('uses a horizontal row above measured sofa feature when the full wall is wide', () => {
+    const pieces: ArtPiece[] = [
+      { id: 'one', label: 'One', widthIn: 18, heightIn: 12 },
+      { id: 'two', label: 'Two', widthIn: 18, heightIn: 12 },
+      { id: 'three', label: 'Three', widthIn: 18, heightIn: 12 },
+    ];
+
+    const result = autoPlacePieces(wall, pieces, {
+      settings: {
+        wallSetupMode: 'full-wall-with-features',
+        context: { kind: 'blank', viewingPosture: 'seated' },
+        layoutPreference: 'auto',
+        wallFeatures: [
+          {
+            id: 'sofa',
+            type: 'sofa',
+            name: 'Sofa',
+            xIn: 18,
+            widthIn: 84,
+            heightIn: 30,
+            clearanceOverrideIn: 8,
+          },
+        ],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.layoutKind).toBe('row');
+    expect(result.resolvedGapIn).toBe(2);
+    expect(result.explanation).toMatch(/full wall/i);
+    expect(result.placements.every((placement) => placement.yIn === result.placements[0].yIn)).toBe(
+      true,
+    );
+    expect(result.placements.every((placement) => placement.yIn + 12 <= 58)).toBe(true);
+  });
+
+  it('treats custom full-wall features as block-only placement constraints', () => {
+    const pieces: ArtPiece[] = [
+      { id: 'one', label: 'One', widthIn: 24, heightIn: 18 },
+      { id: 'two', label: 'Two', widthIn: 24, heightIn: 18 },
+    ];
+
+    const result = autoPlacePieces(wall, pieces, {
+      settings: {
+        wallSetupMode: 'full-wall-with-features',
+        context: { kind: 'blank', viewingPosture: 'seated' },
+        layoutPreference: 'row',
+        wallFeatures: [
+          {
+            id: 'monitor',
+            type: 'custom',
+            name: 'Monitor area',
+            xIn: 0,
+            widthIn: 120,
+            heightIn: 55,
+            clearanceOverrideIn: 5,
+          },
+        ],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.placements.every((placement) => placement.yIn >= 5)).toBe(true);
+    expect(result.placements.every((placement) => placement.yIn + 18 <= 36)).toBe(true);
+  });
+
+  it('keeps a mixed salon composition inside the connected wall union with quarter-inch precision', () => {
+    const sections: WallSection[] = [
+      { id: 'left', name: 'Left', widthIn: 60, heightIn: 84, cornerAfter: 'none', xIn: 0, yIn: 0 },
+      {
+        id: 'right',
+        name: 'Right',
+        widthIn: 60,
+        heightIn: 84,
+        cornerAfter: 'none',
+        xIn: 60,
+        yIn: 0,
+      },
+    ];
+    const pieces: ArtPiece[] = [
+      { id: 'anchor', label: 'Anchor', widthIn: 26, heightIn: 20 },
+      { id: 'small', label: 'Small', widthIn: 12, heightIn: 10 },
+      { id: 'wide', label: 'Wide', widthIn: 20, heightIn: 12 },
+    ];
+
+    const result = autoPlacePieces(sections, pieces, { settings: blankSettings });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.layoutKind).toBe('salon');
+    expect(result.placements.some((placement) => placement.sectionId === 'right')).toBe(true);
+    expect(result.placements.every((placement) => Number.isInteger(placement.xIn * 4))).toBe(true);
+    expect(getAutoPlacementIssues(sections, pieces, result.placements)).toEqual([]);
+  });
+
+  it('reports an honest failure when a requested family cannot fit', () => {
+    const result = autoPlacePieces(
+      [{ id: 'tiny', name: 'Tiny', widthIn: 20, heightIn: 20, cornerAfter: 'none' }],
+      [{ id: 'one', label: 'One', widthIn: 12, heightIn: 12 }],
+      { settings: { ...blankSettings, layoutPreference: 'row' } },
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toMatch(/margin|fit/i);
+  });
+
   it('uses a grid for same-size pieces with consistent spacing', () => {
     const pieces: ArtPiece[] = Array.from({ length: 4 }, (_, index) => ({
       id: `p${index + 1}`,
@@ -16,7 +132,7 @@ describe('automatic placement', () => {
       heightIn: 12,
     }));
 
-    const result = autoPlacePieces(wall, pieces);
+    const result = autoPlacePieces(wall, pieces, { settings: blankSettings });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -25,18 +141,18 @@ describe('automatic placement', () => {
     expect(getAutoPlacementIssues(wall, pieces, result.placements)).toEqual([]);
   });
 
-  it('uses organic packing for mixed sizes without overlap', () => {
+  it('uses salon packing for mixed sizes without overlap', () => {
     const pieces: ArtPiece[] = [
       { id: 'large', label: 'Large', widthIn: 28, heightIn: 20 },
       { id: 'small', label: 'Small', widthIn: 12, heightIn: 10 },
       { id: 'wide', label: 'Wide', widthIn: 24, heightIn: 12 },
     ];
 
-    const result = autoPlacePieces(wall, pieces);
+    const result = autoPlacePieces(wall, pieces, { settings: blankSettings });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.layoutKind).toBe('organic');
+    expect(result.layoutKind).toBe('salon');
     expect(getAutoPlacementIssues(wall, pieces, result.placements)).toEqual([]);
   });
 
@@ -44,11 +160,12 @@ describe('automatic placement', () => {
     const result = autoPlacePieces(
       [{ id: 'tiny', name: 'Tiny', widthIn: 10, heightIn: 10, cornerAfter: 'none' }],
       [{ id: 'huge', label: 'Huge', widthIn: 20, heightIn: 20 }],
+      { settings: blankSettings },
     );
 
     expect(result).toEqual({
       ok: false,
-      message: 'Huge cannot fit on any wall section.',
+      message: 'Huge cannot fit within the wall margin.',
     });
   });
 
@@ -72,7 +189,7 @@ describe('automatic placement', () => {
       heightIn: 12,
     }));
 
-    const result = autoPlacePieces(multiSectionWall, pieces);
+    const result = autoPlacePieces(multiSectionWall, pieces, { settings: blankSettings });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -83,10 +200,9 @@ describe('automatic placement', () => {
     expect(
       result.placements.every(
         (placement) =>
-          placement.xIn >= 3 &&
-          placement.yIn >= 3 &&
-          placement.xIn + pieces.find((piece) => piece.id === placement.pieceId)!.widthIn <= 77 &&
-          placement.yIn + pieces.find((piece) => piece.id === placement.pieceId)!.heightIn <= 77,
+          placement.xIn >= 0 &&
+          placement.yIn >= 5 &&
+          placement.yIn + pieces.find((piece) => piece.id === placement.pieceId)!.heightIn <= 75,
       ),
     ).toBe(true);
   });

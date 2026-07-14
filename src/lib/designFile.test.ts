@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { parseDesignFile, serializeDesignFile } from './designFile';
-import type { ArtPiece, EditorFeatures, Placement, WallSection } from '../types';
+import type {
+  ArtPiece,
+  AutoPlacementSettings,
+  EditorFeatures,
+  Placement,
+  WallSection,
+} from '../types';
 
 describe('design JSON files', () => {
   it('round-trips wall sections, pieces, placements, unit, and selection', () => {
@@ -31,6 +37,22 @@ describe('design JSON files', () => {
       artPieceBuffer: true,
       artPieceBufferGapIn: 4,
     };
+    const autoPlacementSettings: AutoPlacementSettings = {
+      wallSetupMode: 'full-wall-with-features',
+      context: { kind: 'blank', viewingPosture: 'seated' },
+      layoutPreference: 'row',
+      wallFeatures: [
+        {
+          id: 'desk',
+          type: 'desk',
+          name: 'Desk',
+          xIn: 8,
+          widthIn: 72,
+          heightIn: 30,
+          clearanceOverrideIn: 10,
+        },
+      ],
+    };
 
     const json = serializeDesignFile({
       unit: 'in',
@@ -40,6 +62,7 @@ describe('design JSON files', () => {
       pieces,
       placements,
       features,
+      autoPlacementSettings,
       selectedPieceId: 'piece-1',
     });
 
@@ -51,6 +74,7 @@ describe('design JSON files', () => {
       pieces,
       placements,
       features,
+      autoPlacementSettings,
       selectedPieceId: 'piece-1',
     });
   });
@@ -78,5 +102,11 @@ describe('design JSON files', () => {
 
     expect(parsed.themeMode).toBe('system');
     expect(parsed.applicationTheme).toBe('slate');
+    expect(parsed.autoPlacementSettings).toEqual({
+      wallSetupMode: 'available-sections',
+      context: { kind: 'blank', viewingPosture: 'seated' },
+      layoutPreference: 'auto',
+      wallFeatures: [],
+    });
   });
 });

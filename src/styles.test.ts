@@ -38,6 +38,17 @@ describe('application typography', () => {
     expect(stylesheet).toMatch(/\.staged-piece\s*{[^}]*touch-action:\s*none;/s);
   });
 
+  it('keeps drag cursors aligned with actual canvas interactions', () => {
+    expect(stylesheet).toMatch(/\.wall-pan-surface\s*{[^}]*cursor:\s*default;/s);
+    expect(stylesheet).toMatch(
+      /\.app-shell\.is-wall-pannable\s+\.wall-pan-surface,\s*\.wall-section,\s*\.piece rect,\s*\.staged-piece\s*{[^}]*cursor:\s*grab;/s,
+    );
+    expect(stylesheet).toMatch(
+      /\.app-shell\.is-panning-wall\s+\.wall-pan-surface,[^}]*\.app-shell\.is-dragging-section \*\s*{[^}]*cursor:\s*grabbing;/s,
+    );
+    expect(stylesheet).toMatch(/\.wall-exterior-edge\s*{[^}]*pointer-events:\s*none;/s);
+  });
+
   it('defines the application theme selectors and matching art-piece colors', () => {
     expect(stylesheet).toMatch(/:root\[data-palette='coastal-blue'\]\s*{[^}]*--piece-fill:/s);
     expect(stylesheet).toMatch(/:root\[data-palette='aubergine'\]\s*{[^}]*--piece-fill:/s);

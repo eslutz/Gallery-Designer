@@ -3,6 +3,7 @@ import {
   FileImage,
   FileJson,
   FileText,
+  Info,
   Maximize2,
   Move,
   PackageOpen,
@@ -50,13 +51,18 @@ import {
   normalizeWallSections,
   validateWallSections,
 } from './lib/wall';
+import { resolveWallFeatureRule } from './lib/wallFeatures';
 import type {
   ArtPiece,
+  AutoPlacementLayoutPreference,
+  AutoPlacementSettings,
   EditorFeatures,
   HookSpec,
   Placement,
   ThemeMode,
   Unit,
+  WallFeature,
+  WallFeatureType,
   WallSection,
 } from './types';
 
@@ -79,6 +85,7 @@ interface GalleryState {
   pieces: ArtPiece[];
   placements: Placement[];
   features: EditorFeatures;
+  autoPlacementSettings: AutoPlacementSettings;
   selectedPieceId: string;
   message: string;
 }
@@ -139,6 +146,8 @@ interface WallPanState {
   canvasHeightPx: number;
 }
 
+type CursorInteraction = 'idle' | 'dragging-piece' | 'dragging-section' | 'panning-wall';
+
 const defaultState: GalleryState = {
   unit: 'in',
   themeMode: 'system',
@@ -166,6 +175,12 @@ const defaultState: GalleryState = {
     artPieceBuffer: false,
     artPieceBufferGapIn: 2,
   },
+  autoPlacementSettings: {
+    wallSetupMode: 'available-sections',
+    context: { kind: 'blank', viewingPosture: 'seated' },
+    layoutPreference: 'auto',
+    wallFeatures: [],
+  },
   selectedPieceId: 'piece-1',
   message: 'Enter wall and art dimensions, then place pieces on the scaled wall.',
 };
@@ -175,6 +190,7 @@ export default function App() {
   const [selectedSectionId, setSelectedSectionId] = useState('');
   const [wallDragPreview, setWallDragPreview] = useState<WallDragPreview | null>(null);
   const [undoState, setUndoState] = useState<GalleryState | null>(null);
+  const [cursorInteraction, setCursorInteraction] = useState<CursorInteraction>('idle');
   const [wallZoom, setWallZoom] = useState<WallZoomState>(() =>
     getDefaultWallZoomState(getWallCanvasBaseViewBox(defaultState.sections, defaultState.features)),
   );
@@ -194,6 +210,7 @@ export default function App() {
       event: Pick<PointerEvent, 'clientX' | 'clientY'> & { pointerId?: number },
     ) => boolean;
     updateWallMousePan: (event: MouseEvent) => boolean;
+    updateSectionDrag: (event: { clientX: number; clientY: number }) => boolean;
     updatePointerDrag: (event: { clientX: number; clientY: number }) => void;
     finishPieceDrag: (event?: { clientX: number; clientY: number; pointerId?: number }) => void;
     finishWallPan: (event?: { pointerId?: number }) => void;
@@ -249,6 +266,7 @@ export default function App() {
     updateWallZoomGesture,
     updateWallPan,
     updateWallMousePan,
+    updateSectionDrag,
     updatePointerDrag,
     finishPieceDrag,
     finishWallPan,
@@ -298,6 +316,10 @@ export default function App() {
         event.preventDefault();
         return;
       }
+      if (handlers.updateSectionDrag(event)) {
+        event.preventDefault();
+        return;
+      }
       const drag = dragRef.current;
       if (drag) {
         event.preventDefault();
@@ -311,12 +333,17 @@ export default function App() {
     }
 
     function handleWindowMouseMove(event: MouseEvent) {
+      if (interactionHandlersRef.current?.updateSectionDrag(event)) {
+        event.preventDefault();
+        return;
+      }
       if (interactionHandlersRef.current?.updateWallMousePan(event)) {
         event.preventDefault();
       }
     }
 
-    function handleWindowMouseUp() {
+    function handleWindowMouseUp(event: MouseEvent) {
+      interactionHandlersRef.current?.finishPieceDrag(event);
       interactionHandlersRef.current?.finishWallMousePan();
     }
 
@@ -651,6 +678,8 @@ export default function App() {
   function fitWallZoom() {
     setWallZoom(getDefaultWallZoomState(wallBaseViewBox));
     wallZoomGestureRef.current = null;
+    wallPanRef.current = null;
+    setCursorInteraction((current) => (current === 'panning-wall' ? 'idle' : current));
   }
 
   function zoomWallBy(factor: number) {
@@ -686,6 +715,14 @@ export default function App() {
         ...patch,
       },
       message: 'Updated snapping and buffer settings.',
+    }));
+  }
+
+  function updateAutoPlacementSettings(settings: AutoPlacementSettings) {
+    setState((current) => ({
+      ...current,
+      autoPlacementSettings: settings,
+      message: 'Updated auto-placement settings.',
     }));
   }
 
@@ -766,6 +803,7 @@ export default function App() {
 
   function handleWallPanPointerDown(event: React.PointerEvent<SVGRectElement>) {
     if (
+      wallZoom.scale <= 1 ||
       (typeof event.button === 'number' && event.button !== 0) ||
       dragRef.current ||
       sectionDragRef.current ||
@@ -789,6 +827,7 @@ export default function App() {
 
   function handleWallPanMouseDown(event: React.MouseEvent<SVGRectElement>) {
     if (
+      wallZoom.scale <= 1 ||
       event.button !== 0 ||
       dragRef.current ||
       sectionDragRef.current ||
@@ -830,6 +869,7 @@ export default function App() {
       canvasWidthPx: rect.width,
       canvasHeightPx: rect.height,
     };
+    setCursorInteraction('panning-wall');
     startSuppressingTextSelection();
   }
 
@@ -873,6 +913,7 @@ export default function App() {
       previewWidthPx: size.widthPx,
       previewHeightPx: size.heightPx,
     };
+    setCursorInteraction('dragging-piece');
     startSuppressingTextSelection();
     showSnappedPreview(placement, piece, size, event);
   }
@@ -881,46 +922,45 @@ export default function App() {
     event: React.PointerEvent<SVGRectElement>,
     section: WallSection,
   ) {
-    if (wallZoom.scale > 1) {
-      const rect = svgRef.current?.getBoundingClientRect();
-      if (rect && rect.width > 0 && rect.height > 0) {
-        event.preventDefault();
-        startWallPan(event, getPointerId(event), rect);
-      }
-      return;
-    }
-
     event.preventDefault();
+    if (typeof event.currentTarget.setPointerCapture === 'function') {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    startSectionDrag(event, section);
+  }
+
+  function handleSectionMouseDown(event: React.MouseEvent<SVGRectElement>, section: WallSection) {
+    event.preventDefault();
+    if (!sectionDragRef.current) {
+      startSectionDrag(event, section);
+    }
+  }
+
+  function startSectionDrag(event: { clientX: number; clientY: number }, section: WallSection) {
     selectSection(section.id);
     const point = clientPointToSvg(event);
     if (!point) {
       return;
     }
-    if (typeof event.currentTarget.setPointerCapture === 'function') {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    }
     sectionDragRef.current = {
       sectionId: section.id,
       startPoint: point,
-      startXIn: section.xIn ?? 0,
-      startYIn: section.yIn ?? 0,
+      startXIn: getSectionOffsetX(state.sections, section.id),
+      startYIn: getSectionOffsetY(state.sections, section.id),
     };
-  }
-
-  function handleSectionMouseDown(event: React.MouseEvent<SVGRectElement>) {
-    if (wallZoom.scale <= 1) {
-      return;
-    }
-
-    const rect = svgRef.current?.getBoundingClientRect();
-    if (rect && rect.width > 0 && rect.height > 0) {
-      event.preventDefault();
-      startWallPan(event, WALL_MOUSE_PAN_ID, rect);
-    }
+    setCursorInteraction('dragging-section');
+    startSuppressingTextSelection();
   }
 
   function handleAutoPlace() {
-    const result = autoPlacePieces(state.sections, state.pieces);
+    const result = autoPlacePieces(state.sections, state.pieces, {
+      settings: state.autoPlacementSettings,
+      features: {
+        ...state.features,
+        wallEdgeBufferGapIn: state.features.wallEdgeBuffer ? state.features.wallEdgeBufferGapIn : 0,
+        artPieceBufferGapIn: state.features.artPieceBuffer ? state.features.artPieceBufferGapIn : 0,
+      },
+    });
     if (!result.ok) {
       setState((current) => ({ ...current, message: result.message }));
       return;
@@ -931,10 +971,7 @@ export default function App() {
       ...current,
       placements: result.placements,
       selectedPieceId: result.placements[0]?.pieceId ?? current.selectedPieceId,
-      message:
-        result.layoutKind === 'grid'
-          ? 'Auto-placement created a grid layout.'
-          : 'Auto-placement created an organic layout.',
+      message: result.explanation ?? `Auto-placement created a ${result.layoutKind} layout.`,
     }));
   }
 
@@ -962,6 +999,7 @@ export default function App() {
       previewWidthPx: rect.width,
       previewHeightPx: rect.height,
     };
+    setCursorInteraction('dragging-piece');
     if (typeof event.currentTarget.setPointerCapture === 'function') {
       event.currentTarget.setPointerCapture(event.pointerId);
     }
@@ -981,30 +1019,8 @@ export default function App() {
       return;
     }
 
-    const sectionDrag = sectionDragRef.current;
-    if (sectionDrag) {
-      const point = clientPointToSvg(event);
-      if (!point) {
-        return;
-      }
-      const proposed = {
-        xIn: roundToPrecision(sectionDrag.startXIn + point.x - sectionDrag.startPoint.x),
-        yIn: roundToPrecision(sectionDrag.startYIn + point.y - sectionDrag.startPoint.y),
-      };
-      setState((current) => ({
-        ...current,
-        sections: moveWallSection(
-          current.sections,
-          sectionDrag.sectionId,
-          applyWallSectionFeatures(
-            current.sections,
-            sectionDrag.sectionId,
-            proposed,
-            current.features,
-          ),
-        ),
-        message: 'Wall section moved. Sections snap together by shared edges.',
-      }));
+    if (updateSectionDrag(event)) {
+      event.preventDefault();
       return;
     }
 
@@ -1014,6 +1030,38 @@ export default function App() {
     }
     event.preventDefault();
     updatePointerDrag(event);
+  }
+
+  function updateSectionDrag(event: { clientX: number; clientY: number }): boolean {
+    const sectionDrag = sectionDragRef.current;
+    if (!sectionDrag) {
+      return false;
+    }
+
+    const point = clientPointToSvg(event);
+    if (!point) {
+      return false;
+    }
+
+    const proposed = {
+      xIn: roundToPrecision(sectionDrag.startXIn + point.x - sectionDrag.startPoint.x),
+      yIn: roundToPrecision(sectionDrag.startYIn + point.y - sectionDrag.startPoint.y),
+    };
+    setState((current) => ({
+      ...current,
+      sections: moveWallSection(
+        current.sections,
+        sectionDrag.sectionId,
+        applyWallSectionFeatures(
+          current.sections,
+          sectionDrag.sectionId,
+          proposed,
+          current.features,
+        ),
+      ),
+      message: 'Wall section moved. Sections snap together by shared edges.',
+    }));
+    return true;
   }
 
   function handlePointerUp(event?: React.PointerEvent<SVGSVGElement>) {
@@ -1034,6 +1082,7 @@ export default function App() {
     }
     dragRef.current = null;
     sectionDragRef.current = null;
+    setCursorInteraction('idle');
     setWallDragPreview(null);
     stopSuppressingTextSelection();
   }
@@ -1060,6 +1109,7 @@ export default function App() {
     }
     if (!event || getPointerId(event) === pan.pointerId) {
       wallPanRef.current = null;
+      setCursorInteraction('idle');
       stopSuppressingTextSelection();
     }
   }
@@ -1070,6 +1120,7 @@ export default function App() {
       return;
     }
     wallPanRef.current = null;
+    setCursorInteraction('idle');
     stopSuppressingTextSelection();
   }
 
@@ -1295,16 +1346,33 @@ export default function App() {
       return null;
     }
     if (typeof svg.getScreenCTM !== 'function') {
-      return null;
+      return clientPointToSvgFromViewBox(event);
     }
     const matrix = svg.getScreenCTM();
     if (!matrix) {
-      return null;
+      return clientPointToSvgFromViewBox(event);
     }
     const inverse = matrix.inverse();
     return {
       x: event.clientX * inverse.a + event.clientY * inverse.c + inverse.e,
       y: event.clientX * inverse.b + event.clientY * inverse.d + inverse.f,
+    } as DOMPoint;
+  }
+
+  function clientPointToSvgFromViewBox(event: {
+    clientX: number;
+    clientY: number;
+  }): DOMPoint | null {
+    const svg = svgRef.current;
+    const viewBox = wallViewBoxRef.current;
+    const rect = svg?.getBoundingClientRect();
+    if (!svg || !viewBox || !rect || rect.width <= 0 || rect.height <= 0) {
+      return null;
+    }
+
+    return {
+      x: viewBox.x + ((event.clientX - rect.left) / rect.width) * viewBox.width,
+      y: viewBox.y + ((event.clientY - rect.top) / rect.height) * viewBox.height,
     } as DOMPoint;
   }
 
@@ -1416,11 +1484,11 @@ export default function App() {
     const layout = getWallLayout(state.sections);
     const targetLayout = point
       ? layout.find(
-          ({ section, offsetXIn }) =>
+          ({ section, offsetXIn, offsetYIn }) =>
             point.x >= offsetXIn &&
             point.x <= offsetXIn + section.widthIn &&
-            point.y >= (section.yIn ?? 0) &&
-            point.y <= (section.yIn ?? 0) + section.heightIn,
+            point.y >= offsetYIn &&
+            point.y <= offsetYIn + section.heightIn,
         )
       : undefined;
     const fallbackLayout = layout[0];
@@ -1496,8 +1564,18 @@ export default function App() {
     }
   }
 
+  const appShellClassName = [
+    'app-shell',
+    wallZoom.scale > 1 ? 'is-wall-pannable' : '',
+    cursorInteraction === 'dragging-piece' ? 'is-dragging-piece' : '',
+    cursorInteraction === 'dragging-section' ? 'is-dragging-section' : '',
+    cursorInteraction === 'panning-wall' ? 'is-panning-wall' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <main className="app-shell" onPointerDown={handlePagePointerDown}>
+    <main className={appShellClassName} onPointerDown={handlePagePointerDown}>
       <header className="topbar">
         <div className="brand-lockup">
           <BrandLogo />
@@ -1747,6 +1825,7 @@ export default function App() {
                 placements={state.placements}
                 selectedPieceId={state.selectedPieceId}
                 selectedSectionId={selectedSectionId}
+                autoPlacementSettings={state.autoPlacementSettings}
                 features={state.features}
                 unit={state.unit}
                 viewBox={wallViewBox}
@@ -1811,6 +1890,11 @@ export default function App() {
         </section>
 
         <aside className="right-panel" aria-label="Details and export">
+          <AutoPlacementControls
+            settings={state.autoPlacementSettings}
+            unit={state.unit}
+            onChange={updateAutoPlacementSettings}
+          />
           <FeatureControls features={state.features} unit={state.unit} onChange={updateFeatures} />
           <section className="status-panel" aria-label="Latest update">
             <p className="status-panel-label">Latest update</p>
@@ -1917,8 +2001,7 @@ function shouldKeepSelection(target: EventTarget): boolean {
 
 function isWallPanTarget(target: EventTarget | null): boolean {
   return (
-    target instanceof Element &&
-    Boolean(target.closest('.wall-pan-surface, .wall-section, .wall-exterior-edge'))
+    target instanceof Element && Boolean(target.closest('.wall-pan-surface, .wall-exterior-edge'))
   );
 }
 
@@ -2340,6 +2423,262 @@ function FeatureControls({
   );
 }
 
+function FieldLabelWithInfo({
+  htmlFor,
+  label,
+  info,
+}: {
+  htmlFor: string;
+  label: string;
+  info?: string;
+}) {
+  const tooltipId = useId();
+
+  return (
+    <span className="field-label-with-info">
+      <label htmlFor={htmlFor}>{label}</label>
+      {info ? (
+        <span className="info-tip">
+          <button
+            type="button"
+            className="info-button"
+            aria-label={`${label} information`}
+            aria-describedby={tooltipId}
+          >
+            <Info size={14} aria-hidden="true" />
+          </button>
+          <span className="info-tooltip" id={tooltipId} role="tooltip">
+            {info}
+          </span>
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function AutoPlacementControls({
+  settings,
+  unit,
+  onChange,
+}: {
+  settings: AutoPlacementSettings;
+  unit: Unit;
+  onChange: (settings: AutoPlacementSettings) => void;
+}) {
+  function updateFeature(featureId: string, patch: Partial<WallFeature>) {
+    onChange({
+      ...settings,
+      wallFeatures: settings.wallFeatures.map((feature) =>
+        feature.id === featureId ? { ...feature, ...patch } : feature,
+      ),
+    });
+  }
+
+  function addFeature() {
+    const index = settings.wallFeatures.length + 1;
+    onChange({
+      ...settings,
+      wallFeatures: [
+        ...settings.wallFeatures,
+        {
+          id: `feature-${Date.now()}-${index}`,
+          type: 'sofa',
+          name: `Wall feature ${index}`,
+          xIn: 0,
+          widthIn: 84,
+          heightIn: 30,
+        },
+      ],
+    });
+  }
+
+  function removeFeature(featureId: string) {
+    onChange({
+      ...settings,
+      wallFeatures: settings.wallFeatures.filter((feature) => feature.id !== featureId),
+    });
+  }
+
+  return (
+    <section className="utility-panel feature-panel" aria-label="Auto-placement settings">
+      <PanelTitle icon={<Wand2 size={18} />} title="Auto-placement" />
+      <label className="field">
+        Wall setup
+        <select
+          value={settings.wallSetupMode}
+          onChange={(event) =>
+            onChange({
+              ...settings,
+              wallSetupMode: event.target.value as AutoPlacementSettings['wallSetupMode'],
+            })
+          }
+        >
+          <option value="available-sections">Available wall sections</option>
+          <option value="full-wall-with-features">Full wall + furniture and features</option>
+        </select>
+      </label>
+      <label className="field">
+        Layout
+        <select
+          value={settings.layoutPreference}
+          onChange={(event) =>
+            onChange({
+              ...settings,
+              layoutPreference: event.target.value as AutoPlacementLayoutPreference,
+            })
+          }
+        >
+          <option value="auto">Auto</option>
+          <option value="grid">Grid</option>
+          <option value="row">Row</option>
+          <option value="stack">Stack</option>
+          <option value="salon">Salon</option>
+        </select>
+      </label>
+      <div className="field">
+        <FieldLabelWithInfo
+          htmlFor="auto-placement-context"
+          label="Context"
+          info={
+            settings.wallSetupMode === 'available-sections'
+              ? 'Context sets placement priorities around your available wall sections. Choose a hallway for quick pass-by viewing, or a blank wall for a more relaxed display.'
+              : undefined
+          }
+        />
+        <select
+          id="auto-placement-context"
+          value={settings.context.kind}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (next === 'hallway') {
+              onChange({ ...settings, context: { kind: 'hallway' } });
+              return;
+            }
+            onChange({ ...settings, context: { kind: 'blank', viewingPosture: 'seated' } });
+          }}
+        >
+          <option value="blank">Blank wall</option>
+          <option value="hallway">Hallway</option>
+        </select>
+      </div>
+      {settings.context.kind === 'blank' ? (
+        <div className="field">
+          <FieldLabelWithInfo
+            htmlFor="auto-placement-viewing-height"
+            label="Viewing height"
+            info={
+              settings.wallSetupMode === 'available-sections'
+                ? 'Viewing height shifts the group vertically toward the height where people will usually see it. It does not change the dimensions of your wall sections.'
+                : undefined
+            }
+          />
+          <select
+            id="auto-placement-viewing-height"
+            value={settings.context.viewingPosture}
+            onChange={(event) =>
+              onChange({
+                ...settings,
+                context: {
+                  kind: 'blank',
+                  viewingPosture: event.target.value as 'seated' | 'standing',
+                },
+              })
+            }
+          >
+            <option value="seated">Seated</option>
+            <option value="standing">Standing</option>
+          </select>
+        </div>
+      ) : null}
+      {settings.wallSetupMode === 'full-wall-with-features' ? (
+        <div className="section-list" aria-label="Furniture and wall features">
+          <div className="panel-title compact">
+            <h3>Furniture & Wall Features</h3>
+          </div>
+          {settings.wallFeatures.map((feature, index) => (
+            <article className="setup-row" key={feature.id}>
+              <div className="row-heading">
+                <input
+                  aria-label={`Feature ${index + 1} name`}
+                  value={feature.name}
+                  onChange={(event) => updateFeature(feature.id, { name: event.target.value })}
+                />
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={`Remove Feature ${index + 1}`}
+                  onClick={() => removeFeature(feature.id)}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+              <label className="field">
+                {`Feature ${index + 1} type`}
+                <select
+                  value={feature.type}
+                  onChange={(event) =>
+                    updateFeature(feature.id, {
+                      type: event.target.value as WallFeatureType,
+                    })
+                  }
+                >
+                  <option value="sofa">Sofa</option>
+                  <option value="bed">Bed</option>
+                  <option value="console">Console</option>
+                  <option value="desk">Desk</option>
+                  <option value="bookcase">Bookcase</option>
+                  <option value="fireplace">Fireplace</option>
+                  <option value="tv">TV</option>
+                  <option value="window">Window</option>
+                  <option value="door">Door</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              <NumberField
+                label={`Feature ${index + 1} left edge (${unit})`}
+                valueIn={feature.xIn}
+                unit={unit}
+                onChange={(xIn) => updateFeature(feature.id, { xIn: Math.max(0, xIn) })}
+              />
+              <NumberField
+                label={`Feature ${index + 1} width (${unit})`}
+                valueIn={feature.widthIn}
+                unit={unit}
+                precision="size"
+                onChange={(widthIn) => updateFeature(feature.id, { widthIn: Math.max(1, widthIn) })}
+              />
+              <NumberField
+                label={`Feature ${index + 1} height (${unit})`}
+                valueIn={feature.heightIn}
+                unit={unit}
+                precision="size"
+                onChange={(heightIn) =>
+                  updateFeature(feature.id, { heightIn: Math.max(0, heightIn) })
+                }
+              />
+              <NumberField
+                label={`Feature ${index + 1} clearance (${unit})`}
+                valueIn={feature.clearanceOverrideIn ?? 6}
+                unit={unit}
+                precision="size"
+                onChange={(clearanceOverrideIn) =>
+                  updateFeature(feature.id, {
+                    clearanceOverrideIn: Math.max(0, clearanceOverrideIn),
+                  })
+                }
+              />
+            </article>
+          ))}
+          <button type="button" className="secondary full-width" onClick={addFeature}>
+            <Plus size={16} />
+            Add furniture or feature
+          </button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function HookControls({
   piece,
   unit,
@@ -2492,6 +2831,7 @@ function WallCanvas({
   placements,
   selectedPieceId,
   selectedSectionId,
+  autoPlacementSettings,
   features,
   unit,
   viewBox,
@@ -2514,6 +2854,7 @@ function WallCanvas({
   placements: Placement[];
   selectedPieceId: string;
   selectedSectionId: string;
+  autoPlacementSettings: AutoPlacementSettings;
   features: EditorFeatures;
   unit: Unit;
   viewBox: WallViewBox;
@@ -2540,6 +2881,24 @@ function WallCanvas({
   );
   const piecesById = useMemo(() => new Map(pieces.map((piece) => [piece.id, piece])), [pieces]);
   const exteriorEdges = useMemo(() => getWallExteriorEdges(sections), [sections]);
+  const featureBlocks = useMemo(() => {
+    if (autoPlacementSettings.wallSetupMode !== 'full-wall-with-features') {
+      return [];
+    }
+    const bounds = getWallBounds(sections);
+    return autoPlacementSettings.wallFeatures.map((feature) => {
+      const rule = resolveWallFeatureRule(feature);
+      const top = bounds.maxY - feature.heightIn - rule.clearanceIn;
+      return {
+        id: feature.id,
+        label: feature.name,
+        left: feature.xIn,
+        top,
+        width: feature.widthIn,
+        height: bounds.maxY - top,
+      };
+    });
+  }, [autoPlacementSettings, sections]);
   const gridSize = features.snapToGrid ? Math.max(0.125, features.gridSizeIn) : 6;
   const wallEdgeBufferPaths = useMemo(
     () =>
@@ -2622,6 +2981,17 @@ function WallCanvas({
           className="wall-edge-buffer-guide"
           strokeDasharray="1.5 1"
           strokeWidth="0.25"
+        />
+      ))}
+      {featureBlocks.map((block) => (
+        <rect
+          key={block.id}
+          x={block.left}
+          y={block.top}
+          width={block.width}
+          height={block.height}
+          className="wall-feature-block"
+          aria-label={`${block.label} blocked area`}
         />
       ))}
       {placements.map((placement) => {
@@ -3000,6 +3370,71 @@ function isEditorFeatures(value: unknown): value is EditorFeatures {
   );
 }
 
+function isAutoPlacementSettings(value: unknown): value is AutoPlacementSettings {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (
+    value.wallSetupMode !== 'available-sections' &&
+    value.wallSetupMode !== 'full-wall-with-features'
+  ) {
+    return false;
+  }
+  if (!Array.isArray(value.wallFeatures) || !value.wallFeatures.every(isWallFeature)) {
+    return false;
+  }
+  const layoutPreference = value.layoutPreference;
+  if (
+    layoutPreference !== 'auto' &&
+    layoutPreference !== 'grid' &&
+    layoutPreference !== 'row' &&
+    layoutPreference !== 'stack' &&
+    layoutPreference !== 'salon'
+  ) {
+    return false;
+  }
+
+  const context = value.context;
+  if (!isRecord(context)) {
+    return false;
+  }
+  if (context.kind === 'hallway') {
+    return true;
+  }
+  if (context.kind === 'blank') {
+    return context.viewingPosture === 'seated' || context.viewingPosture === 'standing';
+  }
+  return false;
+}
+
+function isWallFeature(value: unknown): value is WallFeature {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    isWallFeatureType(value.type) &&
+    typeof value.name === 'string' &&
+    isFiniteNumber(value.xIn) &&
+    isFiniteNumber(value.widthIn) &&
+    isFiniteNumber(value.heightIn) &&
+    (value.clearanceOverrideIn === undefined || isFiniteNumber(value.clearanceOverrideIn))
+  );
+}
+
+function isWallFeatureType(value: unknown): value is WallFeatureType {
+  return (
+    value === 'sofa' ||
+    value === 'bed' ||
+    value === 'console' ||
+    value === 'desk' ||
+    value === 'bookcase' ||
+    value === 'fireplace' ||
+    value === 'tv' ||
+    value === 'window' ||
+    value === 'door' ||
+    value === 'custom'
+  );
+}
+
 function isPersistedGalleryState(value: unknown): value is Partial<GalleryState> {
   if (!isRecord(value)) {
     return false;
@@ -3072,6 +3507,9 @@ function loadState(): GalleryState {
       sections: normalizeWallSections(parsed.sections ?? defaultState.sections),
       unit: parsed.unit === 'cm' ? 'cm' : 'in',
       features: isEditorFeatures(parsed.features) ? parsed.features : defaultState.features,
+      autoPlacementSettings: isAutoPlacementSettings(parsed.autoPlacementSettings)
+        ? parsed.autoPlacementSettings
+        : defaultState.autoPlacementSettings,
       message: defaultState.message,
     };
   } catch {

@@ -56,6 +56,48 @@ export interface EditorFeatures {
   artPieceBufferGapIn: number;
 }
 
+export type AutoPlacementContext =
+  | {
+      kind: 'blank';
+      viewingPosture: 'seated' | 'standing';
+    }
+  | {
+      kind: 'hallway';
+    };
+
+export type AutoPlacementLayoutPreference = 'auto' | 'grid' | 'row' | 'stack' | 'salon';
+
+export type WallSetupMode = 'available-sections' | 'full-wall-with-features';
+
+export type WallFeatureType =
+  | 'sofa'
+  | 'bed'
+  | 'console'
+  | 'desk'
+  | 'bookcase'
+  | 'fireplace'
+  | 'tv'
+  | 'window'
+  | 'door'
+  | 'custom';
+
+export interface WallFeature {
+  id: string;
+  type: WallFeatureType;
+  name: string;
+  xIn: number;
+  widthIn: number;
+  heightIn: number;
+  clearanceOverrideIn?: number;
+}
+
+export interface AutoPlacementSettings {
+  wallSetupMode: WallSetupMode;
+  context: AutoPlacementContext;
+  layoutPreference: AutoPlacementLayoutPreference;
+  wallFeatures: WallFeature[];
+}
+
 export interface WallSectionLayout {
   section: WallSection;
   offsetXIn: number;

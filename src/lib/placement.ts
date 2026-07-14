@@ -143,7 +143,7 @@ export function getAutoPlacementIssues(
   return issues;
 }
 
-function rectIsCoveredBySections(rect: Rect, sections: WallSection[]): boolean {
+export function rectIsCoveredBySections(rect: Rect, sections: WallSection[]): boolean {
   if (rect.right <= rect.left || rect.bottom <= rect.top) {
     return false;
   }

@@ -752,6 +752,68 @@ button:not(:disabled):active {
   font-weight: 700;
 }
 
+.field-label-with-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.info-tip {
+  position: relative;
+  display: inline-flex;
+}
+
+.info-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: help;
+}
+
+.info-button:hover,
+.info-button:focus-visible {
+  color: var(--primary-background);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.info-tooltip {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 240px;
+  padding: 8px 10px;
+  border: 1px solid var(--row-border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  background: var(--panel-solid);
+  box-shadow: var(--shadow-soft);
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+.info-tip:hover .info-tooltip,
+.info-button:focus-visible + .info-tooltip {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
 .field-error {
   color: var(--issue-text);
   font-size: 0.8rem;
@@ -920,10 +982,21 @@ select:focus,
 }
 
 .wall-pan-surface {
+  cursor: default;
+}
+
+.app-shell.is-wall-pannable .wall-pan-surface,
+.wall-section,
+.piece rect,
+.staged-piece {
   cursor: grab;
 }
 
-.wall-pan-surface:active {
+.app-shell.is-panning-wall .wall-pan-surface,
+.app-shell.is-dragging-piece,
+.app-shell.is-dragging-piece *,
+.app-shell.is-dragging-section,
+.app-shell.is-dragging-section * {
   cursor: grabbing;
 }
 
@@ -940,6 +1013,14 @@ select:focus,
 .wall-exterior-edge {
   stroke: var(--wall-edge);
   stroke-width: 0.75;
+  pointer-events: none;
+}
+
+.wall-feature-block {
+  fill: rgba(75, 100, 123, 0.16);
+  stroke: rgba(75, 100, 123, 0.42);
+  stroke-width: 0.35;
+  stroke-dasharray: 1.5 1;
   pointer-events: none;
 }
 
