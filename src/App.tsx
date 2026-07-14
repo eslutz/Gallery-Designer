@@ -19,7 +19,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { autoPlacePieces } from './lib/autoPlace';
+import { autoPlacePieces, type AutoPlacementDiagnostics } from './lib/autoPlace';
 import {
   applicationThemeOptions,
   type ApplicationTheme,
@@ -188,6 +188,10 @@ const defaultState: GalleryState = {
 
 export default function App() {
   const [state, setState] = useState<GalleryState>(() => loadState());
+  const [autoPlacementFailure, setAutoPlacementFailure] = useState<{
+    message: string;
+    diagnostics: AutoPlacementDiagnostics;
+  } | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState('');
   const [wallDragPreview, setWallDragPreview] = useState<WallDragPreview | null>(null);
   const [undoState, setUndoState] = useState<GalleryState | null>(null);
@@ -1037,10 +1041,14 @@ export default function App() {
       },
     });
     if (!result.ok) {
+      setAutoPlacementFailure(
+        result.diagnostics ? { message: result.message, diagnostics: result.diagnostics } : null,
+      );
       setState((current) => ({ ...current, message: result.message }));
       return;
     }
 
+    setAutoPlacementFailure(null);
     setUndoState(state);
     setState((current) => ({
       ...current,
@@ -2025,9 +2033,15 @@ export default function App() {
           <FeatureControls features={state.features} unit={state.unit} onChange={updateFeatures} />
           <section className="status-panel" aria-label="Latest update">
             <p className="status-panel-label">Latest update</p>
-            <p className="status-message" role="status" aria-live="polite">
-              {state.message}
-            </p>
+            <div className="status-content" role="status" aria-live="polite">
+              <p className="status-message">{state.message}</p>
+              {autoPlacementFailure?.message === state.message ? (
+                <AutoPlacementFailureDetails
+                  diagnostics={autoPlacementFailure.diagnostics}
+                  unit={state.unit}
+                />
+              ) : null}
+            </div>
           </section>
           <ExportPanel
             ready={readyToExport}
@@ -2055,6 +2069,44 @@ export default function App() {
       />
     </main>
   );
+}
+
+function AutoPlacementFailureDetails({
+  diagnostics,
+  unit,
+}: {
+  diagnostics: AutoPlacementDiagnostics;
+  unit: Unit;
+}) {
+  return (
+    <div className="auto-placement-diagnostics">
+      <p>
+        Tried {diagnostics.attempts.length} layout strategies with{' '}
+        {formatMeasurement(diagnostics.resolvedGapIn, unit)} spacing and a{' '}
+        {formatMeasurement(diagnostics.resolvedOuterMarginIn, unit)} wall margin.
+      </p>
+      <ul>
+        {diagnostics.attempts.map((attempt) => (
+          <li key={attempt.family}>
+            <strong>{capitalize(attempt.family)}:</strong> {attempt.reason}
+            {attempt.requiredWidthIn !== undefined && attempt.requiredHeightIn !== undefined ? (
+              <span>
+                {' '}
+                Needs {formatMeasurement(attempt.requiredWidthIn, unit)} wide x{' '}
+                {formatMeasurement(attempt.requiredHeightIn, unit)} tall including margins; wall
+                bounds are {formatMeasurement(diagnostics.wallWidthIn, unit)} x{' '}
+                {formatMeasurement(diagnostics.wallHeightIn, unit)}.
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function BrandLogo() {

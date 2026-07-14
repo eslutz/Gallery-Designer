@@ -129,6 +129,42 @@ describe('Gallery Designer app', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/full wall/i);
   });
 
+  it('explains the spacing, margin, and attempted strategies after auto-placement fails', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.clear(screen.getByLabelText('Section 1 width'));
+    await user.type(screen.getByLabelText('Section 1 width'), '40');
+    await user.clear(screen.getByLabelText('Section 1 height'));
+    await user.type(screen.getByLabelText('Section 1 height'), '30');
+    await user.clear(screen.getByLabelText('Piece 1 width'));
+    await user.type(screen.getByLabelText('Piece 1 width'), '12');
+    await user.clear(screen.getByLabelText('Piece 1 height'));
+    await user.type(screen.getByLabelText('Piece 1 height'), '12');
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    await user.clear(screen.getByLabelText('Piece 2 width'));
+    await user.type(screen.getByLabelText('Piece 2 width'), '13');
+    await user.clear(screen.getByLabelText('Piece 2 height'));
+    await user.type(screen.getByLabelText('Piece 2 height'), '12');
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    await user.clear(screen.getByLabelText('Piece 3 width'));
+    await user.type(screen.getByLabelText('Piece 3 width'), '12');
+    await user.clear(screen.getByLabelText('Piece 3 height'));
+    await user.type(screen.getByLabelText('Piece 3 height'), '13');
+
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent(/2 in spacing/i);
+    expect(status).toHaveTextContent(/5 in wall margin/i);
+    expect(within(status).getByText(/Row:/i).closest('li')).toHaveTextContent(/wider/i);
+    expect(
+      within(status)
+        .getByText(/Packed:/i)
+        .closest('li'),
+    ).toHaveTextContent(/could not place every piece/i);
+  });
+
   it('does not render manual wall section position fields', () => {
     render(<App />);
 

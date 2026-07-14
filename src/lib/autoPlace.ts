@@ -16,8 +16,26 @@ import { roundToPrecision } from './units';
 const QUARTER_IN = 0.25;
 const DEFAULT_MAX_PIECES = 50;
 const DEFAULT_MAX_CANDIDATES_PER_FAMILY = 2_000;
+const PACKING_BEAM_WIDTH = 24;
+const PACKING_POSITIONS_PER_STATE = 64;
+const PACKING_AXIS_CANDIDATE_LIMIT = 28;
 
-type AutoPlacementFamily = 'grid' | 'row' | 'stack' | 'salon';
+export type AutoPlacementFamily = 'grid' | 'row' | 'stack' | 'salon' | 'packed';
+
+export interface AutoPlacementAttemptDiagnostic {
+  family: AutoPlacementFamily;
+  reason: string;
+  requiredWidthIn?: number;
+  requiredHeightIn?: number;
+}
+
+export interface AutoPlacementDiagnostics {
+  resolvedGapIn: number;
+  resolvedOuterMarginIn: number;
+  wallWidthIn: number;
+  wallHeightIn: number;
+  attempts: AutoPlacementAttemptDiagnostic[];
+}
 
 export interface AutoPlacementOptions {
   settings: AutoPlacementSettings;
@@ -37,6 +55,7 @@ export type AutoPlacementResult =
   | {
       ok: false;
       message: string;
+      diagnostics?: AutoPlacementDiagnostics;
     };
 
 interface CandidatePlacement {
@@ -116,9 +135,11 @@ export function autoPlacePieces(
   }
 
   const families = resolveFamilies(pieces, settings.layoutPreference);
-  const candidates = families.flatMap((family) =>
-    generateFamilyCandidates(normalizedSections, pieces, family, settings, bounds),
-  );
+  const familyResults = families.map((family) => ({
+    family,
+    candidates: generateFamilyCandidates(normalizedSections, pieces, family, settings, bounds),
+  }));
+  const candidates = familyResults.flatMap((result) => result.candidates);
   const best = candidates.sort((a, b) => a.score - b.score)[0];
 
   if (!best) {
@@ -129,6 +150,7 @@ export function autoPlacePieces(
     return {
       ok: false,
       message: `Could not fit ${requested} on the available connected wall space with the current margin and spacing.`,
+      diagnostics: buildFailureDiagnostics(pieces, families, familyResults, settings, bounds),
     };
   }
 
@@ -203,6 +225,9 @@ function resolveFamilies(
     families.push('grid');
   }
   families.push('row', 'stack', 'salon');
+  if (!allSameSize(pieces)) {
+    families.push('packed');
+  }
   return families;
 }
 
@@ -213,6 +238,10 @@ function generateFamilyCandidates(
   settings: ResolvedSettings,
   bounds: ReturnType<typeof getWallBounds>,
 ): LayoutCandidate[] {
+  if (family === 'packed') {
+    return generatePackedCandidates(sections, pieces, settings, bounds);
+  }
+
   const shapes = generateIntrinsicShapes(pieces, family, settings.gapIn);
   const candidates: LayoutCandidate[] = [];
 
@@ -281,7 +310,224 @@ function generateIntrinsicShapes(
   if (family === 'stack') {
     return [generateStackShape(pieces, gapIn)];
   }
+  if (family === 'packed') {
+    return [];
+  }
   return generateSalonShapes(pieces, gapIn);
+}
+
+interface PackingState {
+  placements: CandidatePlacement[];
+  score: number;
+}
+
+function generatePackedCandidates(
+  sections: WallSection[],
+  pieces: ArtPiece[],
+  settings: ResolvedSettings,
+  bounds: ReturnType<typeof getWallBounds>,
+): LayoutCandidate[] {
+  const completeStates: PackingState[] = [];
+  const beamWidth = Math.min(PACKING_BEAM_WIDTH, settings.maxCandidatesPerFamily);
+
+  for (const ordering of packingPieceOrderings(pieces)) {
+    let states: PackingState[] = [{ placements: [], score: 0 }];
+
+    for (const piece of ordering) {
+      const nextStates: PackingState[] = [];
+      for (const state of states) {
+        const viablePlacements = packingPositionCandidates(
+          sections,
+          piece,
+          pieces,
+          state.placements,
+          settings,
+        )
+          .filter((placement) =>
+            packingPlacementFits(
+              sections,
+              pieces,
+              piece,
+              placement,
+              state.placements,
+              settings,
+              bounds,
+            ),
+          )
+          .map((placement) => {
+            const placements = [...state.placements, placement];
+            return {
+              placements,
+              score: scorePartialPacking(pieces, placements, bounds, settings),
+            };
+          })
+          .sort((first, second) => first.score - second.score)
+          .slice(0, PACKING_POSITIONS_PER_STATE);
+        nextStates.push(...viablePlacements);
+      }
+
+      states = deduplicatePackingStates(nextStates)
+        .sort((first, second) => first.score - second.score)
+        .slice(0, beamWidth);
+      if (states.length === 0) {
+        break;
+      }
+    }
+
+    if (states[0]?.placements.length === pieces.length) {
+      completeStates.push(...states);
+    }
+  }
+
+  return deduplicatePackingStates(completeStates)
+    .slice(0, settings.maxCandidatesPerFamily)
+    .map((state) => {
+      const group = groupForCandidatePlacements(pieces, state.placements);
+      return {
+        family: 'packed',
+        placements: state.placements,
+        group,
+        score: scoreCandidate('packed', pieces, state.placements, group, bounds, settings),
+      };
+    });
+}
+
+function packingPlacementFits(
+  sections: WallSection[],
+  pieces: ArtPiece[],
+  piece: ArtPiece,
+  placement: CandidatePlacement,
+  existingPlacements: CandidatePlacement[],
+  settings: ResolvedSettings,
+  bounds: ReturnType<typeof getWallBounds>,
+): boolean {
+  const rect = rectForCandidate(placement, piece);
+  if (!rectIsCoveredBySections(expandRect(rect, settings.outerMarginIn), sections)) {
+    return false;
+  }
+  if (
+    settings.wallFeatures.some(
+      (feature) =>
+        feature.rule.blocksPlacement && rectsOverlap(rect, featureBlockRect(feature, bounds)),
+    )
+  ) {
+    return false;
+  }
+
+  const expanded = expandRect(rect, settings.gapIn / 2);
+  return existingPlacements.every((existing) => {
+    const existingPiece = pieceById(pieces, existing.pieceId);
+    return !rectsOverlap(
+      expanded,
+      expandRect(rectForCandidate(existing, existingPiece), settings.gapIn / 2),
+    );
+  });
+}
+
+function packingPieceOrderings(pieces: ArtPiece[]): ArtPiece[][] {
+  const orderings = [
+    [...pieces].sort((a, b) => b.heightIn - a.heightIn || b.widthIn - a.widthIn),
+    [...pieces].sort(
+      (a, b) => b.widthIn * b.heightIn - a.widthIn * a.heightIn || b.heightIn - a.heightIn,
+    ),
+    [...pieces].sort((a, b) => b.widthIn - a.widthIn || b.heightIn - a.heightIn),
+    [...pieces].sort((a, b) => a.heightIn - b.heightIn || b.widthIn - a.widthIn),
+    [...pieces],
+  ];
+  const seen = new Set<string>();
+  return orderings.filter((ordering) => {
+    const key = ordering.map((piece) => piece.id).join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function packingPositionCandidates(
+  sections: WallSection[],
+  piece: ArtPiece,
+  pieces: ArtPiece[],
+  placements: CandidatePlacement[],
+  settings: ResolvedSettings,
+): CandidatePlacement[] {
+  const xCandidates: number[] = [];
+  const yCandidates: number[] = [];
+
+  for (const section of sections) {
+    const left = getSectionOffsetX(sections, section.id);
+    const top = getSectionOffsetY(sections, section.id);
+    xCandidates.push(
+      left + settings.outerMarginIn,
+      left + section.widthIn - settings.outerMarginIn - piece.widthIn,
+    );
+    yCandidates.push(
+      top + settings.outerMarginIn,
+      top + section.heightIn - settings.outerMarginIn - piece.heightIn,
+    );
+  }
+
+  for (const placement of [...placements].reverse()) {
+    const placedPiece = pieceById(pieces, placement.pieceId);
+    xCandidates.push(
+      placement.x,
+      placement.x + placedPiece.widthIn + settings.gapIn,
+      placement.x - settings.gapIn - piece.widthIn,
+      placement.x + (placedPiece.widthIn - piece.widthIn) / 2,
+    );
+    yCandidates.push(
+      placement.y,
+      placement.y + placedPiece.heightIn + settings.gapIn,
+      placement.y - settings.gapIn - piece.heightIn,
+      placement.y + (placedPiece.heightIn - piece.heightIn) / 2,
+    );
+  }
+
+  const resolvedX = uniqueRounded(xCandidates).slice(0, PACKING_AXIS_CANDIDATE_LIMIT);
+  const resolvedY = uniqueRounded(yCandidates).slice(0, PACKING_AXIS_CANDIDATE_LIMIT);
+  return resolvedX.flatMap((x) => resolvedY.map((y) => ({ pieceId: piece.id, x, y })));
+}
+
+function scorePartialPacking(
+  pieces: ArtPiece[],
+  placements: CandidatePlacement[],
+  bounds: ReturnType<typeof getWallBounds>,
+  settings: ResolvedSettings,
+): number {
+  const group = groupForCandidatePlacements(pieces, placements);
+  const groupWidth = group.right - group.left;
+  const groupHeight = group.bottom - group.top;
+  const pieceArea = placements.reduce((sum, placement) => {
+    const piece = pieceById(pieces, placement.pieceId);
+    return sum + piece.widthIn * piece.heightIn;
+  }, 0);
+  const unusedArea = groupWidth * groupHeight - pieceArea;
+  const targetX = bounds.minX + bounds.width / 2;
+  const targetY = targetCenterLine(settings.context, bounds);
+  const centerX = (group.left + group.right) / 2;
+  const centerY = (group.top + group.bottom) / 2;
+
+  return (
+    unusedArea / Math.max(pieceArea, 1) +
+    groupWidth / Math.max(bounds.width, 1) +
+    groupHeight / Math.max(bounds.height, 1) +
+    Math.abs(centerX - targetX) / Math.max(bounds.width, 1) +
+    Math.abs(centerY - targetY) / Math.max(bounds.height, 1)
+  );
+}
+
+function deduplicatePackingStates(states: PackingState[]): PackingState[] {
+  const byKey = new Map<string, PackingState>();
+  for (const state of states) {
+    const key = [...state.placements]
+      .sort((a, b) => a.pieceId.localeCompare(b.pieceId))
+      .map((placement) => `${placement.pieceId}:${placement.x}:${placement.y}`)
+      .join('|');
+    const existing = byKey.get(key);
+    if (!existing || state.score < existing.score) {
+      byKey.set(key, state);
+    }
+  }
+  return [...byKey.values()];
 }
 
 function generateGridShapes(
@@ -622,6 +868,9 @@ function scoreFamilyPreference(
 ): number {
   const anchor = preferredAnchorFeature(settings.wallFeatures);
   if (anchor) {
+    if (family === 'packed') {
+      return 1;
+    }
     const preferredIndex = anchor.rule.preferredFamilies.indexOf(family);
     if (preferredIndex >= 0) {
       return preferredIndex * 0.25;
@@ -634,7 +883,7 @@ function scoreFamilyPreference(
   if (allSameSize(pieces)) {
     return family === 'grid' ? 0 : 0.5;
   }
-  return family === 'salon' ? 0 : family === 'row' ? 2 : 2.5;
+  return family === 'salon' ? 0 : family === 'packed' ? 0.75 : family === 'row' ? 2 : 2.5;
 }
 
 function targetCenterLine(
@@ -668,6 +917,70 @@ function toSectionPlacement(sections: WallSection[], placement: CandidatePlaceme
     sectionId: section.id,
     xIn: roundToPrecision(placement.x - getSectionOffsetX(sections, section.id), QUARTER_IN),
     yIn: roundToPrecision(placement.y - getSectionOffsetY(sections, section.id), QUARTER_IN),
+  };
+}
+
+function buildFailureDiagnostics(
+  pieces: ArtPiece[],
+  families: AutoPlacementFamily[],
+  familyResults: Array<{ family: AutoPlacementFamily; candidates: LayoutCandidate[] }>,
+  settings: ResolvedSettings,
+  bounds: ReturnType<typeof getWallBounds>,
+): AutoPlacementDiagnostics {
+  return {
+    resolvedGapIn: settings.gapIn,
+    resolvedOuterMarginIn: settings.outerMarginIn,
+    wallWidthIn: bounds.width,
+    wallHeightIn: bounds.height,
+    attempts: families.map((family) => {
+      if (family === 'packed') {
+        return {
+          family,
+          reason:
+            'The mixed-size packing search could not place every piece inside the connected wall shape.',
+        };
+      }
+
+      const shapes = generateIntrinsicShapes(pieces, family, settings.gapIn);
+      if (shapes.length === 0) {
+        return {
+          family,
+          reason: 'This layout is not available for pieces with different dimensions.',
+        };
+      }
+
+      const smallest = [...shapes].sort((first, second) => {
+        const firstArea =
+          (first.group.right - first.group.left) * (first.group.bottom - first.group.top);
+        const secondArea =
+          (second.group.right - second.group.left) * (second.group.bottom - second.group.top);
+        return firstArea - secondArea;
+      })[0];
+      const requiredWidthIn =
+        smallest.group.right - smallest.group.left + settings.outerMarginIn * 2;
+      const requiredHeightIn =
+        smallest.group.bottom - smallest.group.top + settings.outerMarginIn * 2;
+      const tooWide = requiredWidthIn > bounds.width;
+      const tooTall = requiredHeightIn > bounds.height;
+      let reason =
+        'The overall dimensions fit the wall bounds, but the layout does not fit the connected wall shape after margins.';
+      if (tooWide && tooTall) {
+        reason = 'The layout is wider and taller than the available wall bounds after margins.';
+      } else if (tooWide) {
+        reason = 'The layout is wider than the available wall bounds after margins.';
+      } else if (tooTall) {
+        reason = 'The layout is taller than the available wall bounds after margins.';
+      } else if (familyResults.find((result) => result.family === family)?.candidates.length) {
+        reason = 'Valid candidates were generated but did not produce a selectable result.';
+      }
+
+      return {
+        family,
+        reason,
+        requiredWidthIn,
+        requiredHeightIn,
+      };
+    }),
   };
 }
 

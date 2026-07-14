@@ -1262,6 +1262,28 @@ select:focus,
   font-size: 0.9rem;
 }
 
+.status-content,
+.auto-placement-diagnostics {
+  display: grid;
+  gap: 8px;
+}
+
+.auto-placement-diagnostics {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.auto-placement-diagnostics p,
+.auto-placement-diagnostics ul {
+  margin: 0;
+}
+
+.auto-placement-diagnostics ul {
+  display: grid;
+  gap: 6px;
+  padding-left: 18px;
+}
+
 .status-panel {
   display: grid;
   gap: 6px;

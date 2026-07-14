@@ -156,6 +156,79 @@ describe('automatic placement', () => {
     expect(getAutoPlacementIssues(wall, pieces, result.placements)).toEqual([]);
   });
 
+  it('packs mixed-size pieces into a stepped available wall', () => {
+    const steppedWall: WallSection[] = [
+      {
+        id: 'left',
+        name: 'Section 1',
+        widthIn: 79,
+        heightIn: 60,
+        cornerAfter: 'none',
+        xIn: 0,
+        yIn: -23.875,
+      },
+      {
+        id: 'right',
+        name: 'Section 2',
+        widthIn: 59,
+        heightIn: 36,
+        cornerAfter: 'none',
+        xIn: 79,
+        yIn: -23.875,
+      },
+    ];
+    const pieces: ArtPiece[] = [
+      { id: 'fallout', label: 'Fallout Shelter', widthIn: 10, heightIn: 14 },
+      { id: 'doctor-who', label: 'Doctor Who', widthIn: 12.5, heightIn: 18 },
+      { id: 'duke', label: 'Duke Nukem', widthIn: 12.5, heightIn: 18 },
+      { id: 'walking-dead', label: 'The Walking Dead', widthIn: 11.5, heightIn: 17.5 },
+      { id: 'riker', label: 'Riker', widthIn: 12.5, heightIn: 16 },
+      { id: 'office', label: 'The Office', widthIn: 17, heightIn: 13.5 },
+      { id: 'it-wide', label: 'The IT Crowd', widthIn: 27, heightIn: 15 },
+      { id: 'ash', label: 'Ash', widthIn: 13, heightIn: 28 },
+      { id: 'it-tall', label: 'The IT Crowd', widthIn: 17, heightIn: 21 },
+      { id: 'expanse', label: 'The Expanse', widthIn: 18, heightIn: 24 },
+      { id: 'silicon-valley', label: 'Silicon Valley', widthIn: 17, heightIn: 25 },
+      { id: 'mcrn', label: 'MCRN', widthIn: 3.25, heightIn: 9.75 },
+    ];
+
+    const result = autoPlacePieces(steppedWall, pieces, { settings: blankSettings });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.layoutKind).toBe('packed');
+    expect(result.placements).toHaveLength(pieces.length);
+    expect(getAutoPlacementIssues(steppedWall, pieces, result.placements)).toEqual([]);
+  });
+
+  it('returns actionable diagnostics when no layout family can fit', () => {
+    const result = autoPlacePieces(
+      [{ id: 'small', name: 'Small', widthIn: 40, heightIn: 30, cornerAfter: 'none' }],
+      [
+        { id: 'one', label: 'One', widthIn: 12, heightIn: 12 },
+        { id: 'two', label: 'Two', widthIn: 13, heightIn: 12 },
+        { id: 'three', label: 'Three', widthIn: 12, heightIn: 13 },
+      ],
+      { settings: blankSettings },
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics).toMatchObject({
+      resolvedGapIn: 2,
+      resolvedOuterMarginIn: 5,
+      wallWidthIn: 40,
+      wallHeightIn: 30,
+    });
+    expect(result.diagnostics.attempts.map((attempt) => attempt.family)).toEqual([
+      'row',
+      'stack',
+      'salon',
+      'packed',
+    ]);
+    expect(result.diagnostics.attempts.every((attempt) => attempt.reason.length > 0)).toBe(true);
+  });
+
   it('returns an explicit error when the wall cannot fit the pieces', () => {
     const result = autoPlacePieces(
       [{ id: 'tiny', name: 'Tiny', widthIn: 10, heightIn: 10, cornerAfter: 'none' }],
