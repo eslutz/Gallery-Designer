@@ -2024,7 +2024,7 @@ function WallDragPreviewOverlay({
     return null;
   }
 
-  const label = getPreviewPieceLabelLayout(piece, preview);
+  const label = fitPieceLabel(piece.label, piece.widthIn, piece.heightIn);
   const bufferGapPx = artPieceBufferEnabled
     ? getPreviewBufferGapPx(piece, preview, artPieceBufferGapIn)
     : 0;
@@ -2049,27 +2049,18 @@ function WallDragPreviewOverlay({
       data-testid="wall-drag-preview"
       style={previewStyle}
     >
-      <PiecePreviewLabel layout={label} />
+      <svg
+        className="wall-drag-preview-svg"
+        viewBox={`0 0 ${piece.widthIn} ${piece.heightIn}`}
+        aria-hidden="true"
+        focusable="false"
+      >
+        <g className="piece selected">
+          <rect x="0" y="0" width={piece.widthIn} height={piece.heightIn} rx="0.8" />
+          <PieceLabelSvg piece={piece} offsetX={0} offsetY={0} clipId={`preview-${piece.id}`} />
+        </g>
+      </svg>
     </div>
-  );
-}
-
-function PiecePreviewLabel({ layout }: { layout: PreviewPieceLabelLayout }) {
-  return (
-    <span
-      className={
-        layout.placement === 'inside'
-          ? 'preview-piece-label'
-          : 'preview-piece-label outside-preview-piece-label'
-      }
-      style={{ fontSize: `${layout.fontSizePx}px`, lineHeight: `${layout.lineHeightPx}px` }}
-    >
-      {layout.lines.map((line, index) => (
-        <span className="preview-piece-label-line" key={`${line}-${index}`}>
-          {line}
-        </span>
-      ))}
-    </span>
   );
 }
 
@@ -2079,30 +2070,6 @@ function startSuppressingTextSelection() {
 
 function stopSuppressingTextSelection() {
   document.body.classList.remove(SUPPRESS_TEXT_SELECTION_CLASS);
-}
-
-interface PreviewPieceLabelLayout {
-  lines: string[];
-  fontSizePx: number;
-  lineHeightPx: number;
-  placement: 'inside' | 'outside';
-}
-
-function getPreviewPieceLabelLayout(
-  piece: ArtPiece,
-  size: { widthPx: number; heightPx: number },
-): PreviewPieceLabelLayout {
-  const layout = fitPieceLabel(piece.label, piece.widthIn, piece.heightIn);
-  const scale = Math.min(size.widthPx / piece.widthIn, size.heightPx / piece.heightIn);
-  const pixelsPerInch = Number.isFinite(scale) && scale > 0 ? scale : DRAG_PREVIEW_SCALE_PX_PER_IN;
-  const fontSizePx = layout.fontSize * pixelsPerInch;
-
-  return {
-    lines: layout.lines,
-    fontSizePx,
-    lineHeightPx: fontSizePx * 1.15,
-    placement: layout.placement,
-  };
 }
 
 function getPreviewBufferGapPx(
@@ -3005,25 +2972,8 @@ function WallCanvas({
         const selected = piece.id === selectedPieceId;
         const pieceX = offsetX + placement.xIn;
         const pieceY = offsetY + placement.yIn;
-        const label = fitPieceLabel(piece.label, piece.widthIn, piece.heightIn);
-        const clipId = `piece-label-clip-${piece.id}`;
-        const labelLineHeight = label.fontSize * 1.15;
-        const labelCenterY =
-          label.placement === 'inside'
-            ? pieceY + piece.heightIn / 2 - ((label.lines.length - 1) * labelLineHeight) / 2
-            : pieceY + piece.heightIn + labelLineHeight;
         return (
           <g key={piece.id} className={selected ? 'piece selected' : 'piece'}>
-            {label.placement === 'inside' ? (
-              <clipPath id={clipId}>
-                <rect
-                  x={pieceX + label.padding}
-                  y={pieceY + label.padding}
-                  width={Math.max(0.1, piece.widthIn - label.padding * 2)}
-                  height={Math.max(0.1, piece.heightIn - label.padding * 2)}
-                />
-              </clipPath>
-            ) : null}
             <rect
               x={pieceX}
               y={pieceY}
@@ -3038,27 +2988,7 @@ function WallCanvas({
               onPointerDown={(event) => onPointerDown(event, placement)}
               onKeyDown={(event) => onPieceKeyDown(event, placement)}
             />
-            <text
-              x={pieceX + piece.widthIn / 2}
-              y={labelCenterY}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              className={
-                label.placement === 'inside' ? 'piece-label' : 'piece-label outside-piece-label'
-              }
-              clipPath={label.placement === 'inside' ? `url(#${clipId})` : undefined}
-              style={{ fontSize: `${label.fontSize}px` }}
-            >
-              {label.lines.map((line, index) => (
-                <tspan
-                  key={`${piece.id}-label-${index}`}
-                  x={pieceX + piece.widthIn / 2}
-                  dy={index === 0 ? 0 : labelLineHeight}
-                >
-                  {line}
-                </tspan>
-              ))}
-            </text>
+            <PieceLabelSvg piece={piece} offsetX={pieceX} offsetY={pieceY} clipId={piece.id} />
             {piece.hookSpec ? <HookMarks piece={piece} offsetX={pieceX} offsetY={pieceY} /> : null}
           </g>
         );
@@ -3075,8 +3005,66 @@ function toClosedSvgPath(points: Array<{ x: number; y: number }>): string {
   return `M ${points.map(({ x, y }) => `${x} ${y}`).join(' L ')} Z`;
 }
 
+function PieceLabelSvg({
+  piece,
+  offsetX,
+  offsetY,
+  clipId,
+}: {
+  piece: ArtPiece;
+  offsetX: number;
+  offsetY: number;
+  clipId: string;
+}) {
+  const label = fitPieceLabel(piece.label, piece.widthIn, piece.heightIn);
+  const labelLineHeight = label.fontSize * LABEL_LINE_HEIGHT_RATIO;
+  const labelCenterY =
+    label.placement === 'inside'
+      ? offsetY + piece.heightIn / 2 - ((label.lines.length - 1) * labelLineHeight) / 2
+      : offsetY + piece.heightIn + labelLineHeight;
+  const labelCenterX = offsetX + piece.widthIn / 2;
+  const resolvedClipId = `piece-label-clip-${clipId}`;
+
+  return (
+    <>
+      {label.placement === 'inside' ? (
+        <clipPath id={resolvedClipId}>
+          <rect
+            x={offsetX + label.padding}
+            y={offsetY + label.padding}
+            width={Math.max(0.1, piece.widthIn - label.padding * 2)}
+            height={Math.max(0.1, piece.heightIn - label.padding * 2)}
+          />
+        </clipPath>
+      ) : null}
+      <text
+        x={labelCenterX}
+        y={labelCenterY}
+        textAnchor="middle"
+        dominantBaseline="middle"
+        className={label.placement === 'inside' ? 'piece-label' : 'piece-label outside-piece-label'}
+        clipPath={label.placement === 'inside' ? `url(#${resolvedClipId})` : undefined}
+        style={{ fontSize: `${label.fontSize}px` }}
+      >
+        {label.lines.map((line, index) => (
+          <tspan
+            key={`${clipId}-label-${index}`}
+            x={labelCenterX}
+            dy={index === 0 ? 0 : labelLineHeight}
+          >
+            {line}
+          </tspan>
+        ))}
+      </text>
+    </>
+  );
+}
+
+const LABEL_LINE_HEIGHT_RATIO = 1.15;
+const LABEL_WIDTH_RATIO = 0.62;
+
 function fitPieceLabel(label: string, widthIn: number, heightIn: number) {
-  const padding = Math.min(1, Math.max(0.35, Math.min(widthIn, heightIn) * 0.08));
+  const padding = Math.min(1.25, Math.max(0.5, Math.min(widthIn, heightIn) * 0.1));
   const availableWidth = Math.max(0.5, widthIn - padding * 2);
   const availableHeight = Math.max(0.5, heightIn - padding * 2);
   const text = label.trim().replace(/\s+/g, ' ') || 'Untitled';
@@ -3085,7 +3073,7 @@ function fitPieceLabel(label: string, widthIn: number, heightIn: number) {
 
   for (const fontSize of fontSizes) {
     const lines = wrapLabelLines(text, availableWidth, fontSize);
-    const lineHeight = fontSize * 1.15;
+    const lineHeight = fontSize * LABEL_LINE_HEIGHT_RATIO;
     if (
       fontSize >= minimumInsideFontSize &&
       lines.length * lineHeight <= availableHeight &&
@@ -3099,7 +3087,7 @@ function fitPieceLabel(label: string, widthIn: number, heightIn: number) {
 }
 
 function wrapLabelLines(label: string, availableWidth: number, fontSize: number): string[] {
-  const maxCharacters = Math.max(1, Math.floor(availableWidth / (fontSize * 0.55)));
+  const maxCharacters = Math.max(1, Math.floor(availableWidth / (fontSize * LABEL_WIDTH_RATIO)));
   const lines: string[] = [];
 
   for (const word of label.split(' ')) {
@@ -3117,7 +3105,7 @@ function wrapLabelLines(label: string, availableWidth: number, fontSize: number)
 }
 
 function labelLineFits(line: string, availableWidth: number, fontSize: number): boolean {
-  return line.length * fontSize * 0.55 <= availableWidth;
+  return line.length * fontSize * LABEL_WIDTH_RATIO <= availableWidth;
 }
 
 function HookMarks({

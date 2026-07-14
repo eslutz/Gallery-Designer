@@ -796,7 +796,7 @@ describe('Gallery Designer app', () => {
   });
 
   it('uses the same fitted multi-line label treatment in a wall drag preview', async () => {
-    render(<App />);
+    const { container } = render(<App />);
 
     fireEvent.change(screen.getByLabelText('Piece 1 label'), {
       target: { value: 'The Walking Dead' },
@@ -806,6 +806,9 @@ describe('Gallery Designer app', () => {
     mockCanvasProjection(canvas);
 
     const wallPiece = screen.getByRole('button', { name: /^Move The Walking Dead$/i });
+    const placedLines = Array.from(container.querySelectorAll('.piece-label tspan')).map(
+      (line) => line.textContent,
+    );
     wallPiece.getBoundingClientRect = vi.fn(
       () =>
         ({
@@ -823,8 +826,13 @@ describe('Gallery Designer app', () => {
     startWallPieceDrag(wallPiece, 20, 20);
 
     const preview = screen.getByTestId('wall-drag-preview');
-    expect(preview.querySelectorAll('.preview-piece-label-line')).toHaveLength(3);
-    expect(preview.querySelector('.preview-piece-label')).toHaveStyle({ fontSize: '12px' });
+    const previewLines = Array.from(preview.querySelectorAll('.piece-label tspan')).map(
+      (line) => line.textContent,
+    );
+    expect(preview.querySelector('.wall-drag-preview-svg')).toBeInTheDocument();
+    expect(preview.querySelector('.preview-piece-label')).not.toBeInTheDocument();
+    expect(previewLines).toEqual(placedLines);
+    expect(previewLines).toEqual(['The', 'Walking', 'Dead']);
   });
 
   it('moves workspace actions above the canvas and moves export readiness into the export panel', () => {
@@ -1002,7 +1010,12 @@ describe('Gallery Designer app', () => {
     placeStagedPieceOnWall(/Drag The Walking Dead from staging/i);
 
     expect(container.querySelectorAll('.piece-label tspan').length).toBeGreaterThan(1);
-    expect(container.querySelector('clipPath[id^="piece-label-clip-"]')).toBeInTheDocument();
+    const clipRect = container.querySelector('clipPath[id^="piece-label-clip-"] rect');
+    const pieceRect = screen.getByRole('button', { name: /^Move The Walking Dead$/i });
+    expect(clipRect).toBeInTheDocument();
+    expect(
+      Number(clipRect?.getAttribute('x')) - Number(pieceRect.getAttribute('x')),
+    ).toBeGreaterThanOrEqual(1);
   });
 
   it('wraps art labels without splitting individual words', () => {
