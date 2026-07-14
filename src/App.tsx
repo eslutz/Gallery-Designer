@@ -1687,159 +1687,173 @@ export default function App() {
 
       <section className="workspace">
         <aside className="setup-panel" aria-label="Setup controls">
-          <PanelTitle icon={<Ruler size={18} />} title="Wall sections" />
-          <div className="section-list">
-            {state.sections.map((section, index) => (
-              <article
-                className={`setup-row section-row ${
-                  section.id === selectedSectionId ? 'selected' : ''
-                }`}
-                key={section.id}
-                onClick={() => toggleSectionSelection(section.id)}
-              >
-                <div className="row-heading">
-                  <input
-                    aria-label={`Section ${index + 1} name`}
-                    value={section.name}
-                    onChange={(event) => updateSection(section.id, { name: event.target.value })}
-                  />
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-label={`Remove Section ${index + 1}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      removeSection(section.id);
-                    }}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-                <div className="field-grid">
-                  <NumberField
-                    label={`Section ${index + 1} width`}
-                    valueIn={section.widthIn}
-                    unit={state.unit}
-                    precision="size"
-                    error={
-                      !Number.isFinite(section.widthIn) || section.widthIn <= 0
-                        ? `${section.name} needs a positive width.`
-                        : undefined
-                    }
-                    onChange={(widthIn) => updateSection(section.id, { widthIn })}
-                  />
-                  <NumberField
-                    label={`Section ${index + 1} height`}
-                    valueIn={section.heightIn}
-                    unit={state.unit}
-                    precision="size"
-                    error={
-                      !Number.isFinite(section.heightIn) || section.heightIn <= 0
-                        ? `${section.name} needs a positive height.`
-                        : undefined
-                    }
-                    onChange={(heightIn) => updateSection(section.id, { heightIn })}
-                  />
-                </div>
-                <label className="field">
-                  Corner after
-                  <select
-                    aria-label={`Section ${index + 1} corner after`}
-                    value={section.cornerAfter}
-                    onChange={(event) =>
-                      updateSection(section.id, {
-                        cornerAfter: event.target.value as WallSection['cornerAfter'],
-                      })
-                    }
-                  >
-                    <option value="none">None / end</option>
-                    <option value="left">Turns left</option>
-                    <option value="right">Turns right</option>
-                  </select>
-                </label>
-              </article>
-            ))}
-          </div>
-          <button type="button" className="secondary full-width" onClick={addSection}>
-            <Plus size={18} />
-            Add wall section
-          </button>
+          <CollapsiblePanel
+            icon={<Ruler size={18} />}
+            title={`Wall sections (${state.sections.length})`}
+            ariaLabel="Wall section settings"
+            className="setup-utility-panel wall-sections-panel"
+            contentClassName="wall-sections-panel-content"
+          >
+            <div className="section-list">
+              {state.sections.map((section, index) => (
+                <article
+                  className={`setup-row section-row ${
+                    section.id === selectedSectionId ? 'selected' : ''
+                  }`}
+                  key={section.id}
+                  onClick={() => toggleSectionSelection(section.id)}
+                >
+                  <div className="row-heading">
+                    <input
+                      aria-label={`Section ${index + 1} name`}
+                      value={section.name}
+                      onChange={(event) => updateSection(section.id, { name: event.target.value })}
+                    />
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label={`Remove Section ${index + 1}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        removeSection(section.id);
+                      }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                  <div className="field-grid">
+                    <NumberField
+                      label={`Section ${index + 1} width`}
+                      valueIn={section.widthIn}
+                      unit={state.unit}
+                      precision="size"
+                      error={
+                        !Number.isFinite(section.widthIn) || section.widthIn <= 0
+                          ? `${section.name} needs a positive width.`
+                          : undefined
+                      }
+                      onChange={(widthIn) => updateSection(section.id, { widthIn })}
+                    />
+                    <NumberField
+                      label={`Section ${index + 1} height`}
+                      valueIn={section.heightIn}
+                      unit={state.unit}
+                      precision="size"
+                      error={
+                        !Number.isFinite(section.heightIn) || section.heightIn <= 0
+                          ? `${section.name} needs a positive height.`
+                          : undefined
+                      }
+                      onChange={(heightIn) => updateSection(section.id, { heightIn })}
+                    />
+                  </div>
+                  <label className="field">
+                    Corner after
+                    <select
+                      aria-label={`Section ${index + 1} corner after`}
+                      value={section.cornerAfter}
+                      onChange={(event) =>
+                        updateSection(section.id, {
+                          cornerAfter: event.target.value as WallSection['cornerAfter'],
+                        })
+                      }
+                    >
+                      <option value="none">None / end</option>
+                      <option value="left">Turns left</option>
+                      <option value="right">Turns right</option>
+                    </select>
+                  </label>
+                </article>
+              ))}
+            </div>
+            <button type="button" className="secondary full-width" onClick={addSection}>
+              <Plus size={18} />
+              Add wall section
+            </button>
+          </CollapsiblePanel>
 
-          <PanelTitle icon={<Move size={18} />} title="Art pieces" />
-          <div className="piece-list">
-            {state.pieces.map((piece, index) => (
-              <article
-                className={`setup-row piece-row ${
-                  piece.id === state.selectedPieceId ? 'selected' : ''
-                }`}
-                key={piece.id}
-                onClick={(event) => {
-                  if (
-                    event.target instanceof HTMLElement &&
-                    event.target.closest('input, select, button')
-                  ) {
-                    return;
-                  }
-                  togglePieceSelection(piece.id);
-                }}
-              >
-                <div className="row-heading">
-                  <input
-                    aria-label={`Piece ${index + 1} label`}
-                    value={piece.label}
-                    onFocus={() => selectPiece(piece.id)}
-                    onChange={(event) => updatePiece(piece.id, { label: event.target.value })}
-                  />
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-label={`Remove Piece ${index + 1}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      removePiece(piece.id);
-                    }}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-                <div className="field-grid">
-                  <NumberField
-                    label={`Piece ${index + 1} width`}
-                    valueIn={piece.widthIn}
-                    unit={state.unit}
-                    precision="size"
-                    error={
-                      !Number.isFinite(piece.widthIn) || piece.widthIn <= 0
-                        ? `${piece.label} needs a positive width.`
-                        : undefined
+          <CollapsiblePanel
+            icon={<Move size={18} />}
+            title={`Art pieces (${state.pieces.length})`}
+            ariaLabel="Art piece settings"
+            className="setup-utility-panel art-pieces-panel"
+            contentClassName="art-pieces-panel-content"
+          >
+            <div className="piece-list">
+              {state.pieces.map((piece, index) => (
+                <article
+                  className={`setup-row piece-row ${
+                    piece.id === state.selectedPieceId ? 'selected' : ''
+                  }`}
+                  key={piece.id}
+                  onClick={(event) => {
+                    if (
+                      event.target instanceof HTMLElement &&
+                      event.target.closest('input, select, button')
+                    ) {
+                      return;
                     }
-                    onChange={(widthIn) => updatePiece(piece.id, { widthIn })}
-                  />
-                  <NumberField
-                    label={`Piece ${index + 1} height`}
-                    valueIn={piece.heightIn}
+                    togglePieceSelection(piece.id);
+                  }}
+                >
+                  <div className="row-heading">
+                    <input
+                      aria-label={`Piece ${index + 1} label`}
+                      value={piece.label}
+                      onFocus={() => selectPiece(piece.id)}
+                      onChange={(event) => updatePiece(piece.id, { label: event.target.value })}
+                    />
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label={`Remove Piece ${index + 1}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        removePiece(piece.id);
+                      }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                  <div className="field-grid">
+                    <NumberField
+                      label={`Piece ${index + 1} width`}
+                      valueIn={piece.widthIn}
+                      unit={state.unit}
+                      precision="size"
+                      error={
+                        !Number.isFinite(piece.widthIn) || piece.widthIn <= 0
+                          ? `${piece.label} needs a positive width.`
+                          : undefined
+                      }
+                      onChange={(widthIn) => updatePiece(piece.id, { widthIn })}
+                    />
+                    <NumberField
+                      label={`Piece ${index + 1} height`}
+                      valueIn={piece.heightIn}
+                      unit={state.unit}
+                      precision="size"
+                      error={
+                        !Number.isFinite(piece.heightIn) || piece.heightIn <= 0
+                          ? `${piece.label} needs a positive height.`
+                          : undefined
+                      }
+                      onChange={(heightIn) => updatePiece(piece.id, { heightIn })}
+                    />
+                  </div>
+                  <HookControls
+                    piece={piece}
                     unit={state.unit}
-                    precision="size"
-                    error={
-                      !Number.isFinite(piece.heightIn) || piece.heightIn <= 0
-                        ? `${piece.label} needs a positive height.`
-                        : undefined
-                    }
-                    onChange={(heightIn) => updatePiece(piece.id, { heightIn })}
+                    onChange={(hookSpec) => updatePiece(piece.id, { hookSpec })}
                   />
-                </div>
-                <HookControls
-                  piece={piece}
-                  unit={state.unit}
-                  onChange={(hookSpec) => updatePiece(piece.id, { hookSpec })}
-                />
-              </article>
-            ))}
-          </div>
-          <button type="button" className="secondary full-width" onClick={addPiece}>
-            <Plus size={18} />
-            Add art piece
-          </button>
+                </article>
+              ))}
+            </div>
+            <button type="button" className="secondary full-width" onClick={addPiece}>
+              <Plus size={18} />
+              Add art piece
+            </button>
+          </CollapsiblePanel>
         </aside>
 
         <section className="editor-column">
@@ -2041,12 +2055,28 @@ export default function App() {
         </section>
 
         <aside className="right-panel" aria-label="Details and export">
-          <AutoPlacementControls
-            settings={state.autoPlacementSettings}
-            unit={state.unit}
-            onChange={updateAutoPlacementSettings}
-          />
-          <FeatureControls features={state.features} unit={state.unit} onChange={updateFeatures} />
+          <CollapsiblePanel
+            icon={<Wand2 size={18} />}
+            title="Auto-placement"
+            ariaLabel="Auto-placement settings"
+          >
+            <AutoPlacementControls
+              settings={state.autoPlacementSettings}
+              unit={state.unit}
+              onChange={updateAutoPlacementSettings}
+            />
+          </CollapsiblePanel>
+          <CollapsiblePanel
+            icon={<SlidersHorizontal size={18} />}
+            title="Features"
+            ariaLabel="Feature settings"
+          >
+            <FeatureControls
+              features={state.features}
+              unit={state.unit}
+              onChange={updateFeatures}
+            />
+          </CollapsiblePanel>
           <section className="status-panel" aria-label="Latest update">
             <p className="status-panel-label">Latest update</p>
             <div className="status-content" role="status" aria-live="polite">
@@ -2437,12 +2467,57 @@ function getUnplacedPieceIssues(pieces: ArtPiece[], placements: Placement[]): st
   );
 }
 
-function PanelTitle({ icon, title }: { icon: React.ReactNode; title: string }) {
+function CollapsiblePanel({
+  icon,
+  title,
+  ariaLabel,
+  defaultExpanded = true,
+  className = '',
+  contentClassName = '',
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  ariaLabel: string;
+  defaultExpanded?: boolean;
+  className?: string;
+  contentClassName?: string;
+  children: React.ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const contentId = useId();
+
   return (
-    <div className="panel-title">
-      {icon}
-      <h2>{title}</h2>
-    </div>
+    <section
+      className={`utility-panel feature-panel collapsible-panel ${className}`.trim()}
+      aria-label={ariaLabel}
+    >
+      <button
+        type="button"
+        className="collapsible-panel-trigger"
+        aria-expanded={expanded}
+        aria-controls={contentId}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <span className="panel-title">
+          {icon}
+          <h2>{title}</h2>
+        </span>
+        <ChevronDown
+          size={16}
+          aria-hidden="true"
+          focusable="false"
+          className={expanded ? 'collapsible-panel-caret' : 'collapsible-panel-caret collapsed'}
+        />
+      </button>
+      <div
+        id={contentId}
+        className={`collapsible-panel-content ${contentClassName}`.trim()}
+        hidden={!expanded}
+      >
+        {children}
+      </div>
+    </section>
   );
 }
 
@@ -2521,8 +2596,7 @@ function FeatureControls({
   const unitLabel = unit;
 
   return (
-    <section className="utility-panel feature-panel" aria-label="Feature settings">
-      <PanelTitle icon={<SlidersHorizontal size={18} />} title="Features" />
+    <>
       <label className="toggle-field">
         <input
           type="checkbox"
@@ -2595,7 +2669,7 @@ function FeatureControls({
       <p className="muted feature-help">
         Buffer guides reserve installation clearance around walls and artwork.
       </p>
-    </section>
+    </>
   );
 }
 
@@ -2676,8 +2750,7 @@ function AutoPlacementControls({
   }
 
   return (
-    <section className="utility-panel feature-panel" aria-label="Auto-placement settings">
-      <PanelTitle icon={<Wand2 size={18} />} title="Auto-placement" />
+    <>
       <label className="field">
         Wall setup
         <select
@@ -2851,7 +2924,7 @@ function AutoPlacementControls({
           </button>
         </div>
       ) : null}
-    </section>
+    </>
   );
 }
 
@@ -3370,8 +3443,7 @@ function ExportPanel({
     : `Complete export requirements: ${issues.join(' ')}`;
 
   return (
-    <section className="utility-panel">
-      <PanelTitle icon={<Download size={18} />} title="Export" />
+    <CollapsiblePanel icon={<Download size={18} />} title="Export" ariaLabel="Export settings">
       <div className="export-section">
         <h3>Print/export layout</h3>
         <p className="muted">
@@ -3430,7 +3502,7 @@ function ExportPanel({
       <p className="muted persistence-note">
         Your current design is saved locally in this browser.
       </p>
-    </section>
+    </CollapsiblePanel>
   );
 }
 
@@ -3440,8 +3512,12 @@ function MeasurementsTable({
   instructions: ReturnType<typeof buildMeasurementInstructions>;
 }) {
   return (
-    <section className="measurements-panel">
-      <h2>Installation measurements</h2>
+    <CollapsiblePanel
+      icon={<Ruler size={18} />}
+      title="Installation measurements"
+      ariaLabel="Installation measurements"
+      className="measurements-panel"
+    >
       <table className="measurements-table" aria-label="Installation measurements">
         <thead>
           <tr>
@@ -3526,7 +3602,7 @@ function MeasurementsTable({
           ))}
         </div>
       ) : null}
-    </section>
+    </CollapsiblePanel>
   );
 }
 

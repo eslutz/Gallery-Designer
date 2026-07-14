@@ -812,6 +812,85 @@ describe('Gallery Designer app', () => {
     expect(screen.getByLabelText('Art piece buffer gap (cm)')).toHaveValue('5.1');
   });
 
+  it('collapses and expands the Auto-placement and Features panels', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const autoPlacementToggle = screen.getByRole('button', { name: /Auto-placement/i });
+    expect(autoPlacementToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByLabelText('Wall setup')).toBeInTheDocument();
+
+    await user.click(autoPlacementToggle);
+
+    expect(autoPlacementToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByLabelText('Wall setup')).not.toBeVisible();
+
+    await user.click(autoPlacementToggle);
+
+    expect(autoPlacementToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByLabelText('Wall setup')).toBeVisible();
+
+    const featureToggle = screen.getByRole('button', { name: /Features/i });
+    expect(featureToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByLabelText('Snap to grid')).toBeInTheDocument();
+
+    await user.click(featureToggle);
+
+    expect(featureToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByLabelText('Snap to grid')).not.toBeVisible();
+
+    await user.click(featureToggle);
+
+    expect(featureToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByLabelText('Snap to grid')).toBeVisible();
+  });
+
+  it('uses collapsible panels for setup, export, and measurements', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const wallSectionsToggle = screen.getByRole('button', { name: /Wall sections \(1\)/i });
+    const artPiecesToggle = screen.getByRole('button', { name: /Art pieces \(1\)/i });
+    const exportToggle = screen.getByRole('button', { name: /^Export$/i });
+    const measurementsToggle = screen.getByRole('button', {
+      name: /^Installation measurements$/i,
+    });
+
+    expect(screen.getByRole('complementary', { name: /Setup controls/i })).toContainElement(
+      wallSectionsToggle,
+    );
+    expect(screen.getByRole('complementary', { name: /Setup controls/i })).toContainElement(
+      artPiecesToggle,
+    );
+    expect(wallSectionsToggle.closest('.utility-panel')).toHaveClass(
+      'setup-utility-panel',
+      'wall-sections-panel',
+    );
+    expect(artPiecesToggle.closest('.utility-panel')).toHaveClass(
+      'setup-utility-panel',
+      'art-pieces-panel',
+    );
+    expect(screen.getByLabelText('Section 1 width')).toBeVisible();
+    expect(screen.getByLabelText('Piece 1 width')).toBeVisible();
+    expect(screen.getByText(/Print\/export layout/i)).toBeVisible();
+    const measurementsTable = screen.getByRole('table', { name: /Installation measurements/i });
+    expect(measurementsTable).toBeVisible();
+
+    await user.click(wallSectionsToggle);
+    await user.click(artPiecesToggle);
+    await user.click(exportToggle);
+    await user.click(measurementsToggle);
+
+    expect(wallSectionsToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(artPiecesToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(exportToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(measurementsToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByLabelText('Section 1 width')).not.toBeVisible();
+    expect(screen.getByLabelText('Piece 1 width')).not.toBeVisible();
+    expect(screen.getByText(/Print\/export layout/i)).not.toBeVisible();
+    expect(measurementsTable).not.toBeVisible();
+  });
+
   it('gives repeated setup controls contextual accessible names', () => {
     render(<App />);
 
@@ -1052,10 +1131,12 @@ describe('Gallery Designer app', () => {
     expect(editorControls).toContainElement(screen.getByLabelText('Units'));
     expect(editorControls).toContainElement(screen.getByLabelText('Appearance'));
     expect(editorControls).toContainElement(screen.getByLabelText('Theme'));
-    expect(editorControls).toContainElement(screen.getByRole('button', { name: /Auto-place/i }));
+    expect(editorControls).toContainElement(
+      screen.getByRole('button', { name: /^Auto-place pieces$/i }),
+    );
     expect(editorControls).toContainElement(screen.getByRole('button', { name: /Clear/i }));
     expect(screen.getByRole('group', { name: /Placement controls/i })).toContainElement(
-      screen.getByRole('button', { name: /Auto-place/i }),
+      screen.getByRole('button', { name: /^Auto-place pieces$/i }),
     );
     expect(screen.queryByRole('group', { name: /View controls/i })).not.toBeInTheDocument();
     expect(screen.getByRole('group', { name: /Wall zoom controls/i })).toContainElement(

@@ -582,9 +582,10 @@ button:not(:disabled):active {
 }
 
 .app-shell {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
+  overflow: hidden;
 }
 
 .topbar {
@@ -686,7 +687,11 @@ button:not(:disabled):active {
 .workspace {
   display: grid;
   grid-template-columns: minmax(280px, 340px) minmax(560px, 1fr) minmax(280px, 360px);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
   gap: 20px;
+  min-height: 0;
+  overflow: auto;
   padding: 20px;
 }
 
@@ -701,12 +706,20 @@ button:not(:disabled):active {
 }
 
 .setup-panel {
+  position: sticky;
+  top: 0;
+  align-self: stretch;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
+  min-height: 0;
   max-height: none;
-  overflow: visible;
-  padding: 16px;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .panel-title {
@@ -729,6 +742,52 @@ button:not(:disabled):active {
   font-size: 0.92rem;
 }
 
+.collapsible-panel {
+  gap: 12px;
+}
+
+.collapsible-panel-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.collapsible-panel-trigger:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+
+.collapsible-panel-trigger .panel-title {
+  flex: 1;
+}
+
+.collapsible-panel-caret {
+  flex: 0 0 auto;
+  transition: transform 150ms ease;
+}
+
+.collapsible-panel-caret.collapsed {
+  transform: rotate(-90deg);
+}
+
+.collapsible-panel-content {
+  display: grid;
+  gap: 12px;
+}
+
+.collapsible-panel-content[hidden] {
+  display: none;
+}
+
 .section-list,
 .piece-list {
   display: grid;
@@ -747,7 +806,48 @@ button:not(:disabled):active {
 .feature-panel {
   display: grid;
   gap: 10px;
-  padding-top: 4px;
+}
+
+.setup-utility-panel {
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+
+.wall-sections-panel {
+  flex: 0 1 auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: min(560px, 52%);
+  min-height: 0;
+}
+
+.wall-sections-panel-content {
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.wall-sections-panel .section-list {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+
+.art-pieces-panel {
+  flex: 1 1 280px;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+}
+
+.art-pieces-panel-content {
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.art-pieces-panel .piece-list {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
 }
 
 .feature-help,
@@ -964,6 +1064,7 @@ select:focus,
 }
 
 .right-panel {
+  align-self: start;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1424,7 +1525,34 @@ th {
   }
 
   .setup-panel {
+    position: static;
     max-height: none;
+    overflow: visible;
+  }
+
+  .wall-sections-panel {
+    grid-template-rows: none;
+    max-height: none;
+  }
+
+  .wall-sections-panel-content {
+    grid-template-rows: none;
+  }
+
+  .wall-sections-panel .section-list {
+    overflow: visible;
+  }
+
+  .art-pieces-panel {
+    grid-template-rows: none;
+  }
+
+  .art-pieces-panel-content {
+    grid-template-rows: none;
+  }
+
+  .art-pieces-panel .piece-list {
+    overflow: visible;
   }
 
   .right-panel {

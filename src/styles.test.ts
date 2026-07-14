@@ -49,6 +49,11 @@ describe('application typography', () => {
     expect(stylesheet).toMatch(/\.wall-exterior-edge\s*{[^}]*pointer-events:\s*none;/s);
   });
 
+  it('lets collapsed utility panels override their grid display rule', () => {
+    expect(stylesheet).toMatch(/\.collapsible-panel-content\s*{[^}]*display:\s*grid;/s);
+    expect(stylesheet).toMatch(/\.collapsible-panel-content\[hidden\]\s*{[^}]*display:\s*none;/s);
+  });
+
   it('defines the application theme selectors and matching art-piece colors', () => {
     expect(stylesheet).toMatch(/:root\[data-palette='coastal-blue'\]\s*{[^}]*--piece-fill:/s);
     expect(stylesheet).toMatch(/:root\[data-palette='aubergine'\]\s*{[^}]*--piece-fill:/s);
@@ -82,9 +87,35 @@ describe('application typography', () => {
   });
 
   it('keeps setup content in normal page flow and gives icon controls touch-sized targets', () => {
+    const collapsiblePanelRule = stylesheet.match(/\.collapsible-panel\s*{[^}]*}/s)?.[0] ?? '';
+    const rightPanelRule = stylesheet.match(/\.right-panel\s*{[^}]*}/s)?.[0] ?? '';
+    const setupPanelRule = stylesheet.match(/\.setup-panel\s*{[^}]*}/s)?.[0] ?? '';
+    const responsiveSetupPanelRule =
+      stylesheet
+        .match(/@media\s*\(max-width:\s*1200px\)\s*{[\s\S]*?\.setup-panel\s*{[^}]*}/)?.[0]
+        .match(/\.setup-panel\s*{[^}]*}/s)?.[0] ?? '';
+
     expect(stylesheet).toMatch(
-      /\.setup-panel\s*{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s,
+      /\.app-shell\s*{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);[^}]*height:\s*100vh;[^}]*overflow:\s*hidden;/s,
     );
+    expect(stylesheet).toMatch(
+      /\.workspace\s*{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\);[^}]*align-items:\s*stretch;[^}]*min-height:\s*0;[^}]*overflow:\s*auto;/s,
+    );
+    expect(stylesheet).toMatch(
+      /\.setup-panel\s*{[^}]*position:\s*sticky;[^}]*align-self:\s*stretch;[^}]*max-height:\s*none;[^}]*overflow:\s*hidden;/s,
+    );
+    expect(stylesheet).toMatch(
+      /\.wall-sections-panel\s*{[^}]*max-height:\s*min\(560px,\s*52%\);[^}]*min-height:\s*0;/s,
+    );
+    expect(stylesheet).toMatch(/\.wall-sections-panel\s+\.section-list\s*{[^}]*overflow:\s*auto;/s);
+    expect(stylesheet).toMatch(/\.art-pieces-panel\s*{[^}]*min-height:\s*0;/s);
+    expect(stylesheet).toMatch(/\.art-pieces-panel\s+\.piece-list\s*{[^}]*overflow:\s*auto;/s);
+    expect(collapsiblePanelRule).not.toContain('min-height: 0;');
+    expect(rightPanelRule).toContain('align-self: start;');
+    expect(setupPanelRule).toContain('position: sticky;');
+    expect(setupPanelRule).toContain('overflow: hidden;');
+    expect(responsiveSetupPanelRule).toContain('position: static;');
+    expect(responsiveSetupPanelRule).toContain('overflow: visible;');
     expect(stylesheet).toMatch(/\.icon-button\s*{[^}]*width:\s*44px;[^}]*min-height:\s*44px;/s);
   });
 });
