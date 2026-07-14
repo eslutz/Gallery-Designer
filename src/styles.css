@@ -693,6 +693,7 @@ button:not(:disabled):active {
   min-height: 0;
   overflow: auto;
   padding: 20px;
+  scroll-padding-bottom: 20px;
 }
 
 .setup-panel,
@@ -898,6 +899,20 @@ button:not(:disabled):active {
   gap: 6px;
 }
 
+.heading-with-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.heading-with-info h3 {
+  color: var(--text-secondary);
+  font-family: var(--font-interface);
+  font-size: 0.88rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
 .info-tip {
   position: relative;
   display: inline-flex;
@@ -1069,6 +1084,7 @@ select:focus,
   flex-direction: column;
   gap: 14px;
   min-width: 0;
+  padding-bottom: 20px;
 }
 
 .canvas-card {
@@ -1446,11 +1462,7 @@ select:focus,
 }
 
 .scale-note {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-secondary);
-  font-size: 0.86rem;
+  padding-top: 2px;
 }
 
 .measurements-panel {

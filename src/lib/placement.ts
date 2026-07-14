@@ -80,6 +80,54 @@ export function clampPlacementToWall(
   };
 }
 
+export function reassignPlacementToContainingSection(
+  sections: WallSection[],
+  placement: Placement,
+  piece: ArtPiece,
+): Placement {
+  const globalRect = globalRectForPlacement(sections, placement, piece);
+  let bestSection: WallSection | null = null;
+  let bestOverlapArea = 0;
+
+  for (const section of sections) {
+    const sectionLeft = getSectionOffsetX(sections, section.id);
+    const sectionTop = getSectionOffsetY(sections, section.id);
+    const sectionRect: Rect = {
+      left: sectionLeft,
+      top: sectionTop,
+      right: sectionLeft + section.widthIn,
+      bottom: sectionTop + section.heightIn,
+    };
+    const overlapArea = rectOverlapArea(globalRect, sectionRect);
+    if (overlapArea > bestOverlapArea) {
+      bestSection = section;
+      bestOverlapArea = overlapArea;
+    }
+  }
+
+  if (!bestSection || bestSection.id === placement.sectionId) {
+    return placement;
+  }
+
+  return {
+    ...placement,
+    sectionId: bestSection.id,
+    xIn: globalRect.left - getSectionOffsetX(sections, bestSection.id),
+    yIn: globalRect.top - getSectionOffsetY(sections, bestSection.id),
+  };
+}
+
+export function reassignPlacementsToContainingSections(
+  sections: WallSection[],
+  pieces: ArtPiece[],
+  placements: Placement[],
+): Placement[] {
+  return placements.map((placement) => {
+    const piece = pieces.find((candidate) => candidate.id === placement.pieceId);
+    return piece ? reassignPlacementToContainingSection(sections, placement, piece) : placement;
+  });
+}
+
 export function isPlacementWithinWall(
   sections: WallSection[],
   placement: Placement,
@@ -210,6 +258,12 @@ function rectsOverlapOrTouch(first: Rect, second: Rect): boolean {
     first.bottom < second.top ||
     second.bottom < first.top
   );
+}
+
+function rectOverlapArea(first: Rect, second: Rect): number {
+  const width = Math.min(first.right, second.right) - Math.max(first.left, second.left);
+  const height = Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top);
+  return width > 0 && height > 0 ? width * height : 0;
 }
 
 export function isPlacementValid(

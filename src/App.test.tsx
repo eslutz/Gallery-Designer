@@ -88,10 +88,10 @@ describe('Gallery Designer app', () => {
     expect(screen.getByRole('button', { name: /Drag Piece 2 from staging/i })).toBeInTheDocument();
   });
 
-  it('explains local persistence and feature behavior', () => {
+  it('explains feature behavior without extra local persistence copy', () => {
     render(<App />);
 
-    expect(screen.getByText(/saved locally in this browser/i)).toBeInTheDocument();
+    expect(screen.queryByText(/saved locally in this browser/i)).not.toBeInTheDocument();
     expect(
       screen.getByText(/snap settings apply while dragging or nudging pieces/i),
     ).toBeInTheDocument();
@@ -526,6 +526,73 @@ describe('Gallery Designer app', () => {
     const movedSection2 = screen.getByRole('button', { name: /^Move Section 2$/i });
     expect(movedSection2).toHaveAttribute('x', '20');
     expect(movedSection2).toHaveAttribute('y', '60');
+  });
+
+  it('keeps stale-section art visually fixed when moving a different section', () => {
+    localStorage.setItem(
+      'gallery-designer-state-v1',
+      JSON.stringify({
+        unit: 'in',
+        themeMode: 'system',
+        applicationTheme: 'slate',
+        sections: [
+          {
+            id: 'left',
+            name: 'Section 1',
+            widthIn: 80,
+            heightIn: 60,
+            cornerAfter: 'none',
+            xIn: 0,
+            yIn: 0,
+          },
+          {
+            id: 'right',
+            name: 'Section 2',
+            widthIn: 80,
+            heightIn: 60,
+            cornerAfter: 'none',
+            xIn: 200,
+            yIn: 0,
+          },
+        ],
+        pieces: [{ id: 'poster', label: 'Poster', widthIn: 20, heightIn: 20 }],
+        placements: [{ pieceId: 'poster', sectionId: 'right', xIn: -190, yIn: 10 }],
+        features: {
+          snapToGrid: false,
+          gridSizeIn: 1,
+          snapToAlignment: false,
+          alignmentToleranceIn: 1,
+          wallEdgeBuffer: false,
+          wallEdgeBufferGapIn: 2,
+          artPieceBuffer: false,
+          artPieceBufferGapIn: 2,
+        },
+        autoPlacementSettings: {
+          wallSetupMode: 'available-sections',
+          context: { kind: 'blank', viewingPosture: 'seated' },
+          layoutPreference: 'auto',
+          wallFeatures: [],
+        },
+        selectedPieceId: 'poster',
+        message: '',
+      }),
+    );
+    render(<App />);
+
+    const poster = screen.getByRole('button', { name: /^Move Poster$/i });
+    expect(poster).toHaveAttribute('x', '10');
+
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    mockCanvasProjection(canvas);
+    act(() => {
+      screen
+        .getByRole('button', { name: /^Move Section 2$/i })
+        .dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 200, clientY: 0 }));
+      window.dispatchEvent(new MouseEvent('pointermove', { clientX: 250, clientY: 0 }));
+      window.dispatchEvent(new MouseEvent('pointerup', { clientX: 250, clientY: 0 }));
+    });
+
+    expect(screen.getByRole('button', { name: /^Move Poster$/i })).toHaveAttribute('x', '10');
   });
 
   it('falls back safely when persisted state contains invalid arrays', () => {
@@ -1223,7 +1290,22 @@ describe('Gallery Designer app', () => {
     expect(within(exportPanel).queryByText(/Needs attention/i)).not.toBeInTheDocument();
     expect(within(exportPanel).getByText(/Print\/export layout/i)).toBeInTheDocument();
     expect(within(exportPanel).getByText(/Save\/load design/i)).toBeInTheDocument();
-    expect(within(exportPanel).getByText(/editable project file/i)).toBeInTheDocument();
+    expect(
+      within(exportPanel).getByText(/PNG and PDF exports include the visual layout/i),
+    ).toHaveClass('info-tooltip');
+    expect(within(exportPanel).getByText(/editable project file/i)).toHaveClass('info-tooltip');
+    expect(
+      within(exportPanel).queryByText(/saved locally in this browser/i),
+    ).not.toBeInTheDocument();
+    expect(
+      within(exportPanel).getByRole('button', { name: /Print\/export layout information/i }),
+    ).toHaveAccessibleDescription(/visual layout, piece table, and installation measurements/i);
+    expect(
+      within(exportPanel).getByRole('button', { name: /Save\/load design information/i }),
+    ).toHaveAccessibleDescription(/editable project file/i);
+    expect(
+      within(exportPanel).getByText(/Print exports are for installation/i),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Export PNG/i })).toHaveAttribute(
       'title',
       expect.stringContaining('Piece 1 has not been placed.'),

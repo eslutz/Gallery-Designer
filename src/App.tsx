@@ -28,7 +28,11 @@ import {
 import { parseDesignFile, serializeDesignFile } from './lib/designFile';
 import { downloadPdf, downloadSvgAsPng } from './lib/exportDesign';
 import { buildMeasurementInstructions } from './lib/measurements';
-import { getPlacementIssues } from './lib/placement';
+import {
+  getPlacementIssues,
+  reassignPlacementsToContainingSections,
+  reassignPlacementToContainingSection,
+} from './lib/placement';
 import { applyPlacementFeatures } from './lib/snapping';
 import {
   displaySizeValue,
@@ -708,7 +712,14 @@ export default function App() {
       if (!section) {
         return current;
       }
-      const placement = applyFeatures(current, proposedPlacement);
+      const placement = piece
+        ? reassignPlacementToContainingSection(
+            current.sections,
+            applyFeatures(current, proposedPlacement),
+            piece,
+          )
+        : applyFeatures(current, proposedPlacement);
+      const placementSection = getSectionById(current.sections, placement.sectionId);
 
       return {
         ...current,
@@ -718,8 +729,8 @@ export default function App() {
           placement,
         ],
         message:
-          piece && section
-            ? `Placed ${piece.label} on ${section.name}.`
+          piece && placementSection
+            ? `Placed ${piece.label} on ${placementSection.name}.`
             : 'Placed a piece on the wall.',
       };
     });
@@ -1208,20 +1219,28 @@ export default function App() {
       xIn: roundToPrecision(sectionDrag.startXIn + point.x - sectionDrag.startPoint.x),
       yIn: roundToPrecision(sectionDrag.startYIn + point.y - sectionDrag.startPoint.y),
     };
-    setState((current) => ({
-      ...current,
-      sections: moveWallSection(
+    setState((current) => {
+      const placements = reassignPlacementsToContainingSections(
         current.sections,
-        sectionDrag.sectionId,
-        applyWallSectionFeatures(
+        current.pieces,
+        current.placements,
+      );
+      return {
+        ...current,
+        placements,
+        sections: moveWallSection(
           current.sections,
           sectionDrag.sectionId,
-          proposed,
-          current.features,
+          applyWallSectionFeatures(
+            current.sections,
+            sectionDrag.sectionId,
+            proposed,
+            current.features,
+          ),
         ),
-      ),
-      message: 'Wall section moved. Sections snap together by shared edges.',
-    }));
+        message: 'Wall section moved. Sections snap together by shared edges.',
+      };
+    });
     return true;
   }
 
@@ -1460,20 +1479,28 @@ export default function App() {
     }
     event.preventDefault();
     setSelectedSectionId(section.id);
-    setState((current) => ({
-      ...current,
-      sections: moveWallSection(
+    setState((current) => {
+      const placements = reassignPlacementsToContainingSections(
         current.sections,
-        section.id,
-        applyWallSectionFeatures(
+        current.pieces,
+        current.placements,
+      );
+      return {
+        ...current,
+        placements,
+        sections: moveWallSection(
           current.sections,
           section.id,
-          { xIn: (section.xIn ?? 0) + delta[0], yIn: (section.yIn ?? 0) + delta[1] },
-          current.features,
+          applyWallSectionFeatures(
+            current.sections,
+            section.id,
+            { xIn: (section.xIn ?? 0) + delta[0], yIn: (section.yIn ?? 0) + delta[1] },
+            current.features,
+          ),
         ),
-      ),
-      message: 'Wall section moved. Sections snap together by shared edges.',
-    }));
+        message: 'Wall section moved. Sections snap together by shared edges.',
+      };
+    });
   }
 
   function handlePieceKeyDown(event: React.KeyboardEvent<SVGRectElement>, placement: Placement) {
@@ -2830,6 +2857,29 @@ function FieldLabelWithInfo({
   );
 }
 
+function HeadingWithInfo({ label, info }: { label: string; info: string }) {
+  const tooltipId = useId();
+
+  return (
+    <div className="heading-with-info">
+      <h3>{label}</h3>
+      <span className="info-tip">
+        <button
+          type="button"
+          className="info-button"
+          aria-label={`${label} information`}
+          aria-describedby={tooltipId}
+        >
+          <Info size={14} aria-hidden="true" />
+        </button>
+        <span className="info-tooltip" id={tooltipId} role="tooltip">
+          {info}
+        </span>
+      </span>
+    </div>
+  );
+}
+
 function AutoPlacementControls({
   settings,
   unit,
@@ -3619,10 +3669,10 @@ function ExportPanel({
   return (
     <CollapsiblePanel icon={<Download size={18} />} title="Export" ariaLabel="Export settings">
       <div className="export-section">
-        <h3>Print/export layout</h3>
-        <p className="muted">
-          PNG and PDF exports include the visual layout, piece table, and installation measurements.
-        </p>
+        <HeadingWithInfo
+          label="Print/export layout"
+          info="PNG and PDF exports include the visual layout, piece table, and installation measurements."
+        />
         {issues.length > 0 ? (
           <ul className="issue-list" role="alert" aria-live="assertive">
             {issues.map((issue) => (
@@ -3654,10 +3704,10 @@ function ExportPanel({
         </div>
       </div>
       <div className="export-section">
-        <h3>Save/load design</h3>
-        <p className="muted">
-          JSON is the editable project file for reopening this design and continuing later.
-        </p>
+        <HeadingWithInfo
+          label="Save/load design"
+          info="JSON is the editable project file for reopening this design and continuing later."
+        />
         <div className="export-actions">
           <button type="button" className="secondary" onClick={onExportJson}>
             <FileJson size={18} />
@@ -3669,12 +3719,8 @@ function ExportPanel({
           </button>
         </div>
       </div>
-      <div className="scale-note">
-        <Download size={16} />
+      <p className="muted feature-help scale-note">
         Print exports are for installation; JSON files are for editing this design later.
-      </div>
-      <p className="muted persistence-note">
-        Your current design is saved locally in this browser.
       </p>
     </CollapsiblePanel>
   );

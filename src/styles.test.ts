@@ -101,6 +101,7 @@ describe('application typography', () => {
     expect(stylesheet).toMatch(
       /\.workspace\s*{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\);[^}]*align-items:\s*stretch;[^}]*min-height:\s*0;[^}]*overflow:\s*auto;/s,
     );
+    expect(stylesheet).toMatch(/\.workspace\s*{[^}]*scroll-padding-bottom:\s*20px;/s);
     expect(stylesheet).toMatch(
       /\.setup-panel\s*{[^}]*position:\s*sticky;[^}]*align-self:\s*stretch;[^}]*max-height:\s*none;[^}]*overflow:\s*hidden;/s,
     );
@@ -112,10 +113,21 @@ describe('application typography', () => {
     expect(stylesheet).toMatch(/\.art-pieces-panel\s+\.piece-list\s*{[^}]*overflow:\s*auto;/s);
     expect(collapsiblePanelRule).not.toContain('min-height: 0;');
     expect(rightPanelRule).toContain('align-self: start;');
+    expect(rightPanelRule).toContain('padding-bottom: 20px;');
     expect(setupPanelRule).toContain('position: sticky;');
     expect(setupPanelRule).toContain('overflow: hidden;');
     expect(responsiveSetupPanelRule).toContain('position: static;');
     expect(responsiveSetupPanelRule).toContain('overflow: visible;');
     expect(stylesheet).toMatch(/\.icon-button\s*{[^}]*width:\s*44px;[^}]*min-height:\s*44px;/s);
+  });
+
+  it('keeps export panel typography aligned with utility panels', () => {
+    const headingWithInfoRule = stylesheet.match(/\.heading-with-info\s+h3\s*{[^}]*}/s)?.[0] ?? '';
+
+    expect(headingWithInfoRule).toContain('font-family: var(--font-interface);');
+    expect(headingWithInfoRule).toContain('color: var(--text-secondary);');
+    expect(headingWithInfoRule).toContain('font-size: 0.88rem;');
+    expect(headingWithInfoRule).toContain('font-weight: 800;');
+    expect(stylesheet).not.toMatch(/\.scale-note\s*{[^}]*font-size:/s);
   });
 });

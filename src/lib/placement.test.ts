@@ -5,6 +5,7 @@ import {
   getPlacementIssues,
   isPlacementWithinWall,
   placementsOverlapOrTouch,
+  reassignPlacementToContainingSection,
 } from './placement';
 import type { ArtPiece, Placement, WallSection } from '../types';
 
@@ -110,5 +111,44 @@ describe('placement constraints', () => {
 
     expect(isPlacementWithinWall(connectedSections, spanningPlacement, spanningPiece)).toBe(true);
     expect(getPlacementIssues(connectedSections, [spanningPiece], [spanningPlacement])).toEqual([]);
+  });
+
+  it('reassigns a moved placement to the section it visually occupies', () => {
+    const sideBySideSections: WallSection[] = [
+      {
+        id: 'left',
+        name: 'Left',
+        widthIn: 80,
+        heightIn: 60,
+        cornerAfter: 'none',
+        xIn: 0,
+        yIn: 0,
+      },
+      {
+        id: 'right',
+        name: 'Right',
+        widthIn: 80,
+        heightIn: 60,
+        cornerAfter: 'none',
+        xIn: 80,
+        yIn: 0,
+      },
+    ];
+    const piece: ArtPiece = { id: 'poster', label: 'Poster', widthIn: 20, heightIn: 20 };
+    const stalePlacement: Placement = {
+      pieceId: 'poster',
+      sectionId: 'right',
+      xIn: -70,
+      yIn: 10,
+    };
+
+    expect(reassignPlacementToContainingSection(sideBySideSections, stalePlacement, piece)).toEqual(
+      {
+        pieceId: 'poster',
+        sectionId: 'left',
+        xIn: 10,
+        yIn: 10,
+      },
+    );
   });
 });
