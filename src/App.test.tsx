@@ -534,7 +534,7 @@ describe('Gallery Designer app', () => {
     expect(width).toHaveValue('12.5');
   });
 
-  it('resets the wall by returning all pieces to the staging tray', async () => {
+  it('clears placed art from the Clear menu by returning all pieces to the staging tray', async () => {
     const user = userEvent.setup();
     render(<App />);
 
@@ -542,23 +542,101 @@ describe('Gallery Designer app', () => {
 
     expect(screen.getByRole('button', { name: /^Move Piece 1$/i })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /Reset wall/i }));
+    await user.click(screen.getByRole('button', { name: /Clear/i }));
+    await user.click(screen.getByRole('menuitem', { name: /Clear placed art/i }));
 
     expect(screen.getByRole('button', { name: /Drag Piece 1 from staging/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Move Piece 1$/i })).not.toBeInTheDocument();
     expect(screen.getByText(/Piece 1 has not been placed/i)).toBeInTheDocument();
   });
 
-  it('lets users undo a reset that removed placements', async () => {
+  it('lets users undo clearing placed art', async () => {
     const user = userEvent.setup();
     render(<App />);
 
     placeStagedPieceOnWall();
-    await user.click(screen.getByRole('button', { name: /Reset wall/i }));
+    await user.click(screen.getByRole('button', { name: /Clear/i }));
+    await user.click(screen.getByRole('menuitem', { name: /Clear placed art/i }));
     await user.click(screen.getByRole('button', { name: /Undo last change/i }));
 
     expect(screen.getByRole('button', { name: /^Move Piece 1$/i })).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent(/Restored the previous change/i);
+  });
+
+  it('clears wall sections without removing art pieces', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /Add wall section/i }));
+    expect(screen.getByLabelText('Section 2 width')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Clear/i }));
+    await user.click(screen.getByRole('menuitem', { name: /Clear wall sections/i }));
+
+    expect(screen.queryByLabelText('Section 1 width')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Piece 1 label')).toHaveValue('Piece 1');
+    expect(screen.getByRole('alert')).toHaveTextContent(/Add at least one wall section/i);
+  });
+
+  it('resets the entire design after confirmation', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<App />);
+
+    await user.clear(screen.getByLabelText('Piece 1 label'));
+    await user.type(screen.getByLabelText('Piece 1 label'), 'Custom Piece');
+    await user.click(screen.getByRole('button', { name: /Add wall section/i }));
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    placeStagedPieceOnWall(/Drag Custom Piece from staging/i);
+
+    await user.click(screen.getByRole('button', { name: /Clear/i }));
+    await user.click(screen.getByRole('menuitem', { name: /Reset entire design/i }));
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/reset the entire design/i));
+    expect(screen.queryByLabelText('Section 1 width')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Section 2 width')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Piece 1 label')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Piece 2 label')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Move Custom Piece$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/Add at least one wall section/i);
+
+    confirm.mockRestore();
+  });
+
+  it('shows furniture and feature clearing only in full-wall mode', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    placeStagedPieceOnWall();
+    expect(screen.getByRole('button', { name: /^Move Piece 1$/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Clear/i }));
+    expect(
+      screen.queryByRole('menuitem', { name: /Clear furniture & features/i }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Clear/i }));
+
+    await user.selectOptions(screen.getByLabelText('Wall setup'), 'full-wall-with-features');
+    await user.click(screen.getByRole('button', { name: /Add furniture or feature/i }));
+    expect(screen.getByLabelText('Feature 1 type')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Clear/i }));
+    await user.click(screen.getByRole('menuitem', { name: /Clear furniture & features/i }));
+
+    expect(screen.queryByLabelText('Feature 1 type')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Move Piece 1$/i })).toBeInTheDocument();
+  });
+
+  it('closes the clear menu when clicking outside it', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /Clear/i }));
+    expect(screen.getByRole('menu', { name: /Clear options/i })).toBeInTheDocument();
+
+    await user.click(document.body);
+
+    expect(screen.queryByRole('menu', { name: /Clear options/i })).not.toBeInTheDocument();
   });
 
   it('explains an empty measurements table before any placement', () => {
@@ -845,7 +923,7 @@ describe('Gallery Designer app', () => {
     expect(editorControls).toContainElement(screen.getByLabelText('Appearance'));
     expect(editorControls).toContainElement(screen.getByLabelText('Theme'));
     expect(editorControls).toContainElement(screen.getByRole('button', { name: /Auto-place/i }));
-    expect(editorControls).toContainElement(screen.getByRole('button', { name: /Reset wall/i }));
+    expect(editorControls).toContainElement(screen.getByRole('button', { name: /Clear/i }));
     expect(screen.getByRole('group', { name: /Placement controls/i })).toContainElement(
       screen.getByRole('button', { name: /Auto-place/i }),
     );

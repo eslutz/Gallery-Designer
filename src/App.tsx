@@ -1,4 +1,5 @@
 import {
+  ChevronDown,
   Download,
   FileImage,
   FileJson,
@@ -190,12 +191,14 @@ export default function App() {
   const [selectedSectionId, setSelectedSectionId] = useState('');
   const [wallDragPreview, setWallDragPreview] = useState<WallDragPreview | null>(null);
   const [undoState, setUndoState] = useState<GalleryState | null>(null);
+  const [clearMenuOpen, setClearMenuOpen] = useState(false);
   const [cursorInteraction, setCursorInteraction] = useState<CursorInteraction>('idle');
   const [wallZoom, setWallZoom] = useState<WallZoomState>(() =>
     getDefaultWallZoomState(getWallCanvasBaseViewBox(defaultState.sections, defaultState.features)),
   );
   const svgRef = useRef<SVGSVGElement | null>(null);
   const wallDisplayRef = useRef<HTMLDivElement | null>(null);
+  const clearMenuRef = useRef<HTMLDivElement | null>(null);
   const wallBaseViewBoxRef = useRef<WallViewBox | null>(null);
   const wallZoomRef = useRef(wallZoom);
   const wallViewBoxRef = useRef<WallViewBox | null>(null);
@@ -473,6 +476,23 @@ export default function App() {
     return () => displayPanel.removeEventListener('wheel', handleDisplayWheel);
   }, []);
 
+  useEffect(() => {
+    if (!clearMenuOpen) {
+      return;
+    }
+
+    function handleDocumentPointerDown(event: PointerEvent) {
+      const menu = clearMenuRef.current;
+      if (!menu || !(event.target instanceof Node) || menu.contains(event.target)) {
+        return;
+      }
+      setClearMenuOpen(false);
+    }
+
+    document.addEventListener('pointerdown', handleDocumentPointerDown);
+    return () => document.removeEventListener('pointerdown', handleDocumentPointerDown);
+  }, [clearMenuOpen]);
+
   function selectPiece(pieceId: string) {
     setState((current) => ({ ...current, selectedPieceId: pieceId }));
   }
@@ -665,14 +685,69 @@ export default function App() {
     }));
   }
 
-  function resetWall() {
+  function clearPlacedArt() {
     setUndoState(state);
     setState((current) => ({
       ...current,
       placements: [],
       selectedPieceId: current.pieces[0]?.id ?? '',
-      message: 'Reset the wall. All pieces returned to the staging tray.',
+      message: 'Cleared placed art. All pieces returned to the staging tray.',
     }));
+  }
+
+  function clearWallSections() {
+    setUndoState(state);
+    setSelectedSectionId('');
+    setState((current) => ({
+      ...current,
+      sections: [],
+      placements: [],
+      message: 'Cleared wall sections. Add at least one wall section before placing art.',
+    }));
+  }
+
+  function clearWallFeatures() {
+    setUndoState(state);
+    setState((current) => ({
+      ...current,
+      autoPlacementSettings: {
+        ...current.autoPlacementSettings,
+        wallFeatures: [],
+      },
+      message: 'Cleared furniture and wall features.',
+    }));
+  }
+
+  function resetEntireDesign() {
+    const confirmed = window.confirm(
+      'Reset the entire design? This will remove your wall sections, art pieces, placements, settings, and furniture/features.',
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setUndoState(state);
+    setSelectedSectionId('');
+    setState({
+      ...defaultState,
+      sections: [],
+      pieces: [],
+      placements: [],
+      features: { ...defaultState.features },
+      autoPlacementSettings: {
+        ...defaultState.autoPlacementSettings,
+        context: { ...defaultState.autoPlacementSettings.context },
+        wallFeatures: [],
+      },
+      selectedPieceId: '',
+      message: 'Reset the entire design. Add wall sections and art pieces to start over.',
+    });
+    setWallZoom(getDefaultWallZoomState(getWallCanvasBaseViewBox([], defaultState.features)));
+  }
+
+  function runClearAction(action: () => void) {
+    setClearMenuOpen(false);
+    action();
   }
 
   function fitWallZoom() {
@@ -1762,10 +1837,62 @@ export default function App() {
                 <Wand2 size={18} />
                 Auto-place pieces
               </button>
-              <button type="button" className="secondary" onClick={resetWall}>
-                <RotateCcw size={18} />
-                Reset wall
-              </button>
+              <div className="clear-menu" ref={clearMenuRef}>
+                <button
+                  type="button"
+                  className="secondary"
+                  aria-haspopup="menu"
+                  aria-expanded={clearMenuOpen}
+                  onClick={() => setClearMenuOpen((open) => !open)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      setClearMenuOpen(false);
+                    }
+                  }}
+                >
+                  <RotateCcw size={18} />
+                  Clear…
+                  <ChevronDown size={16} />
+                </button>
+                {clearMenuOpen ? (
+                  <div className="clear-menu-popover" role="menu" aria-label="Clear options">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={state.placements.length === 0}
+                      onClick={() => runClearAction(clearPlacedArt)}
+                    >
+                      Clear placed art
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={state.sections.length === 0}
+                      onClick={() => runClearAction(clearWallSections)}
+                    >
+                      Clear wall sections
+                    </button>
+                    {state.autoPlacementSettings.wallSetupMode === 'full-wall-with-features' ? (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={state.autoPlacementSettings.wallFeatures.length === 0}
+                        onClick={() => runClearAction(clearWallFeatures)}
+                      >
+                        Clear furniture & features
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="destructive-menuitem"
+                      onClick={() => runClearAction(resetEntireDesign)}
+                    >
+                      Reset entire design
+                    </button>
+                  </div>
+                ) : null}
+              </div>
               <button
                 type="button"
                 className="secondary"

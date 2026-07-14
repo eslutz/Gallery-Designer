@@ -643,6 +643,46 @@ button:not(:disabled):active {
   flex-wrap: wrap;
 }
 
+.clear-menu {
+  position: relative;
+}
+
+.clear-menu > button {
+  white-space: nowrap;
+}
+
+.clear-menu-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel-background);
+  box-shadow: var(--panel-shadow);
+}
+
+.clear-menu-popover button {
+  justify-content: flex-start;
+  min-height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.clear-menu-popover button:hover:not(:disabled),
+.clear-menu-popover button:focus-visible {
+  background: var(--icon-background);
+}
+
+.clear-menu-popover .destructive-menuitem {
+  color: var(--issue-text);
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(280px, 340px) minmax(560px, 1fr) minmax(280px, 360px);
@@ -1410,6 +1450,15 @@ th {
 
   .editor-toolbar .primary {
     width: 100%;
+  }
+
+  .clear-menu,
+  .clear-menu > button {
+    width: 100%;
+  }
+
+  .clear-menu-popover {
+    right: 0;
   }
 
   .workspace {
