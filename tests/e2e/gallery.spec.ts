@@ -91,6 +91,42 @@ test('immediately picks up a piece placed from the staging tray without selectin
   expect(await page.evaluate(() => window.getSelection()?.toString() ?? '')).toBe('');
 });
 
+test('auto-placement preserves manually positioned art while placing the remaining pieces', async ({
+  page,
+}) => {
+  await page.goto('/');
+
+  const canvas = page.getByRole('img', { name: 'Scaled gallery wall layout' });
+  const canvasBox = await canvas.boundingBox();
+  if (!canvasBox) {
+    throw new Error('Canvas was not visible enough to place the fixed piece.');
+  }
+  await pointerDrag(
+    page,
+    page.getByRole('button', { name: 'Drag Piece 1 from staging' }),
+    canvasBox.x + 220,
+    canvasBox.y + 180,
+  );
+
+  const fixedPiece = page.getByRole('button', { name: 'Move Piece 1', exact: true });
+  const fixedPosition = {
+    x: await fixedPiece.getAttribute('x'),
+    y: await fixedPiece.getAttribute('y'),
+  };
+  await page.getByRole('button', { name: 'Add art piece' }).click();
+  await page.getByRole('button', { name: 'Add art piece' }).click();
+
+  await page.getByRole('button', { name: 'Auto-place pieces' }).click();
+
+  await expect(fixedPiece).toHaveAttribute('x', fixedPosition.x ?? '');
+  await expect(fixedPiece).toHaveAttribute('y', fixedPosition.y ?? '');
+  await expect(page.getByRole('button', { name: 'Move Piece 2', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Move Piece 3', exact: true })).toBeVisible();
+  await expect(page.getByRole('status')).toContainText(
+    'Auto-placement placed 2 remaining pieces around 1 piece you positioned.',
+  );
+});
+
 test('mobile staged pieces keep touch drags from becoming page scrolls', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');

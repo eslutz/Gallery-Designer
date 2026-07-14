@@ -129,6 +129,100 @@ describe('Gallery Designer app', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/full wall/i);
   });
 
+  it('keeps manually placed art fixed while auto-placing the remaining pieces and supports undo', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    placeStagedPieceOnWall();
+    const fixedPiece = screen.getByRole('button', { name: /^Move Piece 1$/i });
+    const fixedX = fixedPiece.getAttribute('x');
+    const fixedY = fixedPiece.getAttribute('y');
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    expect(screen.getByRole('button', { name: /^Move Piece 1$/i })).toHaveAttribute('x', fixedX);
+    expect(screen.getByRole('button', { name: /^Move Piece 1$/i })).toHaveAttribute('y', fixedY);
+    expect(screen.getByRole('button', { name: /^Move Piece 2$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Move Piece 3$/i })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /placed 2 remaining pieces around 1 piece you positioned/i,
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(/Existing pieces were not moved/i);
+
+    await user.click(screen.getByRole('button', { name: /Undo last change/i }));
+
+    expect(screen.getByRole('button', { name: /^Move Piece 1$/i })).toHaveAttribute('x', fixedX);
+    expect(screen.getByRole('button', { name: /^Move Piece 1$/i })).toHaveAttribute('y', fixedY);
+    expect(screen.getByRole('button', { name: /Drag Piece 2 from staging/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Drag Piece 3 from staging/i })).toBeInTheDocument();
+  });
+
+  it('makes auto-placement a no-op when all art is already placed', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    placeStagedPieceOnWall();
+    const undo = screen.getByRole('button', { name: /Undo last change/i });
+    expect(undo).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    expect(screen.getByRole('status')).toHaveTextContent(/All art pieces are already placed/i);
+    expect(screen.getByRole('status')).toHaveTextContent(/made no changes/i);
+    expect(undo).toBeDisabled();
+  });
+
+  it('explains invalid existing placements before auto-placement', async () => {
+    localStorage.setItem(
+      'gallery-designer-state-v1',
+      JSON.stringify({
+        sections: [{ id: 'main', name: 'Main', widthIn: 96, heightIn: 84, cornerAfter: 'none' }],
+        pieces: [
+          { id: 'outside', label: 'Outside', widthIn: 16, heightIn: 20 },
+          { id: 'remaining', label: 'Remaining', widthIn: 12, heightIn: 12 },
+        ],
+        placements: [{ pieceId: 'outside', sectionId: 'main', xIn: 90, yIn: 20 }],
+      }),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    expect(screen.getByRole('status')).toHaveTextContent(/existing placements need attention/i);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /Outside extends beyond the wall boundary/i,
+    );
+    expect(
+      screen.getByRole('button', { name: /Drag Remaining from staging/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('reports fixed and remaining counts when partial auto-placement fails', async () => {
+    localStorage.setItem(
+      'gallery-designer-state-v1',
+      JSON.stringify({
+        sections: [{ id: 'small', name: 'Small', widthIn: 40, heightIn: 30, cornerAfter: 'none' }],
+        pieces: [
+          { id: 'fixed', label: 'Fixed', widthIn: 12, heightIn: 12 },
+          { id: 'two', label: 'Two', widthIn: 13, heightIn: 13 },
+          { id: 'three', label: 'Three', widthIn: 13, heightIn: 13 },
+        ],
+        placements: [{ pieceId: 'fixed', sectionId: 'small', xIn: 5, yIn: 5 }],
+      }),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    expect(screen.getByRole('status')).toHaveTextContent(/Kept 1 placed piece in position/i);
+    expect(screen.getByRole('status')).toHaveTextContent(/2 remaining pieces/i);
+    expect(screen.getByRole('button', { name: /Drag Two from staging/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Drag Three from staging/i })).toBeInTheDocument();
+  });
+
   it('explains the spacing, margin, and attempted strategies after auto-placement fails', async () => {
     const user = userEvent.setup();
     render(<App />);

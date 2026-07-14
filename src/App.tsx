@@ -1034,6 +1034,7 @@ export default function App() {
   function handleAutoPlace() {
     const result = autoPlacePieces(state.sections, state.pieces, {
       settings: state.autoPlacementSettings,
+      existingPlacements: state.placements,
       features: {
         ...state.features,
         wallEdgeBufferGapIn: state.features.wallEdgeBuffer ? state.features.wallEdgeBufferGapIn : 0,
@@ -1049,12 +1050,27 @@ export default function App() {
     }
 
     setAutoPlacementFailure(null);
+    if (result.newPlacementCount === 0) {
+      setState((current) => ({
+        ...current,
+        message: result.explanation ?? 'Auto-placement made no changes.',
+      }));
+      return;
+    }
+
+    const existingPieceIds = new Set(state.placements.map((placement) => placement.pieceId));
+    const firstNewPlacement = result.placements.find(
+      (placement) => !existingPieceIds.has(placement.pieceId),
+    );
     setUndoState(state);
     setState((current) => ({
       ...current,
       placements: result.placements,
-      selectedPieceId: result.placements[0]?.pieceId ?? current.selectedPieceId,
-      message: result.explanation ?? `Auto-placement created a ${result.layoutKind} layout.`,
+      selectedPieceId: firstNewPlacement?.pieceId ?? current.selectedPieceId,
+      message:
+        result.preservedPlacementCount > 0
+          ? `Auto-placement placed ${formatCount(result.newPlacementCount, 'remaining piece')} around ${formatCount(result.preservedPlacementCount, 'piece')} you positioned. Existing pieces were not moved.`
+          : (result.explanation ?? `Auto-placement created a ${result.layoutKind} layout.`),
     }));
   }
 
@@ -2080,29 +2096,43 @@ function AutoPlacementFailureDetails({
 }) {
   return (
     <div className="auto-placement-diagnostics">
-      <p>
-        Tried {diagnostics.attempts.length} layout strategies with{' '}
-        {formatMeasurement(diagnostics.resolvedGapIn, unit)} spacing and a{' '}
-        {formatMeasurement(diagnostics.resolvedOuterMarginIn, unit)} wall margin.
-      </p>
-      <ul>
-        {diagnostics.attempts.map((attempt) => (
-          <li key={attempt.family}>
-            <strong>{capitalize(attempt.family)}:</strong> {attempt.reason}
-            {attempt.requiredWidthIn !== undefined && attempt.requiredHeightIn !== undefined ? (
-              <span>
-                {' '}
-                Needs {formatMeasurement(attempt.requiredWidthIn, unit)} wide x{' '}
-                {formatMeasurement(attempt.requiredHeightIn, unit)} tall including margins; wall
-                bounds are {formatMeasurement(diagnostics.wallWidthIn, unit)} x{' '}
-                {formatMeasurement(diagnostics.wallHeightIn, unit)}.
-              </span>
-            ) : null}
-          </li>
-        ))}
-      </ul>
+      {diagnostics.preservedPlacementCount > 0 ? (
+        <p>
+          {formatCount(diagnostics.preservedPlacementCount, 'fixed piece')} reduced the space
+          available for {formatCount(diagnostics.remainingPieceCount, 'remaining piece')}.
+        </p>
+      ) : null}
+      {diagnostics.attempts.length > 0 ? (
+        <>
+          <p>
+            Tried {diagnostics.attempts.length} layout strategies with{' '}
+            {formatMeasurement(diagnostics.resolvedGapIn, unit)} spacing and a{' '}
+            {formatMeasurement(diagnostics.resolvedOuterMarginIn, unit)} wall margin.
+          </p>
+          <ul>
+            {diagnostics.attempts.map((attempt) => (
+              <li key={attempt.family}>
+                <strong>{capitalize(attempt.family)}:</strong> {attempt.reason}
+                {attempt.requiredWidthIn !== undefined && attempt.requiredHeightIn !== undefined ? (
+                  <span>
+                    {' '}
+                    Needs {formatMeasurement(attempt.requiredWidthIn, unit)} wide x{' '}
+                    {formatMeasurement(attempt.requiredHeightIn, unit)} tall including margins; wall
+                    bounds are {formatMeasurement(diagnostics.wallWidthIn, unit)} x{' '}
+                    {formatMeasurement(diagnostics.wallHeightIn, unit)}.
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
     </div>
   );
+}
+
+function formatCount(count: number, singular: string): string {
+  return `${count} ${count === 1 ? singular : `${singular}s`}`;
 }
 
 function capitalize(value: string): string {
