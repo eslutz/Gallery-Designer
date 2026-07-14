@@ -164,13 +164,13 @@ describe('Gallery Designer app', () => {
     render(<App />);
     placeStagedPieceOnWall();
     const undo = screen.getByRole('button', { name: /Undo last change/i });
-    expect(undo).toBeDisabled();
+    expect(undo).toBeEnabled();
 
     await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
 
     expect(screen.getByRole('status')).toHaveTextContent(/All art pieces are already placed/i);
     expect(screen.getByRole('status')).toHaveTextContent(/made no changes/i);
-    expect(undo).toBeDisabled();
+    expect(undo).toBeEnabled();
   });
 
   it('explains invalid existing placements before auto-placement', async () => {
@@ -662,6 +662,50 @@ describe('Gallery Designer app', () => {
     await user.type(width, '12.5');
 
     expect(width).toHaveValue('12.5');
+  });
+
+  it('undoes adding an art piece', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+
+    expect(screen.getByLabelText('Piece 2 label')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Undo last change/i }));
+
+    expect(screen.queryByLabelText('Piece 2 label')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/Restored the previous change/i);
+  });
+
+  it('undoes a completed field edit as one change', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const width = screen.getByLabelText('Piece 1 width');
+    await user.clear(width);
+    await user.type(width, '12.5');
+    await user.tab();
+
+    expect(width).toHaveValue('12.5');
+
+    await user.click(screen.getByRole('button', { name: /Undo last change/i }));
+
+    expect(screen.getByLabelText('Piece 1 width')).toHaveValue('16');
+  });
+
+  it('undoes manually placing art from the staging tray', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    placeStagedPieceOnWall();
+
+    expect(screen.getByRole('button', { name: /^Move Piece 1$/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Undo last change/i }));
+
+    expect(screen.queryByRole('button', { name: /^Move Piece 1$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Drag Piece 1 from staging/i })).toBeInTheDocument();
   });
 
   it('clears placed art from the Clear menu by returning all pieces to the staging tray', async () => {

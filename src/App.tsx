@@ -91,6 +91,10 @@ interface GalleryState {
   message: string;
 }
 
+interface UndoableChangeOptions {
+  undoable?: boolean;
+}
+
 interface DragState {
   pieceId: string;
   source: 'staging' | 'wall';
@@ -207,6 +211,9 @@ export default function App() {
   const wallZoomRef = useRef(wallZoom);
   const wallViewBoxRef = useRef<WallViewBox | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const latestStateRef = useRef(state);
+  const fieldEditUndoSnapshotRef = useRef<GalleryState | null>(null);
+  const sectionDragUndoSnapshotRef = useRef<GalleryState | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const sectionDragRef = useRef<SectionDragState | null>(null);
   const wallZoomGestureRef = useRef<WallZoomGesture | null>(null);
@@ -281,6 +288,10 @@ export default function App() {
     handleWallWheelInput,
     handleCanvasKeyDown,
   };
+
+  useEffect(() => {
+    latestStateRef.current = state;
+  }, [state]);
 
   useEffect(() => {
     try {
@@ -521,6 +532,39 @@ export default function App() {
     setState((current) => ({ ...current, selectedPieceId: '' }));
   }
 
+  function getUndoFingerprint(snapshot: GalleryState) {
+    return JSON.stringify({
+      unit: snapshot.unit,
+      themeMode: snapshot.themeMode,
+      applicationTheme: snapshot.applicationTheme,
+      sections: snapshot.sections,
+      pieces: snapshot.pieces,
+      placements: snapshot.placements,
+      features: snapshot.features,
+      autoPlacementSettings: snapshot.autoPlacementSettings,
+    });
+  }
+
+  function hasUndoableChange(before: GalleryState, after: GalleryState) {
+    return getUndoFingerprint(before) !== getUndoFingerprint(after);
+  }
+
+  function recordUndoSnapshot(snapshot = latestStateRef.current) {
+    setUndoState(snapshot);
+  }
+
+  function beginFieldEdit() {
+    fieldEditUndoSnapshotRef.current ??= latestStateRef.current;
+  }
+
+  function finishFieldEdit() {
+    const snapshot = fieldEditUndoSnapshotRef.current;
+    fieldEditUndoSnapshotRef.current = null;
+    if (snapshot && hasUndoableChange(snapshot, latestStateRef.current)) {
+      recordUndoSnapshot(snapshot);
+    }
+  }
+
   function handlePagePointerDown(event: React.PointerEvent<HTMLElement>) {
     if (shouldKeepSelection(event.target)) {
       return;
@@ -545,6 +589,7 @@ export default function App() {
   }
 
   function addSection() {
+    recordUndoSnapshot();
     setState((current) => {
       const index = current.sections.length + 1;
       const normalizedSections = normalizeWallSections(current.sections);
@@ -571,6 +616,9 @@ export default function App() {
     if (selectedSectionId === sectionId) {
       setSelectedSectionId('');
     }
+    if (state.sections.length > 1) {
+      recordUndoSnapshot();
+    }
     setState((current) => {
       if (current.sections.length === 1) {
         return { ...current, message: 'At least one wall section is required.' };
@@ -592,6 +640,7 @@ export default function App() {
   }
 
   function addPiece() {
+    recordUndoSnapshot();
     setState((current) => {
       const index = current.pieces.length + 1;
       const piece = {
@@ -624,7 +673,7 @@ export default function App() {
   }
 
   function removePiece(pieceId: string) {
-    setUndoState(state);
+    recordUndoSnapshot();
     setState((current) => {
       const nextPieces = current.pieces.filter((piece) => piece.id !== pieceId);
       return {
@@ -652,6 +701,7 @@ export default function App() {
   }
 
   function commitPiecePlacement(proposedPlacement: Placement) {
+    recordUndoSnapshot();
     setState((current) => {
       const section = getSectionById(current.sections, proposedPlacement.sectionId);
       const piece = current.pieces.find((candidate) => candidate.id === proposedPlacement.pieceId);
@@ -676,6 +726,7 @@ export default function App() {
   }
 
   function nudgePiece(proposedPlacement: Placement) {
+    recordUndoSnapshot();
     setState((current) => ({
       ...current,
       selectedPieceId: proposedPlacement.pieceId,
@@ -690,7 +741,7 @@ export default function App() {
   }
 
   function clearPlacedArt() {
-    setUndoState(state);
+    recordUndoSnapshot();
     setState((current) => ({
       ...current,
       placements: [],
@@ -700,7 +751,7 @@ export default function App() {
   }
 
   function clearWallSections() {
-    setUndoState(state);
+    recordUndoSnapshot();
     setSelectedSectionId('');
     setState((current) => ({
       ...current,
@@ -711,7 +762,7 @@ export default function App() {
   }
 
   function clearWallFeatures() {
-    setUndoState(state);
+    recordUndoSnapshot();
     setState((current) => ({
       ...current,
       autoPlacementSettings: {
@@ -730,7 +781,7 @@ export default function App() {
       return;
     }
 
-    setUndoState(state);
+    recordUndoSnapshot();
     setSelectedSectionId('');
     setState({
       ...defaultState,
@@ -786,7 +837,10 @@ export default function App() {
     );
   }
 
-  function updateFeatures(patch: Partial<EditorFeatures>) {
+  function updateFeatures(patch: Partial<EditorFeatures>, options: UndoableChangeOptions = {}) {
+    if (options.undoable !== false) {
+      recordUndoSnapshot();
+    }
     setState((current) => ({
       ...current,
       features: {
@@ -797,7 +851,13 @@ export default function App() {
     }));
   }
 
-  function updateAutoPlacementSettings(settings: AutoPlacementSettings) {
+  function updateAutoPlacementSettings(
+    settings: AutoPlacementSettings,
+    options: UndoableChangeOptions = {},
+  ) {
+    if (options.undoable !== false) {
+      recordUndoSnapshot();
+    }
     setState((current) => ({
       ...current,
       autoPlacementSettings: settings,
@@ -806,6 +866,7 @@ export default function App() {
   }
 
   function removePlacement(pieceId: string) {
+    recordUndoSnapshot();
     setState((current) => ({
       ...current,
       selectedPieceId: pieceId,
@@ -1021,6 +1082,7 @@ export default function App() {
     if (!point) {
       return;
     }
+    sectionDragUndoSnapshotRef.current = latestStateRef.current;
     sectionDragRef.current = {
       sectionId: section.id,
       startPoint: point,
@@ -1062,7 +1124,7 @@ export default function App() {
     const firstNewPlacement = result.placements.find(
       (placement) => !existingPieceIds.has(placement.pieceId),
     );
-    setUndoState(state);
+    recordUndoSnapshot();
     setState((current) => ({
       ...current,
       placements: result.placements,
@@ -1179,8 +1241,13 @@ export default function App() {
     ) {
       commitPiecePlacement(drag.latestPlacement);
     }
+    const sectionDragSnapshot = sectionDragUndoSnapshotRef.current;
+    if (sectionDragSnapshot && hasUndoableChange(sectionDragSnapshot, latestStateRef.current)) {
+      recordUndoSnapshot(sectionDragSnapshot);
+    }
     dragRef.current = null;
     sectionDragRef.current = null;
+    sectionDragUndoSnapshotRef.current = null;
     setCursorInteraction('idle');
     setWallDragPreview(null);
     stopSuppressingTextSelection();
@@ -1649,6 +1716,7 @@ export default function App() {
 
     try {
       const imported = parseDesignFile(await file.text());
+      recordUndoSnapshot();
       setState({
         ...defaultState,
         ...imported,
@@ -1707,6 +1775,8 @@ export default function App() {
                     <input
                       aria-label={`Section ${index + 1} name`}
                       value={section.name}
+                      onFocus={beginFieldEdit}
+                      onBlur={finishFieldEdit}
                       onChange={(event) => updateSection(section.id, { name: event.target.value })}
                     />
                     <button
@@ -1732,6 +1802,8 @@ export default function App() {
                           ? `${section.name} needs a positive width.`
                           : undefined
                       }
+                      onEditStart={beginFieldEdit}
+                      onEditEnd={finishFieldEdit}
                       onChange={(widthIn) => updateSection(section.id, { widthIn })}
                     />
                     <NumberField
@@ -1744,6 +1816,8 @@ export default function App() {
                           ? `${section.name} needs a positive height.`
                           : undefined
                       }
+                      onEditStart={beginFieldEdit}
+                      onEditEnd={finishFieldEdit}
                       onChange={(heightIn) => updateSection(section.id, { heightIn })}
                     />
                   </div>
@@ -1752,11 +1826,12 @@ export default function App() {
                     <select
                       aria-label={`Section ${index + 1} corner after`}
                       value={section.cornerAfter}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        recordUndoSnapshot();
                         updateSection(section.id, {
                           cornerAfter: event.target.value as WallSection['cornerAfter'],
-                        })
-                      }
+                        });
+                      }}
                     >
                       <option value="none">None / end</option>
                       <option value="left">Turns left</option>
@@ -1800,7 +1875,11 @@ export default function App() {
                     <input
                       aria-label={`Piece ${index + 1} label`}
                       value={piece.label}
-                      onFocus={() => selectPiece(piece.id)}
+                      onFocus={() => {
+                        beginFieldEdit();
+                        selectPiece(piece.id);
+                      }}
+                      onBlur={finishFieldEdit}
                       onChange={(event) => updatePiece(piece.id, { label: event.target.value })}
                     />
                     <button
@@ -1826,6 +1905,8 @@ export default function App() {
                           ? `${piece.label} needs a positive width.`
                           : undefined
                       }
+                      onEditStart={beginFieldEdit}
+                      onEditEnd={finishFieldEdit}
                       onChange={(widthIn) => updatePiece(piece.id, { widthIn })}
                     />
                     <NumberField
@@ -1838,6 +1919,8 @@ export default function App() {
                           ? `${piece.label} needs a positive height.`
                           : undefined
                       }
+                      onEditStart={beginFieldEdit}
+                      onEditEnd={finishFieldEdit}
                       onChange={(heightIn) => updatePiece(piece.id, { heightIn })}
                     />
                   </div>
@@ -1845,6 +1928,9 @@ export default function App() {
                     piece={piece}
                     unit={state.unit}
                     onChange={(hookSpec) => updatePiece(piece.id, { hookSpec })}
+                    onEditStart={beginFieldEdit}
+                    onEditEnd={finishFieldEdit}
+                    onImmediateChange={recordUndoSnapshot}
                   />
                 </article>
               ))}
@@ -1863,9 +1949,10 @@ export default function App() {
                 Units
                 <select
                   value={state.unit}
-                  onChange={(event) =>
-                    setState((current) => ({ ...current, unit: event.target.value as Unit }))
-                  }
+                  onChange={(event) => {
+                    recordUndoSnapshot();
+                    setState((current) => ({ ...current, unit: event.target.value as Unit }));
+                  }}
                 >
                   <option value="in">Inches</option>
                   <option value="cm">Centimeters</option>
@@ -1949,12 +2036,13 @@ export default function App() {
                 Appearance
                 <select
                   value={state.themeMode}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    recordUndoSnapshot();
                     setState((current) => ({
                       ...current,
                       themeMode: event.target.value as ThemeMode,
-                    }))
-                  }
+                    }));
+                  }}
                 >
                   <option value="system">System</option>
                   <option value="light">Light</option>
@@ -1965,12 +2053,13 @@ export default function App() {
                 Theme
                 <select
                   value={state.applicationTheme}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    recordUndoSnapshot();
                     setState((current) => ({
                       ...current,
                       applicationTheme: resolveApplicationTheme(event.target.value),
-                    }))
-                  }
+                    }));
+                  }}
                 >
                   {applicationThemeOptions.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -2064,6 +2153,8 @@ export default function App() {
               settings={state.autoPlacementSettings}
               unit={state.unit}
               onChange={updateAutoPlacementSettings}
+              onEditStart={beginFieldEdit}
+              onEditEnd={finishFieldEdit}
             />
           </CollapsiblePanel>
           <CollapsiblePanel
@@ -2075,6 +2166,8 @@ export default function App() {
               features={state.features}
               unit={state.unit}
               onChange={updateFeatures}
+              onEditStart={beginFieldEdit}
+              onEditEnd={finishFieldEdit}
             />
           </CollapsiblePanel>
           <section className="status-panel" aria-label="Latest update">
@@ -2529,6 +2622,8 @@ function NumberField({
   disabled = false,
   error,
   onChange,
+  onEditStart,
+  onEditEnd,
 }: {
   label: string;
   valueIn: number;
@@ -2537,6 +2632,8 @@ function NumberField({
   disabled?: boolean;
   error?: string;
   onChange: (valueIn: number) => void;
+  onEditStart?: () => void;
+  onEditEnd?: () => void;
 }) {
   const display =
     precision === 'size' ? displaySizeValue(valueIn, unit) : displayValue(valueIn, unit);
@@ -2561,10 +2658,14 @@ function NumberField({
         disabled={disabled}
         inputMode="decimal"
         value={draft}
-        onFocus={() => setFocused(true)}
+        onFocus={() => {
+          onEditStart?.();
+          setFocused(true);
+        }}
         onBlur={() => {
           setFocused(false);
           setDraft(display);
+          onEditEnd?.();
         }}
         onChange={(event) => {
           const next = event.target.value;
@@ -2588,10 +2689,14 @@ function FeatureControls({
   features,
   unit,
   onChange,
+  onEditStart,
+  onEditEnd,
 }: {
   features: EditorFeatures;
   unit: Unit;
-  onChange: (patch: Partial<EditorFeatures>) => void;
+  onChange: (patch: Partial<EditorFeatures>, options?: UndoableChangeOptions) => void;
+  onEditStart: () => void;
+  onEditEnd: () => void;
 }) {
   const unitLabel = unit;
 
@@ -2610,7 +2715,11 @@ function FeatureControls({
         valueIn={features.gridSizeIn}
         unit={unit}
         precision="size"
-        onChange={(gridSizeIn) => onChange({ gridSizeIn: Math.max(0.125, gridSizeIn) })}
+        onEditStart={onEditStart}
+        onEditEnd={onEditEnd}
+        onChange={(gridSizeIn) =>
+          onChange({ gridSizeIn: Math.max(0.125, gridSizeIn) }, { undoable: false })
+        }
       />
       <p className="muted feature-help">Snap settings apply while dragging or nudging pieces.</p>
       <label className="toggle-field">
@@ -2626,8 +2735,13 @@ function FeatureControls({
         valueIn={features.alignmentToleranceIn}
         unit={unit}
         precision="size"
+        onEditStart={onEditStart}
+        onEditEnd={onEditEnd}
         onChange={(alignmentToleranceIn) =>
-          onChange({ alignmentToleranceIn: Math.max(0.125, alignmentToleranceIn) })
+          onChange(
+            { alignmentToleranceIn: Math.max(0.125, alignmentToleranceIn) },
+            { undoable: false },
+          )
         }
       />
       <label className="toggle-field">
@@ -2644,8 +2758,13 @@ function FeatureControls({
         unit={unit}
         precision="size"
         disabled={!features.wallEdgeBuffer}
+        onEditStart={onEditStart}
+        onEditEnd={onEditEnd}
         onChange={(wallEdgeBufferGapIn) =>
-          onChange({ wallEdgeBufferGapIn: Math.max(0.125, wallEdgeBufferGapIn) })
+          onChange(
+            { wallEdgeBufferGapIn: Math.max(0.125, wallEdgeBufferGapIn) },
+            { undoable: false },
+          )
         }
       />
       <label className="toggle-field">
@@ -2662,8 +2781,13 @@ function FeatureControls({
         unit={unit}
         precision="size"
         disabled={!features.artPieceBuffer}
+        onEditStart={onEditStart}
+        onEditEnd={onEditEnd}
         onChange={(artPieceBufferGapIn) =>
-          onChange({ artPieceBufferGapIn: Math.max(0.125, artPieceBufferGapIn) })
+          onChange(
+            { artPieceBufferGapIn: Math.max(0.125, artPieceBufferGapIn) },
+            { undoable: false },
+          )
         }
       />
       <p className="muted feature-help">
@@ -2710,18 +2834,29 @@ function AutoPlacementControls({
   settings,
   unit,
   onChange,
+  onEditStart,
+  onEditEnd,
 }: {
   settings: AutoPlacementSettings;
   unit: Unit;
-  onChange: (settings: AutoPlacementSettings) => void;
+  onChange: (settings: AutoPlacementSettings, options?: UndoableChangeOptions) => void;
+  onEditStart: () => void;
+  onEditEnd: () => void;
 }) {
-  function updateFeature(featureId: string, patch: Partial<WallFeature>) {
-    onChange({
-      ...settings,
-      wallFeatures: settings.wallFeatures.map((feature) =>
-        feature.id === featureId ? { ...feature, ...patch } : feature,
-      ),
-    });
+  function updateFeature(
+    featureId: string,
+    patch: Partial<WallFeature>,
+    options?: UndoableChangeOptions,
+  ) {
+    onChange(
+      {
+        ...settings,
+        wallFeatures: settings.wallFeatures.map((feature) =>
+          feature.id === featureId ? { ...feature, ...patch } : feature,
+        ),
+      },
+      options,
+    );
   }
 
   function addFeature() {
@@ -2850,7 +2985,11 @@ function AutoPlacementControls({
                 <input
                   aria-label={`Feature ${index + 1} name`}
                   value={feature.name}
-                  onChange={(event) => updateFeature(feature.id, { name: event.target.value })}
+                  onFocus={onEditStart}
+                  onBlur={onEditEnd}
+                  onChange={(event) =>
+                    updateFeature(feature.id, { name: event.target.value }, { undoable: false })
+                  }
                 />
                 <button
                   type="button"
@@ -2887,22 +3026,36 @@ function AutoPlacementControls({
                 label={`Feature ${index + 1} left edge (${unit})`}
                 valueIn={feature.xIn}
                 unit={unit}
-                onChange={(xIn) => updateFeature(feature.id, { xIn: Math.max(0, xIn) })}
+                onEditStart={onEditStart}
+                onEditEnd={onEditEnd}
+                onChange={(xIn) =>
+                  updateFeature(feature.id, { xIn: Math.max(0, xIn) }, { undoable: false })
+                }
               />
               <NumberField
                 label={`Feature ${index + 1} width (${unit})`}
                 valueIn={feature.widthIn}
                 unit={unit}
                 precision="size"
-                onChange={(widthIn) => updateFeature(feature.id, { widthIn: Math.max(1, widthIn) })}
+                onEditStart={onEditStart}
+                onEditEnd={onEditEnd}
+                onChange={(widthIn) =>
+                  updateFeature(feature.id, { widthIn: Math.max(1, widthIn) }, { undoable: false })
+                }
               />
               <NumberField
                 label={`Feature ${index + 1} height (${unit})`}
                 valueIn={feature.heightIn}
                 unit={unit}
                 precision="size"
+                onEditStart={onEditStart}
+                onEditEnd={onEditEnd}
                 onChange={(heightIn) =>
-                  updateFeature(feature.id, { heightIn: Math.max(0, heightIn) })
+                  updateFeature(
+                    feature.id,
+                    { heightIn: Math.max(0, heightIn) },
+                    { undoable: false },
+                  )
                 }
               />
               <NumberField
@@ -2910,10 +3063,16 @@ function AutoPlacementControls({
                 valueIn={feature.clearanceOverrideIn ?? 6}
                 unit={unit}
                 precision="size"
+                onEditStart={onEditStart}
+                onEditEnd={onEditEnd}
                 onChange={(clearanceOverrideIn) =>
-                  updateFeature(feature.id, {
-                    clearanceOverrideIn: Math.max(0, clearanceOverrideIn),
-                  })
+                  updateFeature(
+                    feature.id,
+                    {
+                      clearanceOverrideIn: Math.max(0, clearanceOverrideIn),
+                    },
+                    { undoable: false },
+                  )
                 }
               />
             </article>
@@ -2932,10 +3091,16 @@ function HookControls({
   piece,
   unit,
   onChange,
+  onEditStart,
+  onEditEnd,
+  onImmediateChange,
 }: {
   piece: ArtPiece;
   unit: Unit;
   onChange: (hookSpec: HookSpec | undefined) => void;
+  onEditStart?: () => void;
+  onEditEnd?: () => void;
+  onImmediateChange?: () => void;
 }) {
   const count = piece.hookSpec?.count ?? 0;
 
@@ -2947,6 +3112,7 @@ function HookControls({
           aria-label={`Hooks for ${piece.label}`}
           value={count}
           onChange={(event) => {
+            onImmediateChange?.();
             const next = Number(event.target.value);
             if (next === 0) {
               onChange(undefined);
@@ -2974,12 +3140,16 @@ function HookControls({
             label={`${piece.label} hook down from top`}
             valueIn={piece.hookSpec.topOffsetIn}
             unit={unit}
+            onEditStart={onEditStart}
+            onEditEnd={onEditEnd}
             onChange={(topOffsetIn) => onChange({ ...piece.hookSpec!, topOffsetIn } as HookSpec)}
           />
           <NumberField
             label={`${piece.label} hook from left side`}
             valueIn={piece.hookSpec.leftOffsetIn}
             unit={unit}
+            onEditStart={onEditStart}
+            onEditEnd={onEditEnd}
             onChange={(leftOffsetIn) => onChange({ ...piece.hookSpec!, leftOffsetIn } as HookSpec)}
           />
         </div>
@@ -2990,6 +3160,8 @@ function HookControls({
             label={`${piece.label} left hook from left side`}
             valueIn={piece.hookSpec.leftSideOffsetIn}
             unit={unit}
+            onEditStart={onEditStart}
+            onEditEnd={onEditEnd}
             onChange={(leftSideOffsetIn) =>
               onChange({ ...piece.hookSpec!, leftSideOffsetIn } as HookSpec)
             }
@@ -2998,6 +3170,8 @@ function HookControls({
             label={`${piece.label} right hook from right side`}
             valueIn={piece.hookSpec.rightSideOffsetIn}
             unit={unit}
+            onEditStart={onEditStart}
+            onEditEnd={onEditEnd}
             onChange={(rightSideOffsetIn) =>
               onChange({ ...piece.hookSpec!, rightSideOffsetIn } as HookSpec)
             }
