@@ -21,6 +21,14 @@ describe('site metadata and brand assets', () => {
     );
     expect(documentHead).toContain('property="og:title"');
     expect(documentHead).toContain('property="og:description"');
+    expect(documentHead).toMatch(
+      /property="og:image"\s+content="https:\/\/gallery-designer\.ericslutz\.dev\/social-preview\.png"/,
+    );
+    expect(documentHead).toContain('property="og:image:width" content="1280"');
+    expect(documentHead).toContain('property="og:image:height" content="640"');
+    expect(documentHead).toMatch(
+      /property="og:image:alt"\s+content="Gallery Designer app preview showing the wall planner workspace\."/,
+    );
     expect(documentHead).toContain('property="og:type" content="website"');
     expect(documentHead).toContain(
       'property="og:url" content="https://gallery-designer.ericslutz.dev/"',
