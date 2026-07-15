@@ -1,8 +1,1 @@
 blank_issues_enabled: false
-contact_links:
-  - name: Gallery Designer support
-    url: https://github.com/eslutz/Gallery-Designer/issues
-    about: Use GitHub Issues for support requests, bug reports, and feature requests.
-  - name: Report a security vulnerability
-    url: https://github.com/eslutz/Gallery-Designer/security/advisories/new
-    about: Use GitHub Security Advisories for private vulnerability reporting.

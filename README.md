@@ -1,6 +1,6 @@
 # Gallery Designer
 
-Gallery Designer is a local-first web app for planning a gallery wall to scale. You can model a continuous wall, size and place artwork, try automatic layouts, and export measurements for installation without creating an account or sending your design to a server.
+Gallery Designer is a browser-based tool for planning a gallery wall to scale. You can model a continuous wall, size and place artwork, try automatic layouts, and export measurements for installation without creating an account or sending your design to a server.
 
 ## What It Does
 
