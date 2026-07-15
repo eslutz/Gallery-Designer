@@ -1,0 +1,43 @@
+name: Feature
+description: Track a user-facing or technical capability.
+title: 'FEATURE: '
+labels: ['type: feature']
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+    validations:
+      required: true
+  - type: textarea
+    id: user_outcome
+    attributes:
+      label: User-facing outcome
+  - type: textarea
+    id: scope
+    attributes:
+      label: Technical scope
+    validations:
+      required: true
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of scope
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Test plan
+  - type: textarea
+    id: validation
+    attributes:
+      label: Manual validation steps
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
