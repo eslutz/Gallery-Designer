@@ -61,15 +61,12 @@
   --hook-fill: #c84f3d;
   --hook-stroke: #ffffff;
   --staging-border: #abc6b3;
-  --success-text: #245b46;
-  --warning-text: #9a4a30;
   --issue-text: #8a422f;
   --table-border: #dfe8e1;
   --panel-shadow: 0 14px 40px rgba(43, 58, 48, 0.08);
   --soft-shadow: 0 14px 40px rgba(43, 58, 48, 0.06);
   --piece-shadow: drop-shadow(0 1px 1px rgba(43, 58, 48, 0.22));
   --staged-piece-shadow: 0 8px 20px rgba(43, 58, 48, 0.08);
-  --drag-preview-shadow: 0 12px 28px rgba(43, 58, 48, 0.22);
   --wall-preview-shadow: 0 16px 36px rgba(43, 58, 48, 0.28);
   color: var(--text-primary);
   background: var(--page-background);
@@ -118,15 +115,12 @@
     --hook-fill: #e77860;
     --hook-stroke: #16211b;
     --staging-border: #547665;
-    --success-text: #9ad8b6;
-    --warning-text: #e29a80;
     --issue-text: #e29a80;
     --table-border: #33483d;
     --panel-shadow: 0 14px 40px rgba(0, 0, 0, 0.28);
     --soft-shadow: 0 14px 40px rgba(0, 0, 0, 0.2);
     --piece-shadow: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.42));
     --staged-piece-shadow: 0 8px 20px rgba(0, 0, 0, 0.24);
-    --drag-preview-shadow: 0 12px 28px rgba(0, 0, 0, 0.36);
     --wall-preview-shadow: 0 16px 36px rgba(0, 0, 0, 0.42);
   }
 }
@@ -170,15 +164,12 @@
   --hook-fill: #e77860;
   --hook-stroke: #16211b;
   --staging-border: #547665;
-  --success-text: #9ad8b6;
-  --warning-text: #e29a80;
   --issue-text: #e29a80;
   --table-border: #33483d;
   --panel-shadow: 0 14px 40px rgba(0, 0, 0, 0.28);
   --soft-shadow: 0 14px 40px rgba(0, 0, 0, 0.2);
   --piece-shadow: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.42));
   --staged-piece-shadow: 0 8px 20px rgba(0, 0, 0, 0.24);
-  --drag-preview-shadow: 0 12px 28px rgba(0, 0, 0, 0.36);
   --wall-preview-shadow: 0 16px 36px rgba(0, 0, 0, 0.42);
 }
 
@@ -212,8 +203,6 @@
   --wall-selected-fill: rgba(216, 228, 244, 0.46);
   --wall-edge: #7f9fbe;
   --buffer-guide: #4f86c4;
-  --success-text: #2d6ea8;
-  --warning-text: #9a5b32;
   --issue-text: #8a4b31;
   --table-border: #dbe5f0;
   --panel-shadow: 0 14px 40px rgba(42, 74, 108, 0.08);
@@ -256,8 +245,6 @@
   --wall-selected-fill: rgba(51, 84, 118, 0.34);
   --wall-edge: #88a6c5;
   --buffer-guide: #7ab4ea;
-  --success-text: #9ccaf1;
-  --warning-text: #f0a27e;
   --issue-text: #f0a27e;
   --table-border: #29435d;
   --panel-shadow: 0 14px 40px rgba(0, 0, 0, 0.3);
@@ -300,8 +287,6 @@
   --wall-selected-fill: rgba(228, 214, 239, 0.48);
   --wall-edge: #9b83b3;
   --buffer-guide: #9163b9;
-  --success-text: #7b4a9f;
-  --warning-text: #9f5f3d;
   --issue-text: #8f4e36;
   --table-border: #e3d9eb;
   --panel-shadow: 0 14px 40px rgba(86, 52, 109, 0.08);
@@ -344,8 +329,6 @@
   --wall-selected-fill: rgba(83, 59, 101, 0.34);
   --wall-edge: #9f82b6;
   --buffer-guide: #c08ee0;
-  --success-text: #d2a8f0;
-  --warning-text: #efad88;
   --issue-text: #efad88;
   --table-border: #4b345e;
   --panel-shadow: 0 14px 40px rgba(0, 0, 0, 0.3);
@@ -389,8 +372,6 @@
   --wall-selected-fill: rgba(237, 217, 205, 0.5);
   --wall-edge: #ba8b71;
   --buffer-guide: #c8754c;
-  --success-text: #b45f39;
-  --warning-text: #9a5831;
   --issue-text: #8f4d2f;
   --table-border: #eadfd6;
   --panel-shadow: 0 14px 40px rgba(110, 71, 52, 0.08);
@@ -434,8 +415,6 @@
   --wall-selected-fill: rgba(98, 64, 53, 0.34);
   --wall-edge: #c18c73;
   --buffer-guide: #e09a72;
-  --success-text: #efbc96;
-  --warning-text: #f0a77e;
   --issue-text: #f0a77e;
   --table-border: #5d3c33;
   --panel-shadow: 0 14px 40px rgba(0, 0, 0, 0.3);
@@ -478,8 +457,6 @@
   --wall-selected-fill: rgba(220, 228, 236, 0.48);
   --wall-edge: #8a99a8;
   --buffer-guide: #607286;
-  --success-text: #4b647b;
-  --warning-text: #9a6451;
   --issue-text: #8a5546;
   --table-border: #dbe3ea;
   --panel-shadow: 0 14px 40px rgba(52, 67, 80, 0.08);
@@ -522,8 +499,6 @@
   --wall-selected-fill: rgba(53, 69, 84, 0.34);
   --wall-edge: #91a2b2;
   --buffer-guide: #8ea5b8;
-  --success-text: #b5c8d8;
-  --warning-text: #efb29b;
   --issue-text: #efb29b;
   --table-border: #31404f;
   --panel-shadow: 0 14px 40px rgba(0, 0, 0, 0.3);
@@ -851,8 +826,7 @@ button:not(:disabled):active {
   padding-right: 4px;
 }
 
-.feature-help,
-.persistence-note {
+.feature-help {
   font-size: 0.8rem;
 }
 
@@ -950,7 +924,7 @@ button:not(:disabled):active {
   border-radius: 6px;
   color: var(--text-primary);
   background: var(--panel-solid);
-  box-shadow: var(--shadow-soft);
+  box-shadow: var(--soft-shadow);
   font-size: 0.76rem;
   font-weight: 600;
   line-height: 1.35;
@@ -1426,20 +1400,6 @@ select:focus,
   flex-wrap: wrap;
 }
 
-.success-text,
-.warning-text {
-  margin: 0;
-  font-weight: 800;
-}
-
-.success-text {
-  color: var(--success-text);
-}
-
-.warning-text {
-  color: var(--warning-text);
-}
-
 .issue-list {
   display: grid;
   gap: 6px;
@@ -1596,7 +1556,6 @@ th {
   }
 
   .toolbar-group,
-  .view-controls,
   .appearance-controls {
     width: 100%;
   }

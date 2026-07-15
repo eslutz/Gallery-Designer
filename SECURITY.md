@@ -8,4 +8,10 @@ Report vulnerabilities through GitHub Security Advisories for this repository so
 
 ## Supported Versions
 
-Until a versioned support policy exists, only the current `main` branch is supported for security fixes.
+Security fixes are provided for the latest released major version of Gallery Designer and for the current `main` branch.
+
+| Version | Supported |
+| --- | --- |
+| Latest major release | Yes |
+| `main` | Yes |
+| Older major releases | No |
