@@ -1,6 +1,7 @@
 import type {
   ArtPiece,
   MeasurementInstruction,
+  MeasurementReferenceMode,
   MeasurementReference,
   Placement,
   Unit,
@@ -9,7 +10,7 @@ import type {
 import { getHookPoints } from './hooks';
 import { rectForPlacement, type Rect } from './placement';
 import { formatMeasurement } from './units';
-import { getSectionById, getSectionOffsetX, getSectionOffsetY } from './wall';
+import { getSectionById, getSectionOffsetX, getSectionOffsetY, getWallBounds } from './wall';
 
 interface PlacedPiece {
   piece: ArtPiece;
@@ -25,7 +26,9 @@ export function buildMeasurementInstructions(
   pieces: ArtPiece[],
   placements: Placement[],
   unit: Unit,
+  referenceMode: MeasurementReferenceMode = 'relative',
 ): MeasurementInstruction[] {
+  const bounds = getWallBounds(sections);
   const placed = placements
     .map((placement): PlacedPiece | undefined => {
       const piece = pieces.find((candidate) => candidate.id === placement.pieceId);
@@ -50,9 +53,23 @@ export function buildMeasurementInstructions(
     pieceId: item.piece.id,
     pieceLabel: item.piece.label,
     sectionName: item.section.name,
-    topReference: index === 0 ? wallTopReference(item, unit) : findTopReference(item, placed, unit),
+    pieceDimensions: {
+      widthIn: item.piece.widthIn,
+      heightIn: item.piece.heightIn,
+      formatted: `${formatMeasurement(item.piece.widthIn, unit)} x ${formatMeasurement(item.piece.heightIn, unit)}`,
+    },
+    topReference:
+      referenceMode === 'absolute'
+        ? absoluteTopReference(item, bounds.minY, unit)
+        : index === 0
+          ? wallTopReference(item, unit)
+          : findTopReference(item, placed, unit),
     sideReference:
-      index === 0 ? wallLeftReference(item, unit) : findSideReference(item, placed, unit),
+      referenceMode === 'absolute'
+        ? absoluteSideReference(item, bounds.minX, unit)
+        : index === 0
+          ? wallLeftReference(item, unit)
+          : findSideReference(item, placed, unit),
     hooks: getHookPoints(item.piece).map((hook) => ({
       ...hook,
       formattedX: formatMeasurement(
@@ -62,6 +79,32 @@ export function buildMeasurementInstructions(
       formattedY: formatMeasurement(hook.yIn, unit),
     })),
   }));
+}
+
+function absoluteTopReference(
+  item: PlacedPiece,
+  wallOriginYIn: number,
+  unit: Unit,
+): MeasurementReference {
+  const distanceIn = item.globalTop - wallOriginYIn;
+  return {
+    label: 'top-left wall origin',
+    distanceIn,
+    formatted: formatMeasurement(distanceIn, unit),
+  };
+}
+
+function absoluteSideReference(
+  item: PlacedPiece,
+  wallOriginXIn: number,
+  unit: Unit,
+): MeasurementReference {
+  const distanceIn = item.globalLeft - wallOriginXIn;
+  return {
+    label: 'top-left wall origin',
+    distanceIn,
+    formatted: formatMeasurement(distanceIn, unit),
+  };
 }
 
 function wallTopReference(item: PlacedPiece, unit: Unit): MeasurementReference {

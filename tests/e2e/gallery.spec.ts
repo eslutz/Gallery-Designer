@@ -1,4 +1,53 @@
 import { expect, test } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+
+test('downloads complete PNG and PDF installation sheets', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Auto-place pieces' }).click();
+
+  const pngDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export PNG' }).click();
+  const pngDownload = await pngDownloadPromise;
+  expect(pngDownload.suggestedFilename()).toBe('gallery-wall-layout.png');
+  const pngPath = await pngDownload.path();
+  expect(pngPath).not.toBeNull();
+  const png = await readFile(pngPath!);
+  expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  expect(png.readUInt32BE(16)).toBe(1600);
+  expect(png.readUInt32BE(20)).toBeGreaterThan(900);
+  await expect(page.getByRole('status')).toContainText('PNG export generated.');
+
+  const pdfDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export PDF' }).click();
+  const pdfDownload = await pdfDownloadPromise;
+  expect(pdfDownload.suggestedFilename()).toBe('gallery-wall-layout.pdf');
+  const pdfPath = await pdfDownload.path();
+  expect(pdfPath).not.toBeNull();
+  const pdf = await readFile(pdfPath!);
+  expect(pdf.subarray(0, 4).toString()).toBe('%PDF');
+  expect(pdf.byteLength).toBeGreaterThan(10_000);
+  await expect(page.getByRole('status')).toContainText('PDF export generated.');
+});
+
+test('paginates eight installation instructions without a nearly empty trailing page', async ({
+  page,
+}) => {
+  await page.goto('/');
+  for (let index = 0; index < 7; index += 1) {
+    await page.getByRole('button', { name: 'Add art piece' }).click();
+  }
+  await page.getByRole('button', { name: 'Auto-place pieces' }).click();
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export PDF' }).click();
+  const download = await downloadPromise;
+  const downloadPath = await download.path();
+  expect(downloadPath).not.toBeNull();
+  const pdf = await readFile(downloadPath!);
+  const pageObjects = pdf.toString('latin1').match(/\/Type \/Page\b/g) ?? [];
+
+  expect(pageObjects).toHaveLength(2);
+});
 
 test('MVP layout flow exports measurements', async ({ page }) => {
   await page.goto('/');

@@ -26,8 +26,9 @@ import {
   resolveApplicationTheme,
 } from './lib/applicationTheme';
 import { parseDesignFile, serializeDesignFile } from './lib/designFile';
-import { downloadPdf, downloadSvgAsPng } from './lib/exportDesign';
+import { downloadPdf, downloadPng, type ExportDesignInput } from './lib/exportDesign';
 import { buildMeasurementInstructions } from './lib/measurements';
+import { buildMeasurementTableRows, MEASUREMENT_TABLE_HEADERS } from './lib/measurementTable';
 import {
   getPlacementIssues,
   reassignPlacementsToContainingSections,
@@ -183,6 +184,7 @@ const defaultState: GalleryState = {
     wallEdgeBufferGapIn: 2,
     artPieceBuffer: false,
     artPieceBufferGapIn: 2,
+    measurementReferenceMode: 'relative',
   },
   autoPlacementSettings: {
     wallSetupMode: 'available-sections',
@@ -209,6 +211,7 @@ export default function App() {
     getDefaultWallZoomState(getWallCanvasBaseViewBox(defaultState.sections, defaultState.features)),
   );
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const [exporting, setExporting] = useState<'png' | 'pdf' | null>(null);
   const wallDisplayRef = useRef<HTMLDivElement | null>(null);
   const clearMenuRef = useRef<HTMLDivElement | null>(null);
   const wallBaseViewBoxRef = useRef<WallViewBox | null>(null);
@@ -271,8 +274,21 @@ export default function App() {
     [wallIssues, placementIssues, unplacedIssues],
   );
   const measurements = useMemo(
-    () => buildMeasurementInstructions(state.sections, state.pieces, state.placements, state.unit),
-    [state.sections, state.pieces, state.placements, state.unit],
+    () =>
+      buildMeasurementInstructions(
+        state.sections,
+        state.pieces,
+        state.placements,
+        state.unit,
+        state.features.measurementReferenceMode,
+      ),
+    [
+      state.sections,
+      state.pieces,
+      state.placements,
+      state.unit,
+      state.features.measurementReferenceMode,
+    ],
   );
   const selectedPiece = state.pieces.find((piece) => piece.id === state.selectedPieceId);
   const selectedPlacement = state.placements.find(
@@ -1704,20 +1720,48 @@ export default function App() {
     };
   }
 
+  function getExportInput(): ExportDesignInput {
+    return {
+      sections: state.sections,
+      pieces: state.pieces,
+      placements: state.placements,
+      measurements,
+      unit: state.unit,
+    };
+  }
+
   async function exportPng() {
-    if (!svgRef.current) {
+    if (exporting) {
       return;
     }
-    await downloadSvgAsPng(svgRef.current, 'gallery-wall-layout.png');
-    setState((current) => ({ ...current, message: 'PNG export generated.' }));
+    setExporting('png');
+    setState((current) => ({ ...current, message: 'Exporting PNG...' }));
+    try {
+      await downloadPng(getExportInput());
+      setState((current) => ({ ...current, message: 'PNG export generated.' }));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Unknown export error.';
+      setState((current) => ({ ...current, message: `PNG export failed: ${reason}` }));
+    } finally {
+      setExporting(null);
+    }
   }
 
   async function exportPdf() {
-    if (!svgRef.current) {
+    if (exporting) {
       return;
     }
-    await downloadPdf(svgRef.current, measurements, allIssues);
-    setState((current) => ({ ...current, message: 'PDF export generated.' }));
+    setExporting('pdf');
+    setState((current) => ({ ...current, message: 'Exporting PDF...' }));
+    try {
+      await downloadPdf(getExportInput());
+      setState((current) => ({ ...current, message: 'PDF export generated.' }));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Unknown export error.';
+      setState((current) => ({ ...current, message: `PDF export failed: ${reason}` }));
+    } finally {
+      setExporting(null);
+    }
   }
 
   function exportJson() {
@@ -2212,6 +2256,7 @@ export default function App() {
           <ExportPanel
             ready={readyToExport}
             issues={allIssues}
+            exporting={exporting}
             onExportPng={exportPng}
             onExportPdf={exportPdf}
             onExportJson={exportJson}
@@ -2643,6 +2688,7 @@ function CollapsiblePanel({
 
 function NumberField({
   label,
+  info,
   valueIn,
   unit,
   precision = 'position',
@@ -2653,6 +2699,7 @@ function NumberField({
   onEditEnd,
 }: {
   label: string;
+  info?: string;
   valueIn: number;
   unit: Unit;
   precision?: 'position' | 'size';
@@ -2667,6 +2714,7 @@ function NumberField({
   const round = precision === 'size' ? roundToSizePrecision : roundToPrecision;
   const [draft, setDraft] = useState(display);
   const [focused, setFocused] = useState(false);
+  const inputId = useId();
   const errorId = useId();
 
   useEffect(() => {
@@ -2675,39 +2723,51 @@ function NumberField({
     }
   }, [display, focused]);
 
-  return (
+  const input = (
+    <input
+      id={inputId}
+      aria-label={label}
+      aria-invalid={error ? 'true' : undefined}
+      aria-describedby={error ? errorId : undefined}
+      disabled={disabled}
+      inputMode="decimal"
+      value={draft}
+      onFocus={() => {
+        onEditStart?.();
+        setFocused(true);
+      }}
+      onBlur={() => {
+        setFocused(false);
+        setDraft(display);
+        onEditEnd?.();
+      }}
+      onChange={(event) => {
+        const next = event.target.value;
+        setDraft(next);
+        if (next === '' || next === '-' || next.endsWith('.')) {
+          return;
+        }
+        onChange(round(toInches(parseMeasurement(next), unit)));
+      }}
+    />
+  );
+  const errorMessage = error ? (
+    <span id={errorId} className="field-error" role="alert">
+      {error}
+    </span>
+  ) : null;
+
+  return info ? (
+    <div className="field">
+      <FieldLabelWithInfo htmlFor={inputId} label={label} info={info} />
+      {input}
+      {errorMessage}
+    </div>
+  ) : (
     <label className="field">
       {label}
-      <input
-        aria-label={label}
-        aria-invalid={error ? 'true' : undefined}
-        aria-describedby={error ? errorId : undefined}
-        disabled={disabled}
-        inputMode="decimal"
-        value={draft}
-        onFocus={() => {
-          onEditStart?.();
-          setFocused(true);
-        }}
-        onBlur={() => {
-          setFocused(false);
-          setDraft(display);
-          onEditEnd?.();
-        }}
-        onChange={(event) => {
-          const next = event.target.value;
-          setDraft(next);
-          if (next === '' || next === '-' || next.endsWith('.')) {
-            return;
-          }
-          onChange(round(toInches(parseMeasurement(next), unit)));
-        }}
-      />
-      {error ? (
-        <span id={errorId} className="field-error" role="alert">
-          {error}
-        </span>
-      ) : null}
+      {input}
+      {errorMessage}
     </label>
   );
 }
@@ -2729,14 +2789,12 @@ function FeatureControls({
 
   return (
     <>
-      <label className="toggle-field">
-        <input
-          type="checkbox"
-          checked={features.snapToGrid}
-          onChange={(event) => onChange({ snapToGrid: event.target.checked })}
-        />
-        <span>Snap to grid</span>
-      </label>
+      <ToggleFieldWithInfo
+        label="Snap to grid"
+        checked={features.snapToGrid}
+        info="Pieces snap to grid increments while dragging or nudging. Grid size is the increment used when grid snapping is enabled."
+        onChange={(checked) => onChange({ snapToGrid: checked })}
+      />
       <NumberField
         label={`Grid size (${unitLabel})`}
         valueIn={features.gridSizeIn}
@@ -2749,14 +2807,12 @@ function FeatureControls({
         }
       />
       <p className="muted feature-help">Snap settings apply while dragging or nudging pieces.</p>
-      <label className="toggle-field">
-        <input
-          type="checkbox"
-          checked={features.snapToAlignment}
-          onChange={(event) => onChange({ snapToAlignment: event.target.checked })}
-        />
-        <span>Snap to alignment</span>
-      </label>
+      <ToggleFieldWithInfo
+        label="Snap to alignment"
+        checked={features.snapToAlignment}
+        info="Pieces snap to nearby artwork and wall alignment guides. Alignment tolerance controls how close a piece must be before snapping engages."
+        onChange={(checked) => onChange({ snapToAlignment: checked })}
+      />
       <NumberField
         label={`Alignment tolerance (${unitLabel})`}
         valueIn={features.alignmentToleranceIn}
@@ -2771,14 +2827,12 @@ function FeatureControls({
           )
         }
       />
-      <label className="toggle-field">
-        <input
-          type="checkbox"
-          checked={features.wallEdgeBuffer}
-          onChange={(event) => onChange({ wallEdgeBuffer: event.target.checked })}
-        />
-        <span>Wall edge buffer</span>
-      </label>
+      <ToggleFieldWithInfo
+        label="Wall edge buffer"
+        checked={features.wallEdgeBuffer}
+        info="Wall edge buffer reserves clearance from wall edges. The buffer gap sets the clearance distance used when wall edge buffer is enabled."
+        onChange={(checked) => onChange({ wallEdgeBuffer: checked })}
+      />
       <NumberField
         label={`Wall edge buffer gap (${unitLabel})`}
         valueIn={features.wallEdgeBufferGapIn}
@@ -2794,14 +2848,12 @@ function FeatureControls({
           )
         }
       />
-      <label className="toggle-field">
-        <input
-          type="checkbox"
-          checked={features.artPieceBuffer}
-          onChange={(event) => onChange({ artPieceBuffer: event.target.checked })}
-        />
-        <span>Art piece buffer</span>
-      </label>
+      <ToggleFieldWithInfo
+        label="Art piece buffer"
+        checked={features.artPieceBuffer}
+        info="Art piece buffer reserves spacing between artwork. The buffer gap sets the spacing distance used when art piece buffer is enabled."
+        onChange={(checked) => onChange({ artPieceBuffer: checked })}
+      />
       <NumberField
         label={`Art piece buffer gap (${unitLabel})`}
         valueIn={features.artPieceBufferGapIn}
@@ -2817,10 +2869,63 @@ function FeatureControls({
           )
         }
       />
-      <p className="muted feature-help">
-        Buffer guides reserve installation clearance around walls and artwork.
-      </p>
+      <ToggleFieldWithInfo
+        label="Use absolute installation measurements"
+        checked={features.measurementReferenceMode === 'absolute'}
+        info="Relative measurements reference the closest edge or neighbor. Absolute measurements use the continuous wall's top-left origin."
+        onChange={(checked) =>
+          onChange({
+            measurementReferenceMode: checked ? 'absolute' : 'relative',
+          })
+        }
+      />
     </>
+  );
+}
+
+function ToggleFieldWithInfo({
+  label,
+  checked,
+  info,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  info: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="toggle-field-with-info">
+      <label className="toggle-field">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+        <span>{label}</span>
+      </label>
+      <InfoTooltipButton label={label} info={info} />
+    </div>
+  );
+}
+
+function InfoTooltipButton({ label, info }: { label: string; info: string }) {
+  const tooltipId = useId();
+
+  return (
+    <span className="info-tip">
+      <button
+        type="button"
+        className="info-button"
+        aria-label={`${label} information`}
+        aria-describedby={tooltipId}
+      >
+        <Info size={14} aria-hidden="true" />
+      </button>
+      <span className="info-tooltip" id={tooltipId} role="tooltip">
+        {info}
+      </span>
+    </span>
   );
 }
 
@@ -2833,49 +2938,19 @@ function FieldLabelWithInfo({
   label: string;
   info?: string;
 }) {
-  const tooltipId = useId();
-
   return (
     <span className="field-label-with-info">
       <label htmlFor={htmlFor}>{label}</label>
-      {info ? (
-        <span className="info-tip">
-          <button
-            type="button"
-            className="info-button"
-            aria-label={`${label} information`}
-            aria-describedby={tooltipId}
-          >
-            <Info size={14} aria-hidden="true" />
-          </button>
-          <span className="info-tooltip" id={tooltipId} role="tooltip">
-            {info}
-          </span>
-        </span>
-      ) : null}
+      {info ? <InfoTooltipButton label={label} info={info} /> : null}
     </span>
   );
 }
 
 function HeadingWithInfo({ label, info }: { label: string; info: string }) {
-  const tooltipId = useId();
-
   return (
     <div className="heading-with-info">
       <h3>{label}</h3>
-      <span className="info-tip">
-        <button
-          type="button"
-          className="info-button"
-          aria-label={`${label} information`}
-          aria-describedby={tooltipId}
-        >
-          <Info size={14} aria-hidden="true" />
-        </button>
-        <span className="info-tooltip" id={tooltipId} role="tooltip">
-          {info}
-        </span>
-      </span>
+      <InfoTooltipButton label={label} info={info} />
     </div>
   );
 }
@@ -3650,6 +3725,7 @@ function HookMarks({
 function ExportPanel({
   ready,
   issues,
+  exporting,
   onExportPng,
   onExportPdf,
   onExportJson,
@@ -3657,13 +3733,16 @@ function ExportPanel({
 }: {
   ready: boolean;
   issues: string[];
+  exporting: 'png' | 'pdf' | null;
   onExportPng: () => void;
   onExportPdf: () => void;
   onExportJson: () => void;
   onImportClick: () => void;
 }) {
   const printExportRequirement = ready
-    ? 'Export the print layout.'
+    ? exporting
+      ? 'A print export is already in progress.'
+      : 'Export the print layout.'
     : `Complete export requirements: ${issues.join(' ')}`;
 
   return (
@@ -3684,7 +3763,8 @@ function ExportPanel({
           <button
             type="button"
             className="secondary"
-            disabled={!ready}
+            disabled={!ready || exporting !== null}
+            aria-busy={exporting === 'png'}
             title={printExportRequirement}
             onClick={onExportPng}
           >
@@ -3694,7 +3774,8 @@ function ExportPanel({
           <button
             type="button"
             className="secondary"
-            disabled={!ready}
+            disabled={!ready || exporting !== null}
+            aria-busy={exporting === 'pdf'}
             title={printExportRequirement}
             onClick={onExportPdf}
           >
@@ -3731,6 +3812,7 @@ function MeasurementsTable({
 }: {
   instructions: ReturnType<typeof buildMeasurementInstructions>;
 }) {
+  const rows = buildMeasurementTableRows(instructions);
   return (
     <CollapsiblePanel
       icon={<Ruler size={18} />}
@@ -3741,49 +3823,41 @@ function MeasurementsTable({
       <table className="measurements-table" aria-label="Installation measurements">
         <thead>
           <tr>
-            <th>Order</th>
-            <th>Piece</th>
-            <th>Section</th>
-            <th>Top reference</th>
-            <th>Side reference</th>
-            <th>Hooks</th>
+            {MEASUREMENT_TABLE_HEADERS.map((header) => (
+              <th key={header}>{header}</th>
+            ))}
           </tr>
         </thead>
         <tbody>
-          {instructions.length === 0 ? (
+          {rows.length === 0 ? (
             <tr>
               <td colSpan={6} className="empty-measurements">
                 Place a piece on the wall to see installation measurements.
               </td>
             </tr>
           ) : (
-            instructions.map((instruction) => (
-              <tr key={instruction.pieceId}>
-                <td>{instruction.order}</td>
-                <td>{instruction.pieceLabel}</td>
-                <td>{instruction.sectionName}</td>
+            rows.map((row) => (
+              <tr key={`${row.order}-${row.pieceLabel}`}>
+                <td>{row.order}</td>
                 <td>
-                  {instruction.topReference.formatted} from {instruction.topReference.label}
+                  <strong>{row.pieceLabel}</strong>
+                  <span className="measurement-secondary">{row.sectionName}</span>
                 </td>
                 <td>
-                  {instruction.sideReference.formatted} from {instruction.sideReference.label}
+                  <span>
+                    <strong>Top:</strong> {row.topReference}
+                  </span>
+                  <span>
+                    <strong>Side:</strong> {row.sideReference}
+                  </span>
                 </td>
-                <td>
-                  {instruction.hooks.length === 0
-                    ? 'No hook data'
-                    : instruction.hooks
-                        .map(
-                          (hook) =>
-                            `${hook.label}: ${hook.formattedY} down, ${hook.formattedX} from ${hook.reference}`,
-                        )
-                        .join('; ')}
-                </td>
+                <td>{row.hooks}</td>
               </tr>
             ))
           )}
         </tbody>
       </table>
-      {instructions.length > 0 ? (
+      {rows.length > 0 ? (
         <div className="measurement-cards" aria-label="Installation measurements">
           {instructions.map((instruction) => (
             <article className="measurement-card" key={instruction.pieceId}>
@@ -3859,8 +3933,20 @@ function isEditorFeatures(value: unknown): value is EditorFeatures {
     typeof value.wallEdgeBuffer === 'boolean' &&
     isFiniteNumber(value.wallEdgeBufferGapIn) &&
     typeof value.artPieceBuffer === 'boolean' &&
-    isFiniteNumber(value.artPieceBufferGapIn)
+    isFiniteNumber(value.artPieceBufferGapIn) &&
+    (value.measurementReferenceMode === undefined ||
+      value.measurementReferenceMode === 'relative' ||
+      value.measurementReferenceMode === 'absolute')
   );
+}
+
+function normalizeEditorFeatures(value: EditorFeatures): EditorFeatures {
+  return {
+    ...defaultState.features,
+    ...value,
+    measurementReferenceMode:
+      value.measurementReferenceMode === 'absolute' ? 'absolute' : 'relative',
+  };
 }
 
 function isAutoPlacementSettings(value: unknown): value is AutoPlacementSettings {
@@ -3999,7 +4085,9 @@ function loadState(): GalleryState {
       applicationTheme: resolveApplicationTheme(parsed.applicationTheme),
       sections: normalizeWallSections(parsed.sections ?? defaultState.sections),
       unit: parsed.unit === 'cm' ? 'cm' : 'in',
-      features: isEditorFeatures(parsed.features) ? parsed.features : defaultState.features,
+      features: isEditorFeatures(parsed.features)
+        ? normalizeEditorFeatures(parsed.features)
+        : defaultState.features,
       autoPlacementSettings: isAutoPlacementSettings(parsed.autoPlacementSettings)
         ? parsed.autoPlacementSettings
         : defaultState.autoPlacementSettings,

@@ -34,4 +34,44 @@ describe('measurement instructions', () => {
     expect(instructions[2].topReference.label).toBe('bottom of Upper left');
     expect(instructions[2].topReference.distanceIn).toBe(8);
   });
+
+  it('can report absolute placement coordinates from the continuous wall origin', () => {
+    const multiSectionWall: WallSection[] = [
+      { id: 'main', name: 'Main wall', widthIn: 120, heightIn: 96, cornerAfter: 'none' },
+      {
+        id: 'return',
+        name: 'Return wall',
+        widthIn: 48,
+        heightIn: 72,
+        cornerAfter: 'none',
+        xIn: 120,
+        yIn: 24,
+      },
+    ];
+    const instructions = buildMeasurementInstructions(
+      multiSectionWall,
+      pieces,
+      [
+        { pieceId: 'upper', sectionId: 'main', xIn: 12, yIn: 10 },
+        { pieceId: 'right', sectionId: 'return', xIn: 8, yIn: 16 },
+      ],
+      'in',
+      'absolute',
+    );
+
+    expect(instructions[0].pieceLabel).toBe('Upper left');
+    expect(instructions[0].topReference).toMatchObject({
+      label: 'top-left wall origin',
+      distanceIn: 10,
+      formatted: '10 in',
+    });
+    expect(instructions[0].sideReference).toMatchObject({
+      label: 'top-left wall origin',
+      distanceIn: 12,
+      formatted: '12 in',
+    });
+    expect(instructions[1].pieceLabel).toBe('Right piece');
+    expect(instructions[1].topReference.distanceIn).toBe(40);
+    expect(instructions[1].sideReference.distanceIn).toBe(128);
+  });
 });

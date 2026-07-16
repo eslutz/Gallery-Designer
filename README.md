@@ -121,6 +121,7 @@ npm test
 npm run lint
 npm run format
 npm run build
+npx playwright install chromium webkit
 npm run test:e2e
 ```
 

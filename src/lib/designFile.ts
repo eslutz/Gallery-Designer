@@ -153,6 +153,8 @@ function parseFeatures(value: unknown): EditorFeatures {
     wallEdgeBufferGapIn: Math.max(0.125, finiteNumber(parsed.wallEdgeBufferGapIn, 2)),
     artPieceBuffer: typeof parsed.artPieceBuffer === 'boolean' ? parsed.artPieceBuffer : false,
     artPieceBufferGapIn: Math.max(0.125, finiteNumber(parsed.artPieceBufferGapIn, 2)),
+    measurementReferenceMode:
+      parsed.measurementReferenceMode === 'absolute' ? 'absolute' : 'relative',
   };
 }
 
