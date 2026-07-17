@@ -1,5 +1,12 @@
 import jsPDF from 'jspdf';
-import type { ArtPiece, MeasurementInstruction, Placement, Unit, WallSection } from '../types';
+import type {
+  ArtPiece,
+  AutoPlacementSettings,
+  MeasurementInstruction,
+  Placement,
+  Unit,
+  WallSection,
+} from '../types';
 import { getHookPoints } from './hooks';
 import { formatMeasurement } from './units';
 import {
@@ -8,6 +15,7 @@ import {
   type MeasurementTableRow,
 } from './measurementTable';
 import { getWallBounds, getWallExteriorEdges, getWallLayout } from './wall';
+import { resolveWallFeatureRule } from './wallFeatures';
 
 const SHEET_WIDTH = 1600;
 const SHEET_MARGIN = 72;
@@ -24,6 +32,8 @@ const PDF_MEASUREMENT_ROW_GAP = 3;
 const SVG_MEASUREMENT_MIN_ROW_HEIGHT = 78;
 const SVG_MEASUREMENT_HOOK_MAX_CHARS = 32;
 const SVG_MEASUREMENT_HOOK_LINE_HEIGHT = 20;
+const SVG_INVENTORY_MIN_ROW_HEIGHT = 40;
+const SVG_INVENTORY_TEXT_LINE_HEIGHT = 18;
 
 export interface ExportDesignInput {
   sections: WallSection[];
@@ -31,6 +41,7 @@ export interface ExportDesignInput {
   placements: Placement[];
   measurements: MeasurementInstruction[];
   unit: Unit;
+  autoPlacementSettings?: AutoPlacementSettings;
 }
 
 export interface ExportSheetSvg {
@@ -103,8 +114,7 @@ export async function downloadPdf(
 
 export function buildExportSheetSvg(input: ExportDesignInput): ExportSheetSvg {
   const inventoryRows = getInventoryRows(input);
-  const inventoryRowHeight = 40;
-  const inventoryHeight = 52 + inventoryRows.length * inventoryRowHeight;
+  const inventoryHeight = getSvgInventoryTableHeight(inventoryRows);
   const measurementRows = buildMeasurementTableRows(input.measurements, {
     includeDimensions: true,
   });
@@ -271,6 +281,16 @@ function buildDiagramFragment(
       return `<text x="${number(sectionX + 14)}" y="${number(sectionY - 10)}" font-size="18" font-weight="700" fill="#344454">${escapeXml(label)}</text>`;
     })
     .join('');
+  const featureMarkup =
+    input.autoPlacementSettings?.wallSetupMode === 'full-wall-with-features'
+      ? input.autoPlacementSettings.wallFeatures
+          .map((feature) => {
+            const rule = resolveWallFeatureRule(feature);
+            const top = bounds.maxY - feature.heightIn - rule.clearanceIn;
+            return `<rect x="${number(originX + feature.xIn * scale)}" y="${number(originY + top * scale)}" width="${number(feature.widthIn * scale)}" height="${number((bounds.maxY - top) * scale)}" fill="#d6e0e7" fill-opacity="0.62" stroke="#607080" stroke-width="2" stroke-dasharray="8 8"><title>${escapeXml(feature.name)} blocked area</title></rect>`;
+          })
+          .join('')
+      : '';
 
   const placementMarkup = input.placements
     .map((placement, index) => {
@@ -310,6 +330,7 @@ function buildDiagramFragment(
     sectionFillMarkup,
     exteriorEdgeMarkup,
     sectionLabelMarkup,
+    featureMarkup,
     placementMarkup,
   ].join('');
 }
@@ -318,8 +339,8 @@ function buildInventorySvg(input: ExportDesignInput, rows: InventoryRow[], start
   const tableX = SHEET_MARGIN;
   const tableWidth = SHEET_WIDTH - SHEET_MARGIN * 2;
   const headerY = startY + 46;
-  const rowHeight = 40;
   const columnX = [tableX + 18, tableX + 105, tableX + 650, tableX + 1080];
+  const columnCharWidths = [8, 54, 42, 18];
   const headings = ['Order', 'Piece', 'Section', 'Size'];
   const headerText = headings
     .map(
@@ -327,17 +348,26 @@ function buildInventorySvg(input: ExportDesignInput, rows: InventoryRow[], start
         `<text x="${columnX[index]}" y="${headerY + 32}" font-size="17" font-weight="700" fill="#ffffff">${heading}</text>`,
     )
     .join('');
+  let nextRowY = headerY + 46;
   const body = rows
     .map((row, index) => {
-      const rowY = headerY + 46 + index * rowHeight;
+      const rowY = nextRowY;
+      const rowHeight = getSvgInventoryRowHeight(row);
+      nextRowY += rowHeight;
       const fill = index % 2 === 0 ? '#f8faf9' : '#eef2f3';
       const size = `${formatMeasurement(row.piece.widthIn, input.unit)} x ${formatMeasurement(row.piece.heightIn, input.unit)}`;
       const values = [String(row.order), row.piece.label, row.section?.name ?? 'Not placed', size];
       return [
         `<rect x="${tableX}" y="${rowY}" width="${tableWidth}" height="${rowHeight}" fill="${fill}" stroke="#d4dbe0" stroke-width="1"/>`,
-        ...values.map(
-          (value, valueIndex) =>
-            `<text x="${columnX[valueIndex]}" y="${rowY + 26}" font-size="16" fill="#1c252e">${escapeXml(value)}</text>`,
+        ...values.map((value, valueIndex) =>
+          buildSvgMultilineText(
+            wrapExportText(value, columnCharWidths[valueIndex]),
+            columnX[valueIndex],
+            rowY + 24,
+            16,
+            SVG_INVENTORY_TEXT_LINE_HEIGHT,
+            '#1c252e',
+          ),
         ),
       ].join('');
     })
@@ -349,6 +379,23 @@ function buildInventorySvg(input: ExportDesignInput, rows: InventoryRow[], start
     headerText,
     body,
   ].join('');
+}
+
+function getSvgInventoryTableHeight(rows: InventoryRow[]): number {
+  return 92 + rows.reduce((total, row) => total + getSvgInventoryRowHeight(row), 0);
+}
+
+function getSvgInventoryRowHeight(row: InventoryRow): number {
+  const lineCounts = [
+    wrapExportText(String(row.order), 8).length,
+    wrapExportText(row.piece.label, 54).length,
+    wrapExportText(row.section?.name ?? 'Not placed', 42).length,
+    1,
+  ];
+  return Math.max(
+    SVG_INVENTORY_MIN_ROW_HEIGHT,
+    16 + Math.max(...lineCounts) * SVG_INVENTORY_TEXT_LINE_HEIGHT,
+  );
 }
 
 function buildMeasurementTableSvg(rows: MeasurementTableRow[], startY: number): string {

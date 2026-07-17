@@ -79,6 +79,14 @@ describe('Gallery Designer app', () => {
     await user.click(screen.getByRole('button', { name: /Export PNG/i }));
 
     expect(exportMocks.downloadPng).toHaveBeenCalledTimes(1);
+    expect(exportMocks.downloadPng).toHaveBeenCalledWith(
+      expect.objectContaining({
+        autoPlacementSettings: expect.objectContaining({
+          wallSetupMode: expect.any(String),
+          wallFeatures: expect.any(Array),
+        }),
+      }),
+    );
     expect(screen.getByRole('status')).toHaveTextContent('Exporting PNG');
     expect(screen.getByRole('button', { name: /Export PNG/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Export PDF/i })).toBeDisabled();

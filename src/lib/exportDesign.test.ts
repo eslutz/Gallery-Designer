@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import jsPDF from 'jspdf';
-import type { ArtPiece, Placement, WallSection } from '../types';
+import type { ArtPiece, AutoPlacementSettings, Placement, WallSection } from '../types';
 import { buildMeasurementInstructions } from './measurements';
 import { buildMeasurementTableRows } from './measurementTable';
 import {
@@ -104,6 +104,25 @@ function makeTwoHookInput(): ExportDesignInput {
   };
 }
 
+function makeFeatureSettings(): AutoPlacementSettings {
+  return {
+    wallSetupMode: 'full-wall-with-features',
+    context: { kind: 'blank', viewingPosture: 'standing' },
+    layoutPreference: 'auto',
+    wallFeatures: [
+      {
+        id: 'feature-sofa',
+        type: 'sofa',
+        name: 'Blue sectional sofa',
+        xIn: 20,
+        widthIn: 72,
+        heightIn: 30,
+        clearanceOverrideIn: 10,
+      },
+    ],
+  };
+}
+
 describe('buildExportSheetSvg', () => {
   it('builds a self-contained full installation sheet', () => {
     const sheet = buildExportSheetSvg(makeInput());
@@ -161,6 +180,40 @@ describe('buildExportSheetSvg', () => {
     expect(inventoryMarkup).not.toContain('height="52"');
   });
 
+  it('wraps long user labels in PNG inventory rows', () => {
+    const input = makeInput();
+    input.pieces = [
+      {
+        ...input.pieces[0],
+        label: 'Oversized signed exhibition poster with unusually long collector label text',
+      },
+    ];
+    input.sections = [
+      {
+        ...input.sections[0],
+        name: 'Main gallery section with a very long owner supplied name',
+      },
+    ];
+    input.placements = [
+      { pieceId: input.pieces[0].id, sectionId: input.sections[0].id, xIn: 8, yIn: 10 },
+    ];
+    input.measurements = buildMeasurementInstructions(
+      input.sections,
+      input.pieces,
+      input.placements,
+      'in',
+    );
+    const { markup } = buildExportSheetSvg(input);
+    const inventoryMarkup = markup.slice(
+      markup.indexOf('Piece inventory'),
+      markup.indexOf('Installation measurements'),
+    );
+
+    expect(inventoryMarkup).toContain('<tspan');
+    expect(inventoryMarkup).toContain('height="52"');
+    expect(inventoryMarkup).not.toContain(`${input.pieces[0].label}</text>`);
+  });
+
   it('wraps long hook instructions in PNG measurement rows', () => {
     const input = makeTwoHookInput();
     const row = buildMeasurementTableRows(input.measurements, { includeDimensions: true })[0];
@@ -206,6 +259,20 @@ describe('buildExportSheetSvg', () => {
     expect(diagramMarkup).toContain('stroke="#607080" stroke-width="3"');
     expect(verticalExteriorLines).toHaveLength(2);
     expect(mainLabelY).toBeLessThan(mainWallY);
+  });
+
+  it('includes full-wall feature clearance blocks in exported wall diagrams', () => {
+    const input = makeInput();
+    input.autoPlacementSettings = makeFeatureSettings();
+    const { markup } = buildExportSheetSvg(input);
+    const diagramMarkup = markup.slice(
+      markup.indexOf('<rect x="72" y="132"'),
+      markup.indexOf('Piece inventory'),
+    );
+
+    expect(diagramMarkup).toContain('Blue sectional sofa blocked area');
+    expect(diagramMarkup).toContain('fill="#d6e0e7"');
+    expect(diagramMarkup).toContain('stroke-dasharray="8 8"');
   });
 });
 

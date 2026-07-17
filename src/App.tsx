@@ -1727,6 +1727,7 @@ export default function App() {
       placements: state.placements,
       measurements,
       unit: state.unit,
+      autoPlacementSettings: state.autoPlacementSettings,
     };
   }
 
