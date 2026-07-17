@@ -45,6 +45,8 @@ export interface Placement {
   yIn: number;
 }
 
+export type MeasurementReferenceMode = 'relative' | 'absolute';
+
 export interface EditorFeatures {
   snapToGrid: boolean;
   gridSizeIn: number;
@@ -54,6 +56,7 @@ export interface EditorFeatures {
   wallEdgeBufferGapIn: number;
   artPieceBuffer: boolean;
   artPieceBufferGapIn: number;
+  measurementReferenceMode: MeasurementReferenceMode;
 }
 
 export type AutoPlacementContext =
@@ -110,6 +113,12 @@ export interface MeasurementReference {
   formatted: string;
 }
 
+export interface PieceDimensions {
+  widthIn: number;
+  heightIn: number;
+  formatted: string;
+}
+
 export interface HookPoint {
   label: string;
   xIn: number;
@@ -127,6 +136,7 @@ export interface MeasurementInstruction {
   pieceId: string;
   pieceLabel: string;
   sectionName: string;
+  pieceDimensions: PieceDimensions;
   topReference: MeasurementReference;
   sideReference: MeasurementReference;
   hooks: HookMeasurement[];

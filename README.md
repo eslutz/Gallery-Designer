@@ -112,16 +112,68 @@ Security vulnerabilities should not be reported in public issues. Use GitHub Sec
 
 ## Developer Notes
 
-This project uses Node 24.
+Gallery Designer is a local-first Vite/React app. There is no backend, account setup, database, or external service required for local development. Designs autosave to the browser's `localStorage`, and PNG/PDF export runs entirely in the browser.
+
+### Prerequisites
+
+- Node.js 24. The repo includes `.nvmrc`, so use `nvm use` when working locally.
+- npm, installed with Node.
+- Playwright browsers only if you plan to run the end-to-end tests.
+
+### First-time setup
 
 ```bash
-npm ci
+nvm use
+npm install
+```
+
+`npm install` updates `node_modules` for local development and may refresh compatible dependency versions in `package-lock.json`. CI should use `npm ci` so automated runs install the exact tested lockfile.
+
+### Run locally
+
+```bash
 npm run dev
+```
+
+Open the local URL printed by Vite, usually `http://127.0.0.1:5173`. The app stores draft designs in the browser you use for testing. If another process already owns the default port, Vite will offer the next available port.
+
+To run on a specific port, pass it through to Vite:
+
+```bash
+npm run dev -- --port 5175
+```
+
+### Validate changes
+
+Use the smallest relevant check while developing, then run the broader set before review:
+
+```bash
 npm test
 npm run lint
 npm run format
 npm run build
+```
+
+- `npm test` runs Vitest and Testing Library tests in jsdom.
+- `npm run lint` checks TypeScript, React Hooks, and refresh rules.
+- `npm run format` checks Prettier formatting.
+- `npm run build` runs the TypeScript project build and production Vite bundle.
+
+For browser workflow changes, install Playwright browsers once and run the e2e suite:
+
+```bash
+npx playwright install chromium webkit
 npm run test:e2e
 ```
+
+The Playwright config starts the app on `http://127.0.0.1:5173` automatically.
+
+### Project orientation
+
+- `src/App.tsx` owns the editor UI and reducer state.
+- `src/types.ts` contains shared domain types.
+- `src/lib/` contains deterministic geometry, placement, measurement, snapping, persistence, and export logic.
+- `tests/e2e/gallery.spec.ts` covers browser workflows such as dragging, export downloads, and responsive behavior.
+- `public/` contains static assets, fonts, favicon, and GitHub Pages metadata.
 
 Implementation truth for placement behavior lives in `src/lib/autoPlace.ts`, `src/lib/placement.ts`, and the matching tests.

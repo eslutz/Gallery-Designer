@@ -42,6 +42,7 @@ const baseFeatures: EditorFeatures = {
   wallEdgeBufferGapIn: 2,
   artPieceBuffer: false,
   artPieceBufferGapIn: 2,
+  measurementReferenceMode: 'relative',
 };
 
 describe('wall section geometry', () => {

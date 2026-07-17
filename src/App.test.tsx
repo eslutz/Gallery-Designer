@@ -1,10 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 
+const exportMocks = vi.hoisted(() => ({
+  downloadPng: vi.fn(),
+  downloadPdf: vi.fn(),
+  downloadSvgAsPng: vi.fn(),
+}));
+
+vi.mock('./lib/exportDesign', async () => {
+  const actual = await vi.importActual<typeof import('./lib/exportDesign')>('./lib/exportDesign');
+  return { ...actual, ...exportMocks };
+});
+
 describe('Gallery Designer app', () => {
   beforeEach(() => {
+    exportMocks.downloadPng.mockReset().mockResolvedValue(undefined);
+    exportMocks.downloadPdf.mockReset().mockResolvedValue(undefined);
+    exportMocks.downloadSvgAsPng.mockReset().mockResolvedValue(undefined);
     localStorage.clear();
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.removeAttribute('data-palette');
@@ -48,6 +62,57 @@ describe('Gallery Designer app', () => {
 
     const table = screen.getByRole('table', { name: /Installation measurements/i });
     expect(within(table).getAllByRole('row')).toHaveLength(4);
+    expect(screen.getByRole('button', { name: /Export PDF/i })).toBeEnabled();
+  });
+
+  it('shows PNG export progress and prevents concurrent print exports', async () => {
+    const user = userEvent.setup();
+    let finishExport: (() => void) | undefined;
+    exportMocks.downloadPng.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishExport = resolve;
+      }),
+    );
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    await user.click(screen.getByRole('button', { name: /Export PNG/i }));
+
+    expect(exportMocks.downloadPng).toHaveBeenCalledTimes(1);
+    expect(exportMocks.downloadPng).toHaveBeenCalledWith(
+      expect.objectContaining({
+        autoPlacementSettings: expect.objectContaining({
+          wallSetupMode: expect.any(String),
+          wallFeatures: expect.any(Array),
+        }),
+      }),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('Exporting PNG');
+    expect(screen.getByRole('button', { name: /Export PNG/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Export PDF/i })).toBeDisabled();
+
+    finishExport?.();
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('PNG export generated'),
+    );
+    expect(screen.getByRole('button', { name: /Export PNG/i })).toBeEnabled();
+  });
+
+  it('reports PDF export failures and restores the export buttons', async () => {
+    const user = userEvent.setup();
+    exportMocks.downloadPdf.mockRejectedValue(new Error('PDF generation failed.'));
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    await user.click(screen.getByRole('button', { name: /Export PDF/i }));
+
+    expect(exportMocks.downloadPdf).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'PDF export failed: PDF generation failed.',
+      ),
+    );
+    expect(screen.getByRole('button', { name: /Export PNG/i })).toBeEnabled();
     expect(screen.getByRole('button', { name: /Export PDF/i })).toBeEnabled();
   });
 
@@ -95,7 +160,12 @@ describe('Gallery Designer app', () => {
     expect(
       screen.getByText(/snap settings apply while dragging or nudging pieces/i),
     ).toBeInTheDocument();
-    expect(screen.getByText(/buffer guides reserve installation clearance/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Art piece buffer information' })).toHaveAttribute(
+      'aria-describedby',
+    );
+    expect(
+      screen.queryByText(/buffer guides reserve installation clearance/i),
+    ).not.toBeInTheDocument();
   });
 
   it('explains context and viewing height for available wall sections', () => {
@@ -566,6 +636,7 @@ describe('Gallery Designer app', () => {
           wallEdgeBufferGapIn: 2,
           artPieceBuffer: false,
           artPieceBufferGapIn: 2,
+          measurementReferenceMode: 'relative',
         },
         autoPlacementSettings: {
           wallSetupMode: 'available-sections',
@@ -910,6 +981,41 @@ describe('Gallery Designer app', () => {
     expect(screen.getByLabelText('Art piece buffer gap (in)')).toBeInTheDocument();
     expect(screen.getByLabelText('Wall edge buffer gap (in)')).toBeDisabled();
     expect(screen.getByLabelText('Art piece buffer gap (in)')).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Snap to grid information' }),
+    ).toHaveAccessibleDescription(/dragging or nudging.*grid size is the increment/i);
+    expect(
+      screen.queryByRole('button', { name: 'Grid size (in) information' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Snap to alignment information' }),
+    ).toHaveAccessibleDescription(/nearby artwork and wall alignment.*how close/i);
+    expect(
+      screen.queryByRole('button', { name: 'Alignment tolerance (in) information' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Wall edge buffer information' }),
+    ).toHaveAccessibleDescription(/clearance from wall edges.*clearance distance/i);
+    expect(
+      screen.queryByRole('button', { name: 'Wall edge buffer gap (in) information' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Art piece buffer information' }),
+    ).toHaveAccessibleDescription(/spacing between artwork.*spacing distance/i);
+    expect(
+      screen.queryByRole('button', { name: 'Art piece buffer gap (in) information' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Use absolute installation measurements information' }),
+    ).toHaveAccessibleDescription(/relative.*absolute.*top-left origin/i);
+    expect(
+      screen.queryByText(/Buffer guides reserve installation clearance around walls and artwork/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen
+        .queryAllByText(/Absolute measurements use the continuous wall's top-left origin/i)
+        .some((element) => element.closest('.feature-help')),
+    ).toBe(false);
 
     await user.clear(screen.getByLabelText('Grid size (in)'));
     await user.type(screen.getByLabelText('Grid size (in)'), '2.5');
@@ -921,6 +1027,33 @@ describe('Gallery Designer app', () => {
     expect(screen.getByLabelText('Alignment tolerance (cm)')).toBeInTheDocument();
     expect(screen.getByLabelText('Wall edge buffer gap (cm)')).toHaveValue('5.1');
     expect(screen.getByLabelText('Art piece buffer gap (cm)')).toHaveValue('5.1');
+    expect(
+      screen.queryByRole('button', { name: 'Grid size (cm) information' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Alignment tolerance (cm) information' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Wall edge buffer gap (cm) information' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Art piece buffer gap (cm) information' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('toggles displayed installation measurements between relative and absolute references', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    expect(screen.getAllByText(/from top of Section 1/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/from left side of Section 1/i).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByLabelText('Use absolute installation measurements'));
+
+    expect(screen.getAllByText(/from top-left wall origin/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/from top of Section 1/i)).not.toBeInTheDocument();
   });
 
   it('collapses and expands the Auto-placement and Features panels', async () => {

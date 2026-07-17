@@ -36,6 +36,7 @@ describe('design JSON files', () => {
       wallEdgeBufferGapIn: 3,
       artPieceBuffer: true,
       artPieceBufferGapIn: 4,
+      measurementReferenceMode: 'absolute',
     };
     const autoPlacementSettings: AutoPlacementSettings = {
       wallSetupMode: 'full-wall-with-features',
@@ -108,5 +109,6 @@ describe('design JSON files', () => {
       layoutPreference: 'auto',
       wallFeatures: [],
     });
+    expect(parsed.features.measurementReferenceMode).toBe('relative');
   });
 });

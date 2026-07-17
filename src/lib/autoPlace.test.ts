@@ -480,6 +480,7 @@ describe('automatic placement', () => {
         wallEdgeBufferGapIn: 0,
         artPieceBuffer: true,
         artPieceBufferGapIn: 8,
+        measurementReferenceMode: 'relative',
       },
       existingPlacements: [{ pieceId: 'fixed', sectionId: 'main', xIn: 40, yIn: 30 }],
     });

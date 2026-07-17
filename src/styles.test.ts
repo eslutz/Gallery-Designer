@@ -88,8 +88,14 @@ describe('application typography', () => {
 
   it('keeps setup content in normal page flow and gives icon controls touch-sized targets', () => {
     const collapsiblePanelRule = stylesheet.match(/\.collapsible-panel\s*{[^}]*}/s)?.[0] ?? '';
+    const editorColumnRule = stylesheet.match(/\.editor-column\s*{[^}]*}/s)?.[0] ?? '';
+    const measurementsPanelRule = stylesheet.match(/\.measurements-panel\s*{[^}]*}/s)?.[0] ?? '';
     const rightPanelRule = stylesheet.match(/\.right-panel\s*{[^}]*}/s)?.[0] ?? '';
     const setupPanelRule = stylesheet.match(/\.setup-panel\s*{[^}]*}/s)?.[0] ?? '';
+    const responsiveEditorColumnRule =
+      stylesheet
+        .match(/@media\s*\(max-width:\s*1200px\)\s*{[\s\S]*?\.editor-column\s*{[^}]*}/)?.[0]
+        .match(/\.editor-column\s*{[^}]*}/s)?.[0] ?? '';
     const responsiveSetupPanelRule =
       stylesheet
         .match(/@media\s*\(max-width:\s*1200px\)\s*{[\s\S]*?\.setup-panel\s*{[^}]*}/)?.[0]
@@ -99,7 +105,7 @@ describe('application typography', () => {
       /\.app-shell\s*{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);[^}]*height:\s*100vh;[^}]*overflow:\s*hidden;/s,
     );
     expect(stylesheet).toMatch(
-      /\.workspace\s*{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\);[^}]*align-items:\s*stretch;[^}]*min-height:\s*0;[^}]*overflow:\s*auto;/s,
+      /\.workspace\s*{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\);[^}]*align-items:\s*stretch;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/s,
     );
     expect(stylesheet).toMatch(/\.workspace\s*{[^}]*scroll-padding-bottom:\s*20px;/s);
     expect(stylesheet).toMatch(
@@ -112,12 +118,25 @@ describe('application typography', () => {
     expect(stylesheet).toMatch(/\.art-pieces-panel\s*{[^}]*min-height:\s*0;/s);
     expect(stylesheet).toMatch(/\.art-pieces-panel\s+\.piece-list\s*{[^}]*overflow:\s*auto;/s);
     expect(collapsiblePanelRule).not.toContain('min-height: 0;');
-    expect(rightPanelRule).toContain('align-self: start;');
+    expect(editorColumnRule).toContain('align-self: stretch;');
+    expect(editorColumnRule).toContain('min-height: 0;');
+    expect(editorColumnRule).toContain('overflow: auto;');
+    expect(editorColumnRule).toContain('overscroll-behavior: contain;');
+    expect(measurementsPanelRule).toContain('flex: 0 0 auto;');
+    expect(rightPanelRule).toContain('position: sticky;');
+    expect(rightPanelRule).toContain('align-self: stretch;');
+    expect(rightPanelRule).toContain('min-height: 0;');
+    expect(rightPanelRule).toContain('overflow: auto;');
+    expect(rightPanelRule).toContain('overscroll-behavior: contain;');
     expect(rightPanelRule).toContain('padding-bottom: 20px;');
     expect(setupPanelRule).toContain('position: sticky;');
     expect(setupPanelRule).toContain('overflow: hidden;');
+    expect(responsiveEditorColumnRule).toContain('overflow: visible;');
     expect(responsiveSetupPanelRule).toContain('position: static;');
     expect(responsiveSetupPanelRule).toContain('overflow: visible;');
+    expect(stylesheet).toMatch(
+      /@media\s*\(max-width:\s*1200px\)\s*{[\s\S]*?\.workspace\s*{[^}]*overflow:\s*auto;[\s\S]*?\.right-panel\s*{[^}]*position:\s*static;[^}]*overflow:\s*visible;/,
+    );
     expect(stylesheet).toMatch(/\.icon-button\s*{[^}]*width:\s*44px;[^}]*min-height:\s*44px;/s);
   });
 
