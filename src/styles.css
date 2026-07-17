@@ -522,6 +522,13 @@ h3,
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -557,9 +564,11 @@ button:not(:disabled):active {
 }
 
 .app-shell {
+  position: fixed;
+  inset: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  height: 100vh;
+  width: 100%;
   overflow: hidden;
 }
 
@@ -1067,9 +1076,10 @@ select:focus,
   position: sticky;
   top: 0;
   align-self: stretch;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 14px;
+  align-content: start;
   min-width: 0;
   min-height: 0;
   max-height: none;
@@ -1079,7 +1089,19 @@ select:focus,
 }
 
 .right-panel-column {
-  display: contents;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.right-panel-column-primary {
+  order: 1;
+}
+
+.right-panel-column-secondary {
+  order: 2;
 }
 
 .right-panel-auto {
@@ -1384,16 +1406,27 @@ select:focus,
 }
 
 .status-message {
-  min-height: 1.4em;
+  min-width: 0;
+  max-width: 100%;
   margin: 0;
   color: var(--text-secondary);
   font-size: 0.9rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
-.status-content,
+.status-content {
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 6px;
+}
+
 .auto-placement-diagnostics {
   display: grid;
   gap: 8px;
+  align-content: start;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .auto-placement-diagnostics {
@@ -1413,8 +1446,8 @@ select:focus,
 }
 
 .status-panel {
-  display: grid;
-  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
   padding: 12px 14px;
   background: var(--panel-background);
   border: 1px solid var(--panel-border);
@@ -1427,6 +1460,7 @@ select:focus,
   color: var(--panel-title);
   font-size: 0.78rem;
   font-weight: 800;
+  line-height: 1.2;
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
@@ -1594,19 +1628,12 @@ th {
 
   .right-panel {
     position: static;
-    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: start;
     min-height: auto;
     max-height: none;
     overflow: visible;
-  }
-
-  .right-panel-column {
-    display: grid;
-    gap: 14px;
-    align-content: start;
-    min-width: 0;
+    padding-bottom: 0;
   }
 }
 
@@ -1675,10 +1702,6 @@ th {
 
   .right-panel {
     grid-template-columns: 1fr;
-  }
-
-  .right-panel-column {
-    display: contents;
   }
 
   .canvas-card {

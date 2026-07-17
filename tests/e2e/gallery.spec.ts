@@ -247,9 +247,49 @@ test('zoomed wall canvas supports wheel zoom and touchpad-style panning', async 
   expect(await page.evaluate(() => window.scrollY)).toBe(pageScrollBefore);
 });
 
-test('keeps intermediate widths within the viewport and uses mobile measurements cards', async ({
+test('keeps responsive workspace panels contained and switches mobile measurements to cards', async ({
   page,
 }) => {
+  const expectStatusMessageWithinPanel = async () => {
+    const statusTextBounds = await page.evaluate(() => {
+      const panel = document.querySelector('.right-panel-status');
+      const message = document.querySelector('.status-message');
+      if (!panel || !message) {
+        throw new Error('Could not find latest update panel content.');
+      }
+      const panelRect = panel.getBoundingClientRect();
+      const messageRect = message.getBoundingClientRect();
+      return {
+        panel: {
+          right: panelRect.right,
+          bottom: panelRect.bottom,
+        },
+        message: {
+          right: messageRect.right,
+          bottom: messageRect.bottom,
+        },
+      };
+    });
+    const textTolerance = 1;
+
+    expect(statusTextBounds.message.right).toBeLessThanOrEqual(
+      statusTextBounds.panel.right + textTolerance,
+    );
+    expect(statusTextBounds.message.bottom).toBeLessThanOrEqual(
+      statusTextBounds.panel.bottom + textTolerance,
+    );
+  };
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/');
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await expectStatusMessageWithinPanel();
+  for (const width of [988, 986, 982]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expectStatusMessageWithinPanel();
+  }
+
   for (const width of [1024, 1100, 1199]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/');
@@ -281,6 +321,7 @@ test('keeps intermediate widths within the viewport and uses mobile measurements
         featuresPanel: getBox('.right-panel-features'),
         statusPanel: getBox('.right-panel-status'),
         exportPanel: getBox('.right-panel-export'),
+        documentOverflowY: getComputedStyle(document.documentElement).overflowY,
         workspaceCanScroll: workspace.scrollHeight > workspace.clientHeight,
       };
     });
@@ -290,7 +331,11 @@ test('keeps intermediate widths within the viewport and uses mobile measurements
     expect(layout.measurements.bottom).toBeLessThanOrEqual(layout.rightPanel.top + tolerance);
     expect(layout.autoPlacementPanel.bottom).toBeLessThan(layout.featuresPanel.bottom - 20);
     expect(layout.statusPanel.top).toBeGreaterThanOrEqual(layout.autoPlacementPanel.bottom);
+    expect(layout.statusPanel.top).toBeLessThanOrEqual(layout.autoPlacementPanel.bottom + 15);
     expect(layout.exportPanel.top).toBeGreaterThanOrEqual(layout.featuresPanel.bottom);
+    expect(layout.documentOverflowY).toBe('hidden');
+    await page.evaluate(() => window.scrollTo(0, 200));
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
     expect(layout.workspaceCanScroll).toBe(true);
   }
 

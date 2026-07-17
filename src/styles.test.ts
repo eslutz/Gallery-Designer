@@ -102,7 +102,7 @@ describe('application typography', () => {
         .match(/\.setup-panel\s*{[^}]*}/s)?.[0] ?? '';
 
     expect(stylesheet).toMatch(
-      /\.app-shell\s*{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);[^}]*height:\s*100vh;[^}]*overflow:\s*hidden;/s,
+      /\.app-shell\s*{[^}]*position:\s*fixed;[^}]*inset:\s*0;[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);[^}]*overflow:\s*hidden;/s,
     );
     expect(stylesheet).toMatch(
       /\.workspace\s*{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\);[^}]*align-items:\s*stretch;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/s,
