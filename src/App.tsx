@@ -2216,53 +2216,60 @@ export default function App() {
         </section>
 
         <aside className="right-panel" aria-label="Details and export">
-          <CollapsiblePanel
-            icon={<Wand2 size={18} />}
-            title="Auto-placement"
-            ariaLabel="Auto-placement settings"
-          >
-            <AutoPlacementControls
-              settings={state.autoPlacementSettings}
-              unit={state.unit}
-              onChange={updateAutoPlacementSettings}
-              onEditStart={beginFieldEdit}
-              onEditEnd={finishFieldEdit}
+          <div className="right-panel-column right-panel-column-primary">
+            <CollapsiblePanel
+              icon={<Wand2 size={18} />}
+              title="Auto-placement"
+              ariaLabel="Auto-placement settings"
+              className="right-panel-auto"
+            >
+              <AutoPlacementControls
+                settings={state.autoPlacementSettings}
+                unit={state.unit}
+                onChange={updateAutoPlacementSettings}
+                onEditStart={beginFieldEdit}
+                onEditEnd={finishFieldEdit}
+              />
+            </CollapsiblePanel>
+            <section className="status-panel right-panel-status" aria-label="Latest update">
+              <p className="status-panel-label">Latest update</p>
+              <div className="status-content" role="status" aria-live="polite">
+                <p className="status-message">{state.message}</p>
+                {autoPlacementFailure?.message === state.message ? (
+                  <AutoPlacementFailureDetails
+                    diagnostics={autoPlacementFailure.diagnostics}
+                    unit={state.unit}
+                  />
+                ) : null}
+              </div>
+            </section>
+          </div>
+          <div className="right-panel-column right-panel-column-secondary">
+            <CollapsiblePanel
+              icon={<SlidersHorizontal size={18} />}
+              title="Features"
+              ariaLabel="Feature settings"
+              className="right-panel-features"
+            >
+              <FeatureControls
+                features={state.features}
+                unit={state.unit}
+                onChange={updateFeatures}
+                onEditStart={beginFieldEdit}
+                onEditEnd={finishFieldEdit}
+              />
+            </CollapsiblePanel>
+            <ExportPanel
+              ready={readyToExport}
+              issues={allIssues}
+              exporting={exporting}
+              onExportPng={exportPng}
+              onExportPdf={exportPdf}
+              onExportJson={exportJson}
+              onImportClick={() => importInputRef.current?.click()}
+              className="right-panel-export"
             />
-          </CollapsiblePanel>
-          <CollapsiblePanel
-            icon={<SlidersHorizontal size={18} />}
-            title="Features"
-            ariaLabel="Feature settings"
-          >
-            <FeatureControls
-              features={state.features}
-              unit={state.unit}
-              onChange={updateFeatures}
-              onEditStart={beginFieldEdit}
-              onEditEnd={finishFieldEdit}
-            />
-          </CollapsiblePanel>
-          <section className="status-panel" aria-label="Latest update">
-            <p className="status-panel-label">Latest update</p>
-            <div className="status-content" role="status" aria-live="polite">
-              <p className="status-message">{state.message}</p>
-              {autoPlacementFailure?.message === state.message ? (
-                <AutoPlacementFailureDetails
-                  diagnostics={autoPlacementFailure.diagnostics}
-                  unit={state.unit}
-                />
-              ) : null}
-            </div>
-          </section>
-          <ExportPanel
-            ready={readyToExport}
-            issues={allIssues}
-            exporting={exporting}
-            onExportPng={exportPng}
-            onExportPdf={exportPdf}
-            onExportJson={exportJson}
-            onImportClick={() => importInputRef.current?.click()}
-          />
+          </div>
           <input
             ref={importInputRef}
             className="visually-hidden"
@@ -3731,6 +3738,7 @@ function ExportPanel({
   onExportPdf,
   onExportJson,
   onImportClick,
+  className,
 }: {
   ready: boolean;
   issues: string[];
@@ -3739,6 +3747,7 @@ function ExportPanel({
   onExportPdf: () => void;
   onExportJson: () => void;
   onImportClick: () => void;
+  className?: string;
 }) {
   const printExportRequirement = ready
     ? exporting
@@ -3747,7 +3756,12 @@ function ExportPanel({
     : `Complete export requirements: ${issues.join(' ')}`;
 
   return (
-    <CollapsiblePanel icon={<Download size={18} />} title="Export" ariaLabel="Export settings">
+    <CollapsiblePanel
+      icon={<Download size={18} />}
+      title="Export"
+      ariaLabel="Export settings"
+      className={className}
+    >
       <div className="export-section">
         <HeadingWithInfo
           label="Print/export layout"

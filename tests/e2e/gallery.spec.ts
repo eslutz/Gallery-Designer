@@ -253,12 +253,50 @@ test('keeps intermediate widths within the viewport and uses mobile measurements
   for (const width of [1024, 1100, 1199]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/');
+    await page.getByRole('button', { name: 'Auto-place pieces' }).click();
+
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
       width,
     );
+
+    const layout = await page.evaluate(() => {
+      const getBox = (selector: string) => {
+        const element = document.querySelector(selector);
+        if (!element) {
+          throw new Error(`Could not find ${selector}`);
+        }
+        const rect = element.getBoundingClientRect();
+        return { top: rect.top, bottom: rect.bottom };
+      };
+      const workspace = document.querySelector('.workspace');
+      if (!workspace) {
+        throw new Error('Could not find .workspace');
+      }
+
+      return {
+        canvas: getBox('.canvas-card'),
+        measurements: getBox('.measurements-panel'),
+        rightPanel: getBox('.right-panel'),
+        autoPlacementPanel: getBox('.right-panel-auto'),
+        featuresPanel: getBox('.right-panel-features'),
+        statusPanel: getBox('.right-panel-status'),
+        exportPanel: getBox('.right-panel-export'),
+        workspaceCanScroll: workspace.scrollHeight > workspace.clientHeight,
+      };
+    });
+    const tolerance = 1;
+
+    expect(layout.canvas.bottom).toBeLessThanOrEqual(layout.measurements.top + tolerance);
+    expect(layout.measurements.bottom).toBeLessThanOrEqual(layout.rightPanel.top + tolerance);
+    expect(layout.autoPlacementPanel.bottom).toBeLessThan(layout.featuresPanel.bottom - 20);
+    expect(layout.statusPanel.top).toBeGreaterThanOrEqual(layout.autoPlacementPanel.bottom);
+    expect(layout.exportPanel.top).toBeGreaterThanOrEqual(layout.featuresPanel.bottom);
+    expect(layout.workspaceCanScroll).toBe(true);
   }
 
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => localStorage.clear());
+  await page.goto('/');
   const editorBox = await page.locator('.editor-column').boundingBox();
   const setupBox = await page.locator('.setup-panel').boundingBox();
   expect(editorBox).not.toBeNull();

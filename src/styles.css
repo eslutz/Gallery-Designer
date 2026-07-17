@@ -1078,6 +1078,26 @@ select:focus,
   padding-bottom: 20px;
 }
 
+.right-panel-column {
+  display: contents;
+}
+
+.right-panel-auto {
+  order: 1;
+}
+
+.right-panel-features {
+  order: 2;
+}
+
+.right-panel-status {
+  order: 3;
+}
+
+.right-panel-export {
+  order: 4;
+}
+
 .canvas-card {
   min-height: 460px;
   padding: 14px;
@@ -1529,6 +1549,9 @@ th {
 @media (max-width: 1200px) {
   .workspace {
     grid-template-columns: 1fr;
+    grid-template-rows: none;
+    grid-auto-rows: max-content;
+    align-items: start;
     overflow: auto;
   }
 
@@ -1564,6 +1587,7 @@ th {
   }
 
   .editor-column {
+    min-height: auto;
     overflow: visible;
     padding-bottom: 0;
   }
@@ -1572,8 +1596,17 @@ th {
     position: static;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    min-height: auto;
     max-height: none;
     overflow: visible;
+  }
+
+  .right-panel-column {
+    display: grid;
+    gap: 14px;
+    align-content: start;
+    min-width: 0;
   }
 }
 
@@ -1642,6 +1675,10 @@ th {
 
   .right-panel {
     grid-template-columns: 1fr;
+  }
+
+  .right-panel-column {
+    display: contents;
   }
 
   .canvas-card {

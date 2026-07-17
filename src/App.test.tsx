@@ -1395,22 +1395,20 @@ describe('Gallery Designer app', () => {
     expect(canvasCard).toContainElement(screen.getByRole('group', { name: /Wall zoom controls/i }));
     const rightPanel = screen.getByRole('complementary', { name: /Details and export/i });
     const statusPanel = within(rightPanel).getByRole('status').closest('.status-panel');
+    const primaryColumn = rightPanel.querySelector('.right-panel-column-primary');
+    const secondaryColumn = rightPanel.querySelector('.right-panel-column-secondary');
     expect(statusPanel).toBeInTheDocument();
-    expect(Array.from(rightPanel.children).indexOf(statusPanel as Element)).toBe(2);
+    expect(primaryColumn).toBeInTheDocument();
+    expect(secondaryColumn).toBeInTheDocument();
     expect(
-      within(statusPanel?.previousElementSibling as Element).getByRole('heading', {
-        name: /Features/i,
-      }),
+      within(primaryColumn as Element).getByRole('heading', { name: /Auto-placement/i }),
+    ).toBeInTheDocument();
+    expect(primaryColumn).toContainElement(statusPanel);
+    expect(
+      within(secondaryColumn as Element).getByRole('heading', { name: /Features/i }),
     ).toBeInTheDocument();
     expect(
-      within(rightPanel.children[0]).getByRole('heading', {
-        name: /Auto-placement/i,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      within(statusPanel?.nextElementSibling as Element).getByRole('heading', {
-        name: /^Export$/i,
-      }),
+      within(secondaryColumn as Element).getByRole('heading', { name: /^Export$/i }),
     ).toBeInTheDocument();
     expect(screen.getByRole('group', { name: /Appearance controls/i })).toContainElement(
       screen.getByLabelText('Theme'),
