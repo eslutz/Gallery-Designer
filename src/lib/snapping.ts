@@ -1,4 +1,5 @@
 import type { ArtPiece, EditorFeatures, Placement, WallFeature, WallSection } from '../types';
+import { getGroupBounds, translatePlacementGroup } from './multiSelection';
 import { globalRectForPlacement } from './placement';
 import { roundToPrecision } from './units';
 import {
@@ -25,6 +26,16 @@ interface FeatureSnapInput {
   placements: Placement[];
   features: EditorFeatures;
   featureRects: WallFeature[];
+}
+
+interface PlacementGroupSnapInput {
+  proposedPlacements: Placement[];
+  movingPieceIds: string[];
+  sections: WallSection[];
+  pieces: ArtPiece[];
+  placements: Placement[];
+  features: EditorFeatures;
+  featureRects?: WallFeature[];
 }
 
 interface SnapAxisCandidate {
@@ -67,7 +78,7 @@ export function applyPlacementFeatures({
     sections,
     features,
     staticRects: [
-      ...artRectsFromPlacements(sections, pieces, placements, placement.pieceId),
+      ...artRectsFromPlacements(sections, pieces, placements, [placement.pieceId]),
       ...featureRectsFromFeatures(featureRects),
     ],
   });
@@ -77,6 +88,44 @@ export function applyPlacementFeatures({
     xIn: roundToPrecision(snapped.left - offsetX),
     yIn: roundToPrecision(snapped.top - offsetY),
   };
+}
+
+export function applyPlacementGroupFeatures({
+  proposedPlacements,
+  movingPieceIds,
+  sections,
+  pieces,
+  placements,
+  features,
+  featureRects = [],
+}: PlacementGroupSnapInput): Placement[] {
+  const bounds = getGroupBounds(sections, pieces, proposedPlacements, movingPieceIds);
+  if (!bounds) {
+    return [];
+  }
+  const snapped = applyRectPlacementFeatures({
+    rect: {
+      id: 'placement-group',
+      left: bounds.left,
+      top: bounds.top,
+      widthIn: bounds.right - bounds.left,
+      heightIn: bounds.bottom - bounds.top,
+    },
+    sections,
+    features,
+    staticRects: [
+      ...artRectsFromPlacements(sections, pieces, placements, movingPieceIds),
+      ...featureRectsFromFeatures(featureRects),
+    ],
+  });
+  return translatePlacementGroup(
+    sections,
+    pieces,
+    proposedPlacements,
+    movingPieceIds,
+    snapped.left - bounds.left,
+    snapped.top - bounds.top,
+  );
 }
 
 export function applyFeaturePlacementFeatures({
@@ -98,7 +147,7 @@ export function applyFeaturePlacementFeatures({
     sections,
     features,
     staticRects: [
-      ...artRectsFromPlacements(sections, pieces, placements, ''),
+      ...artRectsFromPlacements(sections, pieces, placements, []),
       ...featureRectsFromFeatures(featureRects.filter((candidate) => candidate.id !== feature.id)),
     ],
   });
@@ -214,10 +263,11 @@ function artRectsFromPlacements(
   sections: WallSection[],
   pieces: ArtPiece[],
   placements: Placement[],
-  movingPieceId: string,
+  movingPieceIds: Iterable<string>,
 ): SnapRect[] {
+  const excludedPieceIds = new Set(movingPieceIds);
   return placements.flatMap((placement) => {
-    if (placement.pieceId === movingPieceId) {
+    if (excludedPieceIds.has(placement.pieceId)) {
       return [];
     }
     const piece = pieces.find((candidate) => candidate.id === placement.pieceId);

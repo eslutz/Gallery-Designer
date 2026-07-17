@@ -76,6 +76,11 @@ describe('design JSON files', () => {
       placements,
       features,
       autoPlacementSettings,
+      selectedPieceIds: ['piece-1'],
+    });
+
+    expect(JSON.parse(json)).toMatchObject({
+      selectedPieceIds: ['piece-1'],
       selectedPieceId: 'piece-1',
     });
 
@@ -88,8 +93,40 @@ describe('design JSON files', () => {
       placements,
       features,
       autoPlacementSettings,
-      selectedPieceId: 'piece-1',
+      selectedPieceIds: ['piece-1'],
     });
+  });
+
+  it('loads legacy single selection and filters duplicate or missing multi-selection ids', () => {
+    const base = {
+      sections: [
+        {
+          id: 'section-1',
+          name: 'Section 1',
+          widthIn: 96,
+          heightIn: 84,
+          cornerAfter: 'none',
+        },
+      ],
+      pieces: [
+        { id: 'piece-1', label: 'Piece 1', widthIn: 16, heightIn: 20 },
+        { id: 'piece-2', label: 'Piece 2', widthIn: 12, heightIn: 18 },
+      ],
+      placements: [],
+    };
+
+    expect(
+      parseDesignFile(JSON.stringify({ ...base, selectedPieceId: 'piece-2' })).selectedPieceIds,
+    ).toEqual(['piece-2']);
+    expect(
+      parseDesignFile(
+        JSON.stringify({
+          ...base,
+          selectedPieceId: 'piece-1',
+          selectedPieceIds: ['piece-2', 'missing', 'piece-2', 'piece-1'],
+        }),
+      ).selectedPieceIds,
+    ).toEqual(['piece-2', 'piece-1']);
   });
 
   it('rejects invalid design JSON with a clear error', () => {

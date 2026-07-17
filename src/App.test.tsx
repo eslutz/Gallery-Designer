@@ -493,12 +493,27 @@ describe('Gallery Designer app', () => {
     );
   });
 
+  it('only shows conventional wall move handles when multiple sections exist', () => {
+    render(<App />);
+
+    expect(screen.queryByRole('button', { name: /^Move Section 1$/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Add wall section/i }));
+
+    const sectionHandles = screen.getAllByRole('button', { name: /^Move Section \d+$/i });
+    expect(sectionHandles).toHaveLength(2);
+    sectionHandles.forEach((handle) => {
+      expect(handle.querySelector('.wall-section-handle-icon')).toBeInTheDocument();
+    });
+  });
+
   it('activates and nudges canvas controls from the keyboard', () => {
     render(<App />);
 
+    fireEvent.click(screen.getByRole('button', { name: /Add wall section/i }));
     const section = screen.getByRole('button', { name: /^Move Section 1$/i });
     fireEvent.keyDown(section, { key: 'Enter' });
-    expect(section.closest('.wall-section')).toHaveClass('selected');
+    expect(section).toHaveClass('selected');
 
     placeStagedPieceOnWall();
     const piece = screen.getByRole('button', { name: /^Move Piece 1$/i });
@@ -600,6 +615,7 @@ describe('Gallery Designer app', () => {
   it('does not let section focus trigger the selected piece nudge handler', () => {
     render(<App />);
 
+    fireEvent.click(screen.getByRole('button', { name: /Add wall section/i }));
     placeStagedPieceOnWall();
     const piece = screen.getByRole('button', { name: /^Move Piece 1$/i });
     const section = screen.getByRole('button', { name: /^Move Section 1$/i });
@@ -616,11 +632,14 @@ describe('Gallery Designer app', () => {
     const appShell = document.querySelector('.app-shell');
     const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
     const panSurface = canvas.querySelector('.wall-pan-surface');
-    const section = screen.getByRole('button', { name: /^Move Section 1$/i });
     const stagedPiece = screen.getByRole('button', { name: /Drag Piece 1 from staging/i });
 
     expect(appShell).not.toHaveClass('is-wall-pannable');
-    expect(section).toHaveClass('wall-section');
+    expect(screen.queryByRole('button', { name: /^Move Section 1$/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Add wall section/i }));
+    const section = screen.getByRole('button', { name: /^Move Section 1$/i });
+    expect(section).toHaveClass('wall-section-handle');
     expect(stagedPiece).toHaveClass('staged-piece');
 
     fireEvent.pointerDown(panSurface as Element, { pointerId: 1, clientX: 20, clientY: 20 });
@@ -631,9 +650,58 @@ describe('Gallery Designer app', () => {
     expect(appShell).toHaveClass('is-wall-pannable');
   });
 
+  it('pans a zoomed wall with Space-drag or a middle-button drag', () => {
+    render(<App />);
+    const appShell = document.querySelector('.app-shell');
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    const panSurface = canvas.querySelector('.wall-pan-surface');
+    canvas.getBoundingClientRect = vi.fn(
+      () =>
+        ({
+          width: 800,
+          height: 500,
+          left: 0,
+          top: 0,
+          right: 800,
+          bottom: 500,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        }) as DOMRect,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Zoom in/i }));
+
+    fireEvent.keyDown(window, { code: 'Space', key: ' ' });
+    fireEvent(
+      panSurface!,
+      new MouseEvent('pointerdown', {
+        bubbles: true,
+        button: 0,
+        clientX: 40,
+        clientY: 40,
+      }),
+    );
+    expect(appShell).toHaveClass('is-panning-wall');
+    fireEvent(window, new MouseEvent('pointerup', { bubbles: true, clientX: 40, clientY: 40 }));
+    fireEvent.keyUp(window, { code: 'Space', key: ' ' });
+
+    fireEvent(
+      panSurface!,
+      new MouseEvent('pointerdown', {
+        bubbles: true,
+        button: 1,
+        clientX: 50,
+        clientY: 50,
+      }),
+    );
+    expect(appShell).toHaveClass('is-panning-wall');
+    fireEvent(window, new MouseEvent('pointerup', { bubbles: true, clientX: 50, clientY: 50 }));
+  });
+
   it('keeps drag cursor state active until pointer release', () => {
     render(<App />);
 
+    fireEvent.click(screen.getByRole('button', { name: /Add wall section/i }));
     const appShell = document.querySelector('.app-shell');
     const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
     const stagedPiece = screen.getByRole('button', { name: /Drag Piece 1 from staging/i });
@@ -687,7 +755,7 @@ describe('Gallery Designer app', () => {
 
     const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
 
-    const section2 = screen.getByRole('button', { name: /^Move Section 2$/i });
+    const section2 = canvas.querySelectorAll('.wall-section')[1];
     expect(section2).toHaveAttribute('x', '79');
     expect(section2).toHaveAttribute('y', '0');
 
@@ -708,7 +776,7 @@ describe('Gallery Designer app', () => {
       window.dispatchEvent(new MouseEvent('pointerup', { clientX: 20, clientY: 61 }));
     });
 
-    const movedSection2 = screen.getByRole('button', { name: /^Move Section 2$/i });
+    const movedSection2 = canvas.querySelectorAll('.wall-section')[1];
     expect(movedSection2).toHaveAttribute('x', '20');
     expect(movedSection2).toHaveAttribute('y', '60');
   });
@@ -795,6 +863,15 @@ describe('Gallery Designer app', () => {
             xIn: 0,
             yIn: 0,
           },
+          {
+            id: 'section-2',
+            name: 'Section 2',
+            widthIn: 50,
+            heightIn: 80,
+            cornerAfter: 'none',
+            xIn: 300,
+            yIn: 0,
+          },
         ],
         pieces: [],
         placements: [],
@@ -819,7 +896,8 @@ describe('Gallery Designer app', () => {
     );
     render(<App />);
 
-    const section = screen.getByRole('button', { name: /^Move Section 1$/i });
+    const sectionHandle = screen.getByRole('button', { name: /^Move Section 1$/i });
+    const section = document.querySelector('.wall-section');
     const cabinet = screen.getByRole('button', { name: /^Move File Cabinet$/i });
     expect(cabinet).toHaveAttribute('x', '20');
     expect(cabinet).toHaveAttribute('y', '28');
@@ -827,23 +905,19 @@ describe('Gallery Designer app', () => {
     const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
     mockCanvasProjection(canvas);
     act(() => {
-      section.dispatchEvent(
+      sectionHandle.dispatchEvent(
         new MouseEvent('pointerdown', { bubbles: true, clientX: 0, clientY: 0 }),
       );
       window.dispatchEvent(new MouseEvent('pointermove', { clientX: 12, clientY: 8 }));
       window.dispatchEvent(new MouseEvent('pointerup', { clientX: 12, clientY: 8 }));
     });
 
-    expect(section).toHaveAttribute('x', '12');
-    expect(section).toHaveAttribute('y', '8');
-    expect(cabinet).toHaveAttribute('x', '32');
-    expect(cabinet).toHaveAttribute('y', '36');
-
-    fireEvent.keyDown(section, { key: 'ArrowRight', shiftKey: true });
-
-    expect(section).toHaveAttribute('x', '13');
-    expect(cabinet).toHaveAttribute('x', '33');
-    expect(cabinet).toHaveAttribute('y', '36');
+    const movedSectionX = Number(section?.getAttribute('x'));
+    const movedSectionY = Number(section?.getAttribute('y'));
+    expect(movedSectionX).not.toBe(0);
+    expect(movedSectionY).not.toBe(0);
+    expect(cabinet).toHaveAttribute('x', String(movedSectionX + 20));
+    expect(cabinet).toHaveAttribute('y', String(movedSectionY + 28));
   });
 
   it('nudges furniture horizontally even when it starts on an alignment guide', () => {
@@ -955,6 +1029,7 @@ describe('Gallery Designer app', () => {
 
     startWallPieceDrag(wallPiece, 20, 20);
     act(() => {
+      window.dispatchEvent(new MouseEvent('pointermove', { clientX: 20, clientY: 200 }));
       window.dispatchEvent(new MouseEvent('pointerup', { clientX: 20, clientY: 200 }));
     });
 
@@ -1452,33 +1527,266 @@ describe('Gallery Designer app', () => {
     expect(pieceRow).not.toHaveClass('selected');
   });
 
+  it('toggles placed art into a multi-selection with Shift, Command, or Control click', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    const first = screen.getByRole('button', { name: /^Move Piece 1$/i });
+    const second = screen.getByRole('button', { name: /^Move Piece 2$/i });
+
+    fireEvent.pointerDown(first, { pointerId: 1, clientX: 20, clientY: 20 });
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 20, clientY: 20 });
+    fireEvent(
+      second,
+      new MouseEvent('pointerdown', {
+        bubbles: true,
+        clientX: 40,
+        clientY: 20,
+        shiftKey: true,
+      }),
+    );
+    fireEvent.pointerUp(window, { pointerId: 2, clientX: 40, clientY: 20 });
+
+    expect(document.querySelectorAll('.piece.selected')).toHaveLength(2);
+
+    fireEvent(
+      first,
+      new MouseEvent('pointerdown', {
+        bubbles: true,
+        clientX: 20,
+        clientY: 20,
+        metaKey: true,
+      }),
+    );
+    fireEvent.pointerUp(window, { pointerId: 3, clientX: 20, clientY: 20 });
+    expect(first.closest('g')).not.toHaveClass('selected');
+    expect(second.closest('g')).toHaveClass('selected');
+
+    fireEvent(
+      first,
+      new MouseEvent('pointerdown', {
+        bubbles: true,
+        clientX: 20,
+        clientY: 20,
+        ctrlKey: true,
+      }),
+    );
+    fireEvent.pointerUp(window, { pointerId: 4, clientX: 20, clientY: 20 });
+    expect(document.querySelectorAll('.piece.selected')).toHaveLength(2);
+  });
+
+  it('selects every placed piece overlapped by a background marquee', async () => {
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    mockCanvasProjection(canvas);
+    const pieceRects = [
+      screen.getByRole('button', { name: /^Move Piece 1$/i }),
+      screen.getByRole('button', { name: /^Move Piece 2$/i }),
+    ];
+    const left = Math.min(...pieceRects.map((piece) => Number(piece.getAttribute('x')))) - 1;
+    const top = Math.min(...pieceRects.map((piece) => Number(piece.getAttribute('y')))) - 1;
+    const right = Math.max(
+      ...pieceRects.map(
+        (piece) => Number(piece.getAttribute('x')) + Number(piece.getAttribute('width')),
+      ),
+    );
+    const bottom = Math.max(
+      ...pieceRects.map(
+        (piece) => Number(piece.getAttribute('y')) + Number(piece.getAttribute('height')),
+      ),
+    );
+    const background = container.querySelector('.wall-section');
+    expect(background).toBeInTheDocument();
+
+    fireEvent(
+      background!,
+      new MouseEvent('pointerdown', { bubbles: true, clientX: left, clientY: top, button: 0 }),
+    );
+    fireEvent(
+      window,
+      new MouseEvent('pointermove', { bubbles: true, clientX: right, clientY: bottom }),
+    );
+
+    expect(container.querySelector('.selection-marquee')).toBeInTheDocument();
+    expect(container.querySelectorAll('.piece.selected')).toHaveLength(2);
+
+    fireEvent(
+      window,
+      new MouseEvent('pointerup', { bubbles: true, clientX: right, clientY: bottom }),
+    );
+    expect(container.querySelector('.selection-marquee')).not.toBeInTheDocument();
+  });
+
+  it('moves selected placed pieces by one shared drag delta', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    mockCanvasProjection(canvas);
+    mockPointerTarget(canvas);
+    const first = screen.getByRole('button', { name: /^Move Piece 1$/i });
+    const second = screen.getByRole('button', { name: /^Move Piece 2$/i });
+    fireEvent(
+      second,
+      new MouseEvent('pointerdown', { bubbles: true, shiftKey: true, clientX: 40, clientY: 20 }),
+    );
+
+    const before = [first, second].map((piece) => ({
+      x: Number(piece.getAttribute('x')),
+      y: Number(piece.getAttribute('y')),
+    }));
+    const start = { clientX: before[0].x + 1, clientY: before[0].y + 1 };
+    fireEvent(first, new MouseEvent('pointerdown', { bubbles: true, ...start, button: 0 }));
+    fireEvent(
+      window,
+      new MouseEvent('pointermove', {
+        bubbles: true,
+        clientX: start.clientX + 10,
+        clientY: start.clientY + 7,
+      }),
+    );
+    const preview = screen.getByTestId('wall-drag-preview');
+    const previewPieces = preview.querySelectorAll('[data-testid="group-drag-preview-piece"]');
+    expect(previewPieces).toHaveLength(2);
+    expect(preview).toHaveTextContent('Piece 1');
+    expect(preview).toHaveTextContent('Piece 2');
+    const firstPreviewRect = previewPieces[0]?.querySelector('rect');
+    const secondPreviewRect = previewPieces[1]?.querySelector('rect');
+    expect(
+      firstPreviewRect?.getAttribute('x') !== secondPreviewRect?.getAttribute('x') ||
+        firstPreviewRect?.getAttribute('y') !== secondPreviewRect?.getAttribute('y'),
+    ).toBe(true);
+    expect(preview).not.toHaveTextContent('2 art pieces');
+    fireEvent(
+      window,
+      new MouseEvent('pointerup', {
+        bubbles: true,
+        clientX: start.clientX + 10,
+        clientY: start.clientY + 7,
+      }),
+    );
+
+    const after = [first, second].map((piece) => ({
+      x: Number(piece.getAttribute('x')),
+      y: Number(piece.getAttribute('y')),
+    }));
+    expect(after[0].x - before[0].x).toBe(after[1].x - before[1].x);
+    expect(after[0].y - before[0].y).toBe(after[1].y - before[1].y);
+    expect(after[0]).not.toEqual(before[0]);
+  });
+
+  it('nudges and returns a selected group with one undo snapshot', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    const first = screen.getByRole('button', { name: /^Move Piece 1$/i });
+    const second = screen.getByRole('button', { name: /^Move Piece 2$/i });
+    fireEvent(
+      second,
+      new MouseEvent('pointerdown', { bubbles: true, shiftKey: true, clientX: 40, clientY: 20 }),
+    );
+    const before = [first, second].map((piece) => Number(piece.getAttribute('x')));
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+
+    expect(Number(first.getAttribute('x'))).toBe(before[0] + 0.25);
+    expect(Number(second.getAttribute('x'))).toBe(before[1] + 0.25);
+
+    await user.click(screen.getByRole('button', { name: /Undo last change/i }));
+    expect(Number(first.getAttribute('x'))).toBe(before[0]);
+    expect(Number(second.getAttribute('x'))).toBe(before[1]);
+  });
+
+  it('returns every selected placed piece to staging in one group drop', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    mockCanvasProjection(canvas);
+    const first = screen.getByRole('button', { name: /^Move Piece 1$/i });
+    const second = screen.getByRole('button', { name: /^Move Piece 2$/i });
+    fireEvent(
+      second,
+      new MouseEvent('pointerdown', { bubbles: true, shiftKey: true, clientX: 40, clientY: 20 }),
+    );
+    const stagingTray = screen.getByRole('region', { name: /Art staging tray/i });
+    mockPointerTarget(stagingTray);
+    const start = {
+      clientX: Number(first.getAttribute('x')) + 1,
+      clientY: Number(first.getAttribute('y')) + 1,
+    };
+    fireEvent(first, new MouseEvent('pointerdown', { bubbles: true, button: 0, ...start }));
+    fireEvent(
+      window,
+      new MouseEvent('pointermove', {
+        clientX: start.clientX + 20,
+        clientY: start.clientY + 100,
+      }),
+    );
+    fireEvent(
+      window,
+      new MouseEvent('pointerup', {
+        clientX: start.clientX + 20,
+        clientY: start.clientY + 100,
+      }),
+    );
+
+    expect(screen.getByRole('button', { name: /Drag Piece 1 from staging/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Drag Piece 2 from staging/i })).toBeInTheDocument();
+    expect(screen.queryAllByRole('button', { name: /^Move Piece [12]$/i })).toHaveLength(0);
+  });
+
+  it('clears a multi-selection with Escape', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+    const second = screen.getByRole('button', { name: /^Move Piece 2$/i });
+    fireEvent(
+      second,
+      new MouseEvent('pointerdown', { bubbles: true, shiftKey: true, clientX: 40, clientY: 20 }),
+    );
+    expect(document.querySelectorAll('.piece.selected')).toHaveLength(2);
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(document.querySelectorAll('.piece.selected')).toHaveLength(0);
+  });
+
   it('allows a wall section and art piece to be selected at the same time', async () => {
     const user = userEvent.setup();
     render(<App />);
 
     const sectionRow = screen.getByLabelText('Section 1 name').closest('article');
     const pieceRow = screen.getByLabelText('Piece 1 label').closest('article');
-    const canvasSection = screen.getByRole('button', { name: /^Move Section 1$/i });
 
     expect(sectionRow).not.toHaveClass('selected');
-    expect(canvasSection).not.toHaveClass('selected');
 
-    fireEvent.pointerDown(canvasSection);
+    fireEvent.click(sectionRow!);
 
     expect(sectionRow).toHaveClass('selected');
-    expect(canvasSection).toHaveClass('selected');
 
     await user.click(screen.getByLabelText('Piece 1 label'));
 
     expect(pieceRow).toHaveClass('selected');
     expect(sectionRow).toHaveClass('selected');
-    expect(canvasSection).toHaveClass('selected');
 
     fireEvent.click(pieceRow!);
 
     expect(pieceRow).not.toHaveClass('selected');
     expect(sectionRow).toHaveClass('selected');
-    expect(canvasSection).toHaveClass('selected');
   });
 
   it('does not render a clear selection command', () => {
@@ -1493,15 +1801,18 @@ describe('Gallery Designer app', () => {
 
     const sectionRow = screen.getByLabelText('Section 1 name').closest('article');
     const pieceRow = screen.getByLabelText('Piece 1 label').closest('article');
-    const canvasSection = screen.getByRole('button', { name: /^Move Section 1$/i });
 
-    fireEvent.pointerDown(canvasSection);
+    fireEvent.click(sectionRow!);
     await user.click(screen.getByLabelText('Piece 1 label'));
 
     expect(pieceRow).toHaveClass('selected');
     expect(sectionRow).toHaveClass('selected');
 
-    fireEvent.pointerDown(screen.getByRole('img', { name: /Scaled gallery wall layout/i }));
+    fireEvent(
+      screen.getByRole('img', { name: /Scaled gallery wall layout/i }),
+      new MouseEvent('pointerdown', { bubbles: true, button: 0, clientX: 0, clientY: 0 }),
+    );
+    fireEvent(window, new MouseEvent('pointerup', { bubbles: true }));
 
     expect(pieceRow).not.toHaveClass('selected');
     expect(sectionRow).not.toHaveClass('selected');

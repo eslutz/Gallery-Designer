@@ -21,13 +21,14 @@ export interface DesignFileState {
   placements: Placement[];
   features: EditorFeatures;
   autoPlacementSettings: AutoPlacementSettings;
-  selectedPieceId: string;
+  selectedPieceIds: string[];
 }
 
 interface DesignFilePayload extends DesignFileState {
   app: 'gallery-designer';
   version: 1;
   exportedAt: string;
+  selectedPieceId: string;
 }
 
 export function serializeDesignFile(state: DesignFileState): string {
@@ -43,7 +44,8 @@ export function serializeDesignFile(state: DesignFileState): string {
     placements: state.placements,
     features: state.features,
     autoPlacementSettings: state.autoPlacementSettings,
-    selectedPieceId: state.selectedPieceId,
+    selectedPieceIds: state.selectedPieceIds,
+    selectedPieceId: state.selectedPieceIds.at(-1) ?? '',
   };
   return `${JSON.stringify(payload, null, 2)}\n`;
 }
@@ -80,11 +82,21 @@ export function parseDesignFile(raw: string): DesignFileState {
     const hasSection = sections.some((section) => section.id === placement.sectionId);
     return hasPiece && hasSection;
   });
-  const selectedPieceId =
-    typeof parsed.selectedPieceId === 'string' &&
-    pieces.some((piece) => piece.id === parsed.selectedPieceId)
-      ? parsed.selectedPieceId
-      : (pieces[0]?.id ?? '');
+  const validPieceIds = new Set(pieces.map((piece) => piece.id));
+  const selectedPieceIds = Array.isArray(parsed.selectedPieceIds)
+    ? [
+        ...new Set(
+          parsed.selectedPieceIds.filter(
+            (pieceId): pieceId is string =>
+              typeof pieceId === 'string' && validPieceIds.has(pieceId),
+          ),
+        ),
+      ]
+    : typeof parsed.selectedPieceId === 'string' && validPieceIds.has(parsed.selectedPieceId)
+      ? [parsed.selectedPieceId]
+      : pieces[0]
+        ? [pieces[0].id]
+        : [];
 
   return {
     unit,
@@ -95,7 +107,7 @@ export function parseDesignFile(raw: string): DesignFileState {
     placements,
     features: parseFeatures(parsed.features),
     autoPlacementSettings: parseAutoPlacementSettings(parsed.autoPlacementSettings),
-    selectedPieceId,
+    selectedPieceIds,
   };
 }
 

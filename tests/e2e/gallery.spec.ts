@@ -140,6 +140,66 @@ test('immediately picks up a piece placed from the staging tray without selectin
   expect(await page.evaluate(() => window.getSelection()?.toString() ?? '')).toBe('');
 });
 
+test('modifier and marquee selection move placed art as a group', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Add art piece' }).click();
+  await page.getByRole('button', { name: 'Add art piece' }).click();
+  await page.getByRole('button', { name: 'Auto-place pieces' }).click();
+
+  const first = page.getByRole('button', { name: 'Move Piece 1', exact: true });
+  const second = page.getByRole('button', { name: 'Move Piece 2', exact: true });
+  await first.click();
+  await second.click({ modifiers: ['Shift'] });
+  await expect(page.locator('.piece.selected')).toHaveCount(2);
+
+  const before = await piecePositions([first, second]);
+  const firstBox = await first.boundingBox();
+  if (!firstBox) {
+    throw new Error('Selected art did not have a visible drag box.');
+  }
+  await pointerDrag(
+    page,
+    first,
+    firstBox.x + firstBox.width / 2 + 30,
+    firstBox.y + firstBox.height / 2 + 20,
+  );
+  const after = await piecePositions([first, second]);
+  expect(after[0].x - before[0].x).toBeCloseTo(after[1].x - before[1].x, 5);
+  expect(after[0].y - before[0].y).toBeCloseTo(after[1].y - before[1].y, 5);
+  expect(after[0]).not.toEqual(before[0]);
+
+  const placedPieces = [
+    first,
+    second,
+    page.getByRole('button', { name: 'Move Piece 3', exact: true }),
+  ];
+  const pieceBoxes = await Promise.all(placedPieces.map((piece) => piece.boundingBox()));
+  if (pieceBoxes.some((box) => !box)) {
+    throw new Error('Placed art did not have visible boxes for marquee selection.');
+  }
+  const boxes = pieceBoxes as NonNullable<(typeof pieceBoxes)[number]>[];
+  const start = {
+    x: Math.min(...boxes.map((box) => box.x)) - 4,
+    y: Math.min(...boxes.map((box) => box.y)) - 4,
+  };
+  const end = {
+    x: Math.max(...boxes.map((box) => box.x + box.width)) + 4,
+    y: Math.max(...boxes.map((box) => box.y + box.height)) + 4,
+  };
+  await page.locator('.wall-section').first().dispatchEvent('pointerdown', {
+    pointerId: 12,
+    pointerType: 'mouse',
+    button: 0,
+    clientX: start.x,
+    clientY: start.y,
+  });
+  await dispatchWindowPointer(page, 'pointermove', end.x, end.y, 12);
+  await expect(page.locator('.selection-marquee')).toBeVisible();
+  await expect(page.locator('.piece.selected')).toHaveCount(3);
+  await dispatchWindowPointer(page, 'pointerup', end.x, end.y, 12);
+  await expect(page.locator('.selection-marquee')).toHaveCount(0);
+});
+
 test('auto-placement preserves manually positioned art while placing the remaining pieces', async ({
   page,
 }) => {
@@ -396,6 +456,38 @@ test('keeps responsive workspace panels contained and switches mobile measuremen
   await pointerDrag(page, stagedPiece, canvasBox.x + 120, canvasBox.y + 120);
   await expect(page.locator('.measurement-cards')).toHaveCSS('display', 'grid');
 });
+
+async function piecePositions(locators: import('@playwright/test').Locator[]) {
+  return Promise.all(
+    locators.map(async (piece) => ({
+      x: Number(await piece.getAttribute('x')),
+      y: Number(await piece.getAttribute('y')),
+    })),
+  );
+}
+
+async function dispatchWindowPointer(
+  page: import('@playwright/test').Page,
+  type: 'pointermove' | 'pointerup',
+  clientX: number,
+  clientY: number,
+  pointerId: number,
+) {
+  await page.evaluate(
+    ({ eventType, x, y, id }) => {
+      window.dispatchEvent(
+        new PointerEvent(eventType, {
+          bubbles: true,
+          pointerId: id,
+          pointerType: 'mouse',
+          clientX: x,
+          clientY: y,
+        }),
+      );
+    },
+    { eventType: type, x: clientX, y: clientY, id: pointerId },
+  );
+}
 
 async function pointerDrag(
   page: import('@playwright/test').Page,

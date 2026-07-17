@@ -41,7 +41,11 @@ describe('application typography', () => {
   it('keeps drag cursors aligned with actual canvas interactions', () => {
     expect(stylesheet).toMatch(/\.wall-pan-surface\s*{[^}]*cursor:\s*default;/s);
     expect(stylesheet).toMatch(
-      /\.app-shell\.is-wall-pannable\s+\.wall-pan-surface,\s*\.wall-section,\s*\.piece rect,\s*\.wall-feature-block,\s*\.staged-piece\s*{[^}]*cursor:\s*grab;/s,
+      /\.app-shell\.is-wall-pannable\s+\.wall-pan-surface,\s*\.wall-section-handle,\s*\.piece rect,\s*\.wall-feature-block,\s*\.staged-piece\s*{[^}]*cursor:\s*grab;/s,
+    );
+    expect(stylesheet).toMatch(/\.wall-section\s*{[^}]*cursor:\s*crosshair;/s);
+    expect(stylesheet).toMatch(
+      /\.selection-marquee,[^}]*\.group-drag-piece-preview\s*{[^}]*pointer-events:\s*none;/s,
     );
     expect(stylesheet).toMatch(
       /\.app-shell\.is-panning-wall\s+\.wall-pan-surface,[^}]*\.app-shell\.is-dragging-section \*\s*{[^}]*cursor:\s*grabbing;/s,

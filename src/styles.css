@@ -1179,7 +1179,7 @@ select:focus,
 }
 
 .app-shell.is-wall-pannable .wall-pan-surface,
-.wall-section,
+.wall-section-handle,
 .piece rect,
 .wall-feature-block,
 .staged-piece {
@@ -1198,10 +1198,53 @@ select:focus,
   fill: var(--wall-fill);
   stroke: transparent;
   stroke-width: 0;
+  cursor: crosshair;
 }
 
 .wall-section.selected {
   fill: var(--wall-selected-fill);
+}
+
+.wall-section-handle {
+  color: var(--primary-text);
+  cursor: grab;
+}
+
+.wall-section-handle-background {
+  fill: var(--primary-background);
+  stroke: var(--panel-background);
+  stroke-width: 0.6;
+}
+
+.wall-section-handle-icon {
+  pointer-events: none;
+}
+
+.selection-marquee,
+.group-drag-bounds-preview,
+.group-drag-piece-preview {
+  pointer-events: none;
+}
+
+.selection-marquee {
+  fill: var(--focus-ring);
+  stroke: var(--focus-color);
+  stroke-width: 0.6;
+  stroke-dasharray: 2 1;
+}
+
+.group-drag-piece-preview {
+  fill: var(--piece-selected-fill);
+  fill-opacity: 0.62;
+  stroke: var(--piece-selected-stroke);
+  stroke-width: 0.6;
+}
+
+.group-drag-bounds-preview {
+  fill: none;
+  stroke: var(--piece-selected-stroke);
+  stroke-width: 0.5;
+  stroke-dasharray: 2 1;
 }
 
 .wall-exterior-edge {
@@ -1269,7 +1312,7 @@ select:focus,
   stroke-width: 0.62;
 }
 
-.wall-section:focus-visible,
+.wall-section-handle:focus-visible .wall-section-handle-background,
 .piece rect:focus-visible,
 .wall-feature-block:focus-visible {
   outline: none;
@@ -1797,7 +1840,7 @@ th {
     border: 1px solid ButtonText;
   }
 
-  .wall-section:focus-visible,
+  .wall-section-handle:focus-visible .wall-section-handle-background,
   .piece rect:focus-visible {
     outline: 2px solid Highlight;
   }

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { applyFeaturePlacementFeatures, applyPlacementFeatures } from './snapping';
+import {
+  applyFeaturePlacementFeatures,
+  applyPlacementFeatures,
+  applyPlacementGroupFeatures,
+} from './snapping';
 import type { ArtPiece, EditorFeatures, Placement, WallFeature, WallSection } from '../types';
 
 const sections: WallSection[] = [
@@ -182,5 +186,55 @@ describe('placement snapping features', () => {
         features: { ...baseFeatures, snapToAlignment: true, alignmentToleranceIn: 2 },
       }).xIn,
     ).toBe(30);
+  });
+
+  it('snaps a placement group with one shared grid delta', () => {
+    const groupPieces: ArtPiece[] = [
+      pieces[0],
+      { id: 'group-member', label: 'Group member', widthIn: 8, heightIn: 8 },
+    ];
+    const proposed: Placement[] = [
+      { pieceId: 'moving', sectionId: 'wall', xIn: 13.1, yIn: 16.9 },
+      { pieceId: 'group-member', sectionId: 'wall', xIn: 30.1, yIn: 20.9 },
+    ];
+
+    expect(
+      applyPlacementGroupFeatures({
+        proposedPlacements: proposed,
+        movingPieceIds: ['moving', 'group-member'],
+        sections,
+        pieces: groupPieces,
+        placements: proposed,
+        features: { ...baseFeatures, snapToGrid: true, gridSizeIn: 6 },
+      }),
+    ).toEqual([
+      { ...proposed[0], xIn: 12, yIn: 18 },
+      { ...proposed[1], xIn: 29, yIn: 22 },
+    ]);
+  });
+
+  it('excludes every moving group member from alignment targets', () => {
+    const groupMember: ArtPiece = {
+      id: 'group-member',
+      label: 'Group member',
+      widthIn: 8,
+      heightIn: 8,
+    };
+    const proposed: Placement[] = [
+      { pieceId: 'moving', sectionId: 'wall', xIn: 31.5, yIn: 10 },
+      { pieceId: 'group-member', sectionId: 'wall', xIn: 50, yIn: 10 },
+    ];
+    const fixedPlacement: Placement = { pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 10 };
+
+    expect(
+      applyPlacementGroupFeatures({
+        proposedPlacements: proposed,
+        movingPieceIds: ['moving', 'group-member'],
+        sections,
+        pieces: [...pieces, groupMember],
+        placements: [...proposed, fixedPlacement],
+        features: { ...baseFeatures, snapToAlignment: true, alignmentToleranceIn: 2 },
+      }).map(({ xIn }) => xIn),
+    ).toEqual([30, 48.5]);
   });
 });

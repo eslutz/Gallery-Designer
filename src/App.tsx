@@ -30,11 +30,22 @@ import { downloadPdf, downloadPng, type ExportDesignInput } from './lib/exportDe
 import { buildMeasurementInstructions } from './lib/measurements';
 import { buildMeasurementTableRows, MEASUREMENT_TABLE_HEADERS } from './lib/measurementTable';
 import {
+  getGroupBounds,
+  getPieceIdsIntersectingRect,
+  normalizeSelectionRect,
+  translatePlacementGroup,
+} from './lib/multiSelection';
+import {
   getPlacementIssues,
   reassignPlacementsToContainingSections,
   reassignPlacementToContainingSection,
+  type Rect,
 } from './lib/placement';
-import { applyFeaturePlacementFeatures, applyPlacementFeatures } from './lib/snapping';
+import {
+  applyFeaturePlacementFeatures,
+  applyPlacementFeatures,
+  applyPlacementGroupFeatures,
+} from './lib/snapping';
 import {
   displaySizeValue,
   displayValue,
@@ -82,6 +93,7 @@ const MIN_WALL_ZOOM = 0.5;
 const MAX_WALL_ZOOM = 4;
 const ZOOM_BUTTON_FACTOR = 1.2;
 const WALL_MOUSE_PAN_ID = -2;
+const POINTER_DRAG_THRESHOLD_PX = 4;
 
 interface GalleryState {
   unit: Unit;
@@ -92,7 +104,7 @@ interface GalleryState {
   placements: Placement[];
   features: EditorFeatures;
   autoPlacementSettings: AutoPlacementSettings;
-  selectedPieceId: string;
+  selectedPieceIds: string[];
   message: string;
 }
 
@@ -113,6 +125,21 @@ interface DragState {
   latestFeature: WallFeature | null;
   previewWidthPx: number;
   previewHeightPx: number;
+  pieceIds: string[];
+  startPlacements: Placement[];
+  latestPlacements: Placement[];
+  startClientX: number;
+  startClientY: number;
+  hasMoved: boolean;
+}
+
+interface MarqueeState {
+  startPoint: DOMPoint;
+  startClientX: number;
+  startClientY: number;
+  additive: boolean;
+  initialPieceIds: string[];
+  hasMoved: boolean;
 }
 
 interface SectionDragState {
@@ -132,6 +159,17 @@ interface WallDragPreview {
   clientY: number;
   widthPx: number;
   heightPx: number;
+  itemCount: number;
+  pieces?: DragPreviewPiece[];
+}
+
+interface DragPreviewPiece {
+  id: string;
+  label: string;
+  widthIn: number;
+  heightIn: number;
+  xIn: number;
+  yIn: number;
 }
 
 interface WallViewBox {
@@ -201,7 +239,7 @@ const defaultState: GalleryState = {
     layoutPreference: 'auto',
     wallFeatures: [],
   },
-  selectedPieceId: 'piece-1',
+  selectedPieceIds: ['piece-1'],
   message: 'Enter wall and art dimensions, then place pieces on the scaled wall.',
 };
 
@@ -214,6 +252,8 @@ export default function App() {
   const [selectedSectionId, setSelectedSectionId] = useState('');
   const [selectedFeatureId, setSelectedFeatureId] = useState('');
   const [wallDragPreview, setWallDragPreview] = useState<WallDragPreview | null>(null);
+  const [groupDragPreview, setGroupDragPreview] = useState<Placement[]>([]);
+  const [selectionMarquee, setSelectionMarquee] = useState<Rect | null>(null);
   const [undoState, setUndoState] = useState<GalleryState | null>(null);
   const [clearMenuOpen, setClearMenuOpen] = useState(false);
   const [cursorInteraction, setCursorInteraction] = useState<CursorInteraction>('idle');
@@ -232,6 +272,8 @@ export default function App() {
   const fieldEditUndoSnapshotRef = useRef<GalleryState | null>(null);
   const sectionDragUndoSnapshotRef = useRef<GalleryState | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const marqueeRef = useRef<MarqueeState | null>(null);
+  const spacePressedRef = useRef(false);
   const sectionDragRef = useRef<SectionDragState | null>(null);
   const wallZoomGestureRef = useRef<WallZoomGesture | null>(null);
   const wallPanRef = useRef<WallPanState | null>(null);
@@ -242,7 +284,9 @@ export default function App() {
     ) => boolean;
     updateWallMousePan: (event: MouseEvent) => boolean;
     updateSectionDrag: (event: { clientX: number; clientY: number }) => boolean;
+    updateMarquee: (event: { clientX: number; clientY: number }) => boolean;
     updatePointerDrag: (event: { clientX: number; clientY: number }) => void;
+    finishMarquee: () => void;
     finishPieceDrag: (event?: { clientX: number; clientY: number; pointerId?: number }) => void;
     finishWallPan: (event?: { pointerId?: number }) => void;
     finishWallMousePan: () => void;
@@ -300,9 +344,10 @@ export default function App() {
       state.features.measurementReferenceMode,
     ],
   );
-  const selectedPiece = state.pieces.find((piece) => piece.id === state.selectedPieceId);
+  const activeSelectedPieceId = state.selectedPieceIds.at(-1) ?? '';
+  const selectedPiece = state.pieces.find((piece) => piece.id === activeSelectedPieceId);
   const selectedPlacement = state.placements.find(
-    (placement) => placement.pieceId === state.selectedPieceId,
+    (placement) => placement.pieceId === activeSelectedPieceId,
   );
   const selectedFeature = state.autoPlacementSettings.wallFeatures.find(
     (feature) => feature.id === selectedFeatureId && isPlacedWallFeature(feature),
@@ -314,7 +359,9 @@ export default function App() {
     updateWallPan,
     updateWallMousePan,
     updateSectionDrag,
+    updateMarquee,
     updatePointerDrag,
+    finishMarquee,
     finishPieceDrag,
     finishWallPan,
     finishWallMousePan,
@@ -371,6 +418,10 @@ export default function App() {
         event.preventDefault();
         return;
       }
+      if (handlers.updateMarquee(event)) {
+        event.preventDefault();
+        return;
+      }
       const drag = dragRef.current;
       if (drag) {
         event.preventDefault();
@@ -381,6 +432,7 @@ export default function App() {
     function handleWindowPointerUp(event: PointerEvent) {
       interactionHandlersRef.current?.finishPieceDrag(event);
       interactionHandlersRef.current?.finishWallPan(event);
+      interactionHandlersRef.current?.finishMarquee();
     }
 
     function handleWindowMouseMove(event: MouseEvent) {
@@ -412,10 +464,27 @@ export default function App() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code === 'Space' && !isTextEntryTarget(event.target)) {
+        spacePressedRef.current = true;
+      }
       interactionHandlersRef.current?.handleCanvasKeyDown(event);
     };
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code === 'Space') {
+        spacePressedRef.current = false;
+      }
+    };
+    const handleBlur = () => {
+      spacePressedRef.current = false;
+    };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+    };
   }, []);
 
   useEffect(() => {
@@ -438,8 +507,12 @@ export default function App() {
     const canvas = svg;
 
     function handleNativePointerDown(event: PointerEvent) {
+      const wantsPan =
+        event.pointerType === 'touch'
+          ? wallZoomRef.current.scale > 1
+          : event.button === 1 || spacePressedRef.current;
       if (
-        event.button !== 0 ||
+        !wantsPan ||
         dragRef.current ||
         sectionDragRef.current ||
         wallPanRef.current ||
@@ -470,8 +543,9 @@ export default function App() {
     }
 
     function handleNativeMouseDown(event: MouseEvent) {
+      const wantsPan = event.button === 1 || spacePressedRef.current;
       if (
-        event.button !== 0 ||
+        !wantsPan ||
         dragRef.current ||
         sectionDragRef.current ||
         wallPanRef.current ||
@@ -543,25 +617,30 @@ export default function App() {
 
   function selectPiece(pieceId: string) {
     setSelectedFeatureId('');
-    setState((current) => ({ ...current, selectedPieceId: pieceId }));
+    setState((current) => ({ ...current, selectedPieceIds: [pieceId] }));
   }
 
   function togglePieceSelection(pieceId: string) {
     setSelectedFeatureId('');
-    setState((current) => ({
-      ...current,
-      selectedPieceId: current.selectedPieceId === pieceId ? '' : pieceId,
-    }));
+    setState((current) => {
+      const selected = current.selectedPieceIds.includes(pieceId);
+      return {
+        ...current,
+        selectedPieceIds: selected
+          ? current.selectedPieceIds.filter((candidate) => candidate !== pieceId)
+          : [...current.selectedPieceIds, pieceId],
+      };
+    });
   }
 
   function selectFeature(featureId: string) {
     setSelectedFeatureId(featureId);
-    setState((current) => ({ ...current, selectedPieceId: '' }));
+    setState((current) => ({ ...current, selectedPieceIds: [] }));
   }
 
   function toggleFeatureSelection(featureId: string) {
     setSelectedFeatureId((current) => (current === featureId ? '' : featureId));
-    setState((current) => ({ ...current, selectedPieceId: '' }));
+    setState((current) => ({ ...current, selectedPieceIds: [] }));
   }
 
   function selectSection(sectionId: string) {
@@ -577,7 +656,7 @@ export default function App() {
   function clearSelection() {
     setSelectedSectionId('');
     setSelectedFeatureId('');
-    setState((current) => ({ ...current, selectedPieceId: '' }));
+    setState((current) => ({ ...current, selectedPieceIds: [] }));
   }
 
   function getUndoFingerprint(snapshot: GalleryState) {
@@ -614,6 +693,9 @@ export default function App() {
   }
 
   function handlePagePointerDown(event: React.PointerEvent<HTMLElement>) {
+    if (event.target instanceof Element && event.target.closest('.wall-canvas')) {
+      return;
+    }
     if (shouldKeepSelection(event.target)) {
       return;
     }
@@ -701,7 +783,7 @@ export default function App() {
       return {
         ...current,
         pieces: [...current.pieces, piece],
-        selectedPieceId: piece.id,
+        selectedPieceIds: [piece.id],
       };
     });
   }
@@ -730,7 +812,7 @@ export default function App() {
         ...current,
         pieces: nextPieces,
         placements: current.placements.filter((placement) => placement.pieceId !== pieceId),
-        selectedPieceId: nextPieces[0]?.id ?? '',
+        selectedPieceIds: current.selectedPieceIds.filter((candidate) => candidate !== pieceId),
       };
     });
   }
@@ -785,7 +867,7 @@ export default function App() {
 
       return {
         ...current,
-        selectedPieceId: placement.pieceId,
+        selectedPieceIds: [placement.pieceId],
         placements: [
           ...current.placements.filter((candidate) => candidate.pieceId !== placement.pieceId),
           placement,
@@ -798,20 +880,36 @@ export default function App() {
     });
   }
 
-  function nudgePiece(proposedPlacement: Placement) {
+  function commitPiecePlacementGroup(proposedPlacements: Placement[], pieceIds: string[]) {
+    if (proposedPlacements.length === 0) {
+      return;
+    }
     recordUndoSnapshot();
-    setSelectedFeatureId('');
+    const movingIds = new Set(pieceIds);
     setState((current) => ({
       ...current,
-      selectedPieceId: proposedPlacement.pieceId,
+      selectedPieceIds: pieceIds,
       placements: [
-        ...current.placements.filter(
-          (candidate) => candidate.pieceId !== proposedPlacement.pieceId,
-        ),
-        proposedPlacement,
+        ...current.placements.filter((placement) => !movingIds.has(placement.pieceId)),
+        ...proposedPlacements,
       ],
-      message: `Moved ${getPieceLabel(current, proposedPlacement.pieceId)} on the wall.`,
+      message:
+        proposedPlacements.length === 1
+          ? `Moved ${getPieceLabel(current, proposedPlacements[0].pieceId)} on the wall.`
+          : `Moved ${proposedPlacements.length} art pieces as a group.`,
     }));
+  }
+
+  function nudgePieceGroup(pieceIds: string[], deltaXIn: number, deltaYIn: number) {
+    const proposedPlacements = translatePlacementGroup(
+      state.sections,
+      state.pieces,
+      state.placements,
+      pieceIds,
+      deltaXIn,
+      deltaYIn,
+    );
+    commitPiecePlacementGroup(proposedPlacements, pieceIds);
   }
 
   function commitFeaturePlacement(proposedFeature: WallFeature) {
@@ -829,7 +927,7 @@ export default function App() {
       };
       return {
         ...current,
-        selectedPieceId: '',
+        selectedPieceIds: [],
         autoPlacementSettings: {
           ...current.autoPlacementSettings,
           wallFeatures: current.autoPlacementSettings.wallFeatures.map((candidate) =>
@@ -854,7 +952,7 @@ export default function App() {
       const placedFeature = { ...feature, ...proposedFeature, placed: true };
       return {
         ...current,
-        selectedPieceId: '',
+        selectedPieceIds: [],
         autoPlacementSettings: {
           ...current.autoPlacementSettings,
           wallFeatures: current.autoPlacementSettings.wallFeatures.map((candidate) =>
@@ -873,7 +971,7 @@ export default function App() {
     setState((current) => ({
       ...current,
       placements: [],
-      selectedPieceId: current.pieces[0]?.id ?? '',
+      selectedPieceIds: current.pieces[0] ? [current.pieces[0].id] : [],
       message: 'Cleared placed art. All pieces returned to the staging tray.',
     }));
   }
@@ -923,7 +1021,7 @@ export default function App() {
         context: { ...defaultState.autoPlacementSettings.context },
         wallFeatures: [],
       },
-      selectedPieceId: '',
+      selectedPieceIds: [],
       message: 'Reset the entire design. Add wall sections and art pieces to start over.',
     });
     setWallZoom(getDefaultWallZoomState(getWallCanvasBaseViewBox([], defaultState.features)));
@@ -999,9 +1097,26 @@ export default function App() {
     setSelectedFeatureId('');
     setState((current) => ({
       ...current,
-      selectedPieceId: pieceId,
+      selectedPieceIds: [pieceId],
       placements: current.placements.filter((placement) => placement.pieceId !== pieceId),
       message: `Returned ${getPieceLabel(current, pieceId)} to the staging tray.`,
+    }));
+  }
+
+  function removePlacementGroup(pieceIds: string[]) {
+    if (pieceIds.length === 0) {
+      return;
+    }
+    recordUndoSnapshot();
+    const movingIds = new Set(pieceIds);
+    setState((current) => ({
+      ...current,
+      selectedPieceIds: pieceIds,
+      placements: current.placements.filter((placement) => !movingIds.has(placement.pieceId)),
+      message:
+        pieceIds.length === 1
+          ? `Returned ${getPieceLabel(current, pieceIds[0])} to the staging tray.`
+          : `Returned ${pieceIds.length} art pieces to the staging tray.`,
     }));
   }
 
@@ -1013,7 +1128,7 @@ export default function App() {
       );
       return {
         ...current,
-        selectedPieceId: '',
+        selectedPieceIds: [],
         autoPlacementSettings: {
           ...current.autoPlacementSettings,
           wallFeatures: current.autoPlacementSettings.wallFeatures.map((candidate) =>
@@ -1036,6 +1151,8 @@ export default function App() {
           event.preventDefault();
           startWallPan(event, getPointerId(event), rect);
         }
+      } else if (event.target === event.currentTarget && event.button === 0) {
+        startMarquee(event);
       }
       return;
     }
@@ -1044,9 +1161,7 @@ export default function App() {
       return;
     }
 
-    if (typeof event.currentTarget.setPointerCapture === 'function') {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    }
+    tryCapturePointer(event.currentTarget, event.pointerId);
 
     const gesture = wallZoomGestureRef.current ?? {
       pointers: new Map<number, { clientX: number; clientY: number }>(),
@@ -1096,13 +1211,21 @@ export default function App() {
 
   function handleWallPanPointerDown(event: React.PointerEvent<SVGRectElement>) {
     if (
-      wallZoom.scale <= 1 ||
-      (typeof event.button === 'number' && event.button !== 0) ||
       dragRef.current ||
       sectionDragRef.current ||
+      marqueeRef.current ||
       !Number.isFinite(event.clientX) ||
       !Number.isFinite(event.clientY)
     ) {
+      return;
+    }
+
+    const wantsPan = event.pointerType === 'touch' || event.button === 1 || spacePressedRef.current;
+    if (!wantsPan && event.button === 0) {
+      startMarquee(event);
+      return;
+    }
+    if (!wantsPan || wallZoom.scale <= 1) {
       return;
     }
 
@@ -1118,12 +1241,31 @@ export default function App() {
     startWallPan(event, getPointerId(event), rect);
   }
 
+  function startMarquee(event: React.PointerEvent<SVGElement>) {
+    const point = clientPointToSvg(event);
+    if (!point) {
+      clearSelection();
+      return;
+    }
+    event.preventDefault();
+    tryCapturePointer(event.currentTarget, event.pointerId);
+    marqueeRef.current = {
+      startPoint: point,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      additive: event.shiftKey || event.metaKey || event.ctrlKey,
+      initialPieceIds: state.selectedPieceIds,
+      hasMoved: false,
+    };
+  }
+
   function handleWallPanMouseDown(event: React.MouseEvent<SVGRectElement>) {
     if (
       wallZoom.scale <= 1 ||
-      event.button !== 0 ||
+      (event.button !== 1 && !spacePressedRef.current) ||
       dragRef.current ||
       sectionDragRef.current ||
+      marqueeRef.current ||
       wallPanRef.current ||
       !Number.isFinite(event.clientX) ||
       !Number.isFinite(event.clientY)
@@ -1208,6 +1350,12 @@ export default function App() {
       latestFeature: null,
       previewWidthPx: size.widthPx,
       previewHeightPx: size.heightPx,
+      pieceIds: [pieceId],
+      startPlacements: [],
+      latestPlacements: [placement],
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      hasMoved: false,
     };
     setCursorInteraction('dragging-piece');
     startSuppressingTextSelection();
@@ -1246,16 +1394,19 @@ export default function App() {
       latestFeature: proposedFeature,
       previewWidthPx: size.widthPx,
       previewHeightPx: size.heightPx,
+      pieceIds: [],
+      startPlacements: [],
+      latestPlacements: [],
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      hasMoved: false,
     };
     setCursorInteraction('dragging-piece');
     startSuppressingTextSelection();
     showFeatureSnappedPreview(proposedFeature, size, event);
   }
 
-  function handleSectionPointerDown(
-    event: React.PointerEvent<SVGRectElement>,
-    section: WallSection,
-  ) {
+  function handleSectionPointerDown(event: React.PointerEvent<SVGGElement>, section: WallSection) {
     event.preventDefault();
     if (typeof event.currentTarget.setPointerCapture === 'function') {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -1263,7 +1414,7 @@ export default function App() {
     startSectionDrag(event, section);
   }
 
-  function handleSectionMouseDown(event: React.MouseEvent<SVGRectElement>, section: WallSection) {
+  function handleSectionMouseDown(event: React.MouseEvent<SVGGElement>, section: WallSection) {
     event.preventDefault();
     if (!sectionDragRef.current) {
       startSectionDrag(event, section);
@@ -1323,7 +1474,7 @@ export default function App() {
     setState((current) => ({
       ...current,
       placements: result.placements,
-      selectedPieceId: firstNewPlacement?.pieceId ?? current.selectedPieceId,
+      selectedPieceIds: firstNewPlacement ? [firstNewPlacement.pieceId] : current.selectedPieceIds,
       message:
         result.preservedPlacementCount > 0
           ? `Auto-placement placed ${formatCount(result.newPlacementCount, 'remaining piece')} around ${formatCount(result.preservedPlacementCount, 'piece')} you positioned. Existing pieces were not moved.`
@@ -1341,11 +1492,23 @@ export default function App() {
 
   function handlePointerDown(event: React.PointerEvent<SVGRectElement>, placement: Placement) {
     event.preventDefault();
+    if (event.shiftKey || event.metaKey || event.ctrlKey) {
+      togglePieceSelection(placement.pieceId);
+      return;
+    }
     const point = clientPointToSvg(event);
     if (!point || !svgRef.current) {
       return;
     }
     const rect = event.currentTarget.getBoundingClientRect();
+    const pieceIds = state.selectedPieceIds.includes(placement.pieceId)
+      ? state.selectedPieceIds.filter((pieceId) =>
+          state.placements.some((candidate) => candidate.pieceId === pieceId),
+        )
+      : [placement.pieceId];
+    const startPlacements = state.placements.filter((candidate) =>
+      pieceIds.includes(candidate.pieceId),
+    );
     dragRef.current = {
       itemKind: 'piece',
       itemId: placement.pieceId,
@@ -1357,6 +1520,12 @@ export default function App() {
       latestFeature: null,
       previewWidthPx: rect.width,
       previewHeightPx: rect.height,
+      pieceIds,
+      startPlacements,
+      latestPlacements: startPlacements,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      hasMoved: false,
     };
     setCursorInteraction('dragging-piece');
     if (typeof event.currentTarget.setPointerCapture === 'function') {
@@ -1370,7 +1539,9 @@ export default function App() {
       event,
     );
     setSelectedFeatureId('');
-    setState((current) => ({ ...current, selectedPieceId: placement.pieceId }));
+    if (!state.selectedPieceIds.includes(placement.pieceId)) {
+      selectPiece(placement.pieceId);
+    }
   }
 
   function handleFeaturePointerDown(
@@ -1395,6 +1566,12 @@ export default function App() {
       latestFeature: placedFeature,
       previewWidthPx: rect.width,
       previewHeightPx: rect.height,
+      pieceIds: [],
+      startPlacements: [],
+      latestPlacements: [],
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      hasMoved: false,
     };
     setCursorInteraction('dragging-piece');
     if (typeof event.currentTarget.setPointerCapture === 'function') {
@@ -1477,17 +1654,83 @@ export default function App() {
   function handlePointerUp(event?: React.PointerEvent<SVGSVGElement>) {
     finishPieceDrag(event);
     finishWallPan(event);
+    finishMarquee();
+  }
+
+  function updateMarquee(event: { clientX: number; clientY: number }): boolean {
+    const marquee = marqueeRef.current;
+    if (!marquee) {
+      return false;
+    }
+    const distance = Math.hypot(
+      event.clientX - marquee.startClientX,
+      event.clientY - marquee.startClientY,
+    );
+    if (!marquee.hasMoved && distance < POINTER_DRAG_THRESHOLD_PX) {
+      return true;
+    }
+    const point = clientPointToSvg(event);
+    if (!point) {
+      return true;
+    }
+    if (!marquee.hasMoved) {
+      marquee.hasMoved = true;
+      setSelectedFeatureId('');
+      setSelectedSectionId('');
+      startSuppressingTextSelection();
+    }
+    const rect = normalizeSelectionRect(marquee.startPoint, point);
+    const hitIds = getPieceIdsIntersectingRect(
+      state.sections,
+      state.pieces,
+      state.placements,
+      rect,
+    );
+    setSelectionMarquee(rect);
+    setState((current) => ({
+      ...current,
+      selectedPieceIds: marquee.additive
+        ? [
+            ...marquee.initialPieceIds,
+            ...hitIds.filter((id) => !marquee.initialPieceIds.includes(id)),
+          ]
+        : hitIds,
+    }));
+    return true;
+  }
+
+  function finishMarquee() {
+    const marquee = marqueeRef.current;
+    if (!marquee) {
+      return;
+    }
+    if (!marquee.hasMoved) {
+      clearSelection();
+    }
+    marqueeRef.current = null;
+    setSelectionMarquee(null);
+    stopSuppressingTextSelection();
   }
 
   function finishPieceDrag(event?: { clientX: number; clientY: number; pointerId?: number }) {
     finishWallZoomGesture(event);
     const drag = dragRef.current;
-    if (drag && event && pointerIsOverStagingTray(event)) {
+    if (drag?.itemKind === 'piece' && drag.source === 'wall' && !drag.hasMoved) {
+      // A click selects the piece without creating an undoable placement change.
+    } else if (drag && event && pointerIsOverStagingTray(event)) {
       if (drag.itemKind === 'feature') {
         removeFeaturePlacement(drag.itemId);
+      } else if (drag.source === 'wall') {
+        removePlacementGroup(drag.pieceIds);
       } else {
         removePlacement(drag.itemId);
       }
+    } else if (
+      drag?.itemKind === 'piece' &&
+      drag.source === 'wall' &&
+      drag.latestPlacements.length > 0
+    ) {
+      commitPiecePlacementGroup(drag.latestPlacements, drag.pieceIds);
     } else if (
       drag?.latestPlacement &&
       drag.itemKind === 'piece' &&
@@ -1510,6 +1753,7 @@ export default function App() {
     sectionDragUndoSnapshotRef.current = null;
     setCursorInteraction('idle');
     setWallDragPreview(null);
+    setGroupDragPreview([]);
     stopSuppressingTextSelection();
   }
 
@@ -1675,6 +1919,11 @@ export default function App() {
     if (isTextEntryTarget(event.target)) {
       return;
     }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      clearSelection();
+      return;
+    }
     if (event.target instanceof Element && event.target.closest('svg [role="button"]')) {
       return;
     }
@@ -1702,18 +1951,17 @@ export default function App() {
       return;
     }
 
-    if (!selectedPiece || !selectedPlacement) {
+    const selectedPlacedPieceIds = state.selectedPieceIds.filter((pieceId) =>
+      state.placements.some((placement) => placement.pieceId === pieceId),
+    );
+    if (!selectedPiece || !selectedPlacement || selectedPlacedPieceIds.length === 0) {
       return;
     }
     event.preventDefault();
-    nudgePiece({
-      ...selectedPlacement,
-      xIn: roundToPrecision(selectedPlacement.xIn + delta[0]),
-      yIn: roundToPrecision(selectedPlacement.yIn + delta[1]),
-    });
+    nudgePieceGroup(selectedPlacedPieceIds, delta[0], delta[1]);
   }
 
-  function handleSectionKeyDown(event: React.KeyboardEvent<SVGRectElement>, section: WallSection) {
+  function handleSectionKeyDown(event: React.KeyboardEvent<SVGGElement>, section: WallSection) {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       selectSection(section.id);
@@ -1786,11 +2034,15 @@ export default function App() {
       ArrowRight: [step, 0],
     };
     const [deltaX, deltaY] = deltas[event.key];
-    nudgePiece({
-      ...placement,
-      xIn: roundToPrecision(placement.xIn + deltaX),
-      yIn: roundToPrecision(placement.yIn + deltaY),
-    });
+    const pieceIds = state.selectedPieceIds.includes(placement.pieceId)
+      ? state.selectedPieceIds.filter((pieceId) =>
+          state.placements.some((candidate) => candidate.pieceId === pieceId),
+        )
+      : [placement.pieceId];
+    if (!state.selectedPieceIds.includes(placement.pieceId)) {
+      selectPiece(placement.pieceId);
+    }
+    nudgePieceGroup(pieceIds, deltaX, deltaY);
   }
 
   function handleFeatureKeyDown(event: React.KeyboardEvent<SVGRectElement>, feature: WallFeature) {
@@ -1888,13 +2140,42 @@ export default function App() {
       }
 
       if (drag.source === 'staging') {
+        drag.hasMoved = true;
         drag.latestPlacement = getPointerPlacement(event, piece);
       } else if (drag.startPlacement && drag.startPoint) {
-        drag.latestPlacement = {
-          ...drag.startPlacement,
-          xIn: roundToPrecision(drag.startPlacement.xIn + point.x - drag.startPoint.x),
-          yIn: roundToPrecision(drag.startPlacement.yIn + point.y - drag.startPoint.y),
-        };
+        const clientDistance = Math.hypot(
+          event.clientX - drag.startClientX,
+          event.clientY - drag.startClientY,
+        );
+        if (!drag.hasMoved && clientDistance < POINTER_DRAG_THRESHOLD_PX) {
+          return;
+        }
+        drag.hasMoved = true;
+        const proposedPlacements = translatePlacementGroup(
+          state.sections,
+          state.pieces,
+          drag.startPlacements,
+          drag.pieceIds,
+          point.x - drag.startPoint.x,
+          point.y - drag.startPoint.y,
+        );
+        drag.latestPlacements = applyPlacementGroupFeatures({
+          proposedPlacements,
+          movingPieceIds: drag.pieceIds,
+          sections: state.sections,
+          pieces: state.pieces,
+          placements: state.placements,
+          features: state.features,
+          featureRects: state.autoPlacementSettings.wallFeatures,
+        });
+        drag.latestPlacement =
+          drag.latestPlacements.find((placement) => placement.pieceId === drag.itemId) ?? null;
+        setGroupDragPreview(drag.latestPlacements);
+        showGroupDragPreview(drag.latestPlacements, drag.itemId, event, {
+          widthPx: drag.previewWidthPx,
+          heightPx: drag.previewHeightPx,
+        });
+        return;
       }
 
       if (!drag.latestPlacement) {
@@ -1967,6 +2248,70 @@ export default function App() {
       clientY: clientPoint?.y ?? fallbackPoint.clientY,
       widthPx: size.widthPx,
       heightPx: size.heightPx,
+      itemCount: 1,
+    });
+  }
+
+  function showGroupDragPreview(
+    placements: Placement[],
+    grabbedPieceId: string,
+    fallbackPoint: Pick<React.PointerEvent | PointerEvent, 'clientX' | 'clientY'>,
+    singlePieceSize: { widthPx: number; heightPx: number },
+  ) {
+    const bounds = getGroupBounds(
+      state.sections,
+      state.pieces,
+      placements,
+      placements.map((placement) => placement.pieceId),
+    );
+    const grabbedPiece = state.pieces.find((piece) => piece.id === grabbedPieceId);
+    if (!bounds || !grabbedPiece) {
+      return;
+    }
+    const widthIn = bounds.right - bounds.left;
+    const heightIn = bounds.bottom - bounds.top;
+    const size = placements.length === 1 ? singlePieceSize : getRenderedItemSize(widthIn, heightIn);
+    const previewPieces =
+      placements.length > 1
+        ? placements.flatMap((placement) => {
+            const piece = state.pieces.find((candidate) => candidate.id === placement.pieceId);
+            if (!piece) {
+              return [];
+            }
+            return [
+              {
+                id: piece.id,
+                label: piece.label,
+                widthIn: piece.widthIn,
+                heightIn: piece.heightIn,
+                xIn:
+                  getSectionOffsetX(state.sections, placement.sectionId) +
+                  placement.xIn -
+                  bounds.left,
+                yIn:
+                  getSectionOffsetY(state.sections, placement.sectionId) +
+                  placement.yIn -
+                  bounds.top,
+              },
+            ];
+          })
+        : undefined;
+    const clientPoint = svgPointToClient({
+      x: bounds.left + widthIn / 2,
+      y: bounds.top + heightIn / 2,
+    });
+    setWallDragPreview({
+      itemId: grabbedPieceId,
+      itemKind: 'piece',
+      label: placements.length === 1 ? grabbedPiece.label : `${placements.length} art pieces`,
+      widthIn,
+      heightIn,
+      clientX: clientPoint?.x ?? fallbackPoint.clientX,
+      clientY: clientPoint?.y ?? fallbackPoint.clientY,
+      widthPx: size.widthPx,
+      heightPx: size.heightPx,
+      itemCount: placements.length,
+      pieces: previewPieces,
     });
   }
 
@@ -1991,6 +2336,7 @@ export default function App() {
       clientY: clientPoint?.y ?? fallbackPoint.clientY,
       widthPx: size.widthPx,
       heightPx: size.heightPx,
+      itemCount: 1,
     });
   }
 
@@ -2164,6 +2510,7 @@ export default function App() {
         message: 'JSON design file imported.',
       });
       setSelectedSectionId('');
+      setSelectedFeatureId('');
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -2299,7 +2646,7 @@ export default function App() {
               {state.pieces.map((piece, index) => (
                 <article
                   className={`setup-row piece-row ${
-                    piece.id === state.selectedPieceId ? 'selected' : ''
+                    state.selectedPieceIds.includes(piece.id) ? 'selected' : ''
                   }`}
                   key={piece.id}
                   onClick={(event) => {
@@ -2518,9 +2865,11 @@ export default function App() {
                 sections={state.sections}
                 pieces={state.pieces}
                 placements={state.placements}
-                selectedPieceId={state.selectedPieceId}
+                selectedPieceIds={state.selectedPieceIds}
                 selectedFeatureId={selectedFeatureId}
                 selectedSectionId={selectedSectionId}
+                selectionMarquee={selectionMarquee}
+                groupDragPreview={groupDragPreview}
                 autoPlacementSettings={state.autoPlacementSettings}
                 features={state.features}
                 unit={state.unit}
@@ -2582,7 +2931,7 @@ export default function App() {
                   ? state.autoPlacementSettings.wallFeatures
                   : []
               }
-              selectedPieceId={state.selectedPieceId}
+              selectedPieceId={activeSelectedPieceId}
               selectedFeatureId={selectedFeatureId}
               unit={state.unit}
               onSelect={togglePieceSelection}
@@ -2818,17 +3167,20 @@ function WallDragPreviewOverlay({
     return null;
   }
 
+  const isGroupPreview = preview.itemKind === 'piece' && (preview.pieces?.length ?? 0) > 1;
+
   const label =
-    preview.itemKind === 'piece'
+    preview.itemKind === 'piece' && preview.itemCount === 1
       ? fitPieceLabel(preview.label, preview.widthIn, preview.heightIn)
       : null;
-  const bufferGapPx = artPieceBufferEnabled
-    ? getPreviewBufferGapPx(
-        { widthIn: preview.widthIn, heightIn: preview.heightIn },
-        preview,
-        artPieceBufferGapIn,
-      )
-    : 0;
+  const bufferGapPx =
+    artPieceBufferEnabled && !isGroupPreview
+      ? getPreviewBufferGapPx(
+          { widthIn: preview.widthIn, heightIn: preview.heightIn },
+          preview,
+          artPieceBufferGapIn,
+        )
+      : 0;
   const previewStyle: React.CSSProperties & { '--art-piece-buffer-gap'?: string } = {
     left: `${preview.clientX}px`,
     top: `${preview.clientY}px`,
@@ -2856,20 +3208,50 @@ function WallDragPreviewOverlay({
         aria-hidden="true"
         focusable="false"
       >
-        {preview.itemKind === 'piece' ? (
+        {isGroupPreview ? (
+          preview.pieces?.map((piece) => (
+            <g key={piece.id} className="piece selected" data-testid="group-drag-preview-piece">
+              <rect
+                x={piece.xIn}
+                y={piece.yIn}
+                width={piece.widthIn}
+                height={piece.heightIn}
+                rx="0.8"
+              />
+              <PieceLabelSvg
+                piece={piece}
+                offsetX={piece.xIn}
+                offsetY={piece.yIn}
+                clipId={`preview-${piece.id}`}
+              />
+            </g>
+          ))
+        ) : preview.itemKind === 'piece' ? (
           <g className="piece selected">
             <rect x="0" y="0" width={preview.widthIn} height={preview.heightIn} rx="0.8" />
-            <PieceLabelSvg
-              piece={{
-                id: preview.itemId,
-                label: preview.label,
-                widthIn: preview.widthIn,
-                heightIn: preview.heightIn,
-              }}
-              offsetX={0}
-              offsetY={0}
-              clipId={`preview-${preview.itemId}`}
-            />
+            {preview.itemCount === 1 ? (
+              <PieceLabelSvg
+                piece={{
+                  id: preview.itemId,
+                  label: preview.label,
+                  widthIn: preview.widthIn,
+                  heightIn: preview.heightIn,
+                }}
+                offsetX={0}
+                offsetY={0}
+                clipId={`preview-${preview.itemId}`}
+              />
+            ) : (
+              <text
+                x={preview.widthIn / 2}
+                y={preview.heightIn / 2}
+                className="piece-label"
+                dominantBaseline="middle"
+                textAnchor="middle"
+              >
+                {preview.label}
+              </text>
+            )}
           </g>
         ) : (
           <g className="wall-feature selected">
@@ -3025,6 +3407,17 @@ function normalizeWheelDelta(event: { deltaMode: number; deltaX: number; deltaY:
 
 function getPointerId(event: { pointerId?: number }): number {
   return Number.isFinite(event.pointerId) ? Number(event.pointerId) : -1;
+}
+
+function tryCapturePointer(element: Element, pointerId: number) {
+  if (!Number.isFinite(pointerId) || typeof element.setPointerCapture !== 'function') {
+    return;
+  }
+  try {
+    element.setPointerCapture(pointerId);
+  } catch {
+    // Synthetic pointer events and older browsers can expose capture without an active pointer.
+  }
 }
 
 function distanceBetween(
@@ -3841,9 +4234,11 @@ function WallCanvas({
   sections,
   pieces,
   placements,
-  selectedPieceId,
+  selectedPieceIds,
   selectedFeatureId,
   selectedSectionId,
+  selectionMarquee,
+  groupDragPreview,
   autoPlacementSettings,
   features,
   unit,
@@ -3867,16 +4262,18 @@ function WallCanvas({
   sections: WallSection[];
   pieces: ArtPiece[];
   placements: Placement[];
-  selectedPieceId: string;
+  selectedPieceIds: string[];
   selectedFeatureId: string;
   selectedSectionId: string;
+  selectionMarquee: Rect | null;
+  groupDragPreview: Placement[];
   autoPlacementSettings: AutoPlacementSettings;
   features: EditorFeatures;
   unit: Unit;
   viewBox: WallViewBox;
-  onSectionPointerDown: (event: React.PointerEvent<SVGRectElement>, section: WallSection) => void;
-  onSectionMouseDown: (event: React.MouseEvent<SVGRectElement>, section: WallSection) => void;
-  onSectionKeyDown: (event: React.KeyboardEvent<SVGRectElement>, section: WallSection) => void;
+  onSectionPointerDown: (event: React.PointerEvent<SVGGElement>, section: WallSection) => void;
+  onSectionMouseDown: (event: React.MouseEvent<SVGGElement>, section: WallSection) => void;
+  onSectionKeyDown: (event: React.KeyboardEvent<SVGGElement>, section: WallSection) => void;
   onPointerDownCapture: (event: React.PointerEvent<SVGSVGElement>) => void;
   onPanPointerDown: (event: React.PointerEvent<SVGRectElement>) => void;
   onPanPointerMove: (event: React.PointerEvent<SVGRectElement>) => void;
@@ -3929,6 +4326,16 @@ function WallCanvas({
         : [],
     [features.wallEdgeBuffer, features.wallEdgeBufferGapIn, sections],
   );
+  const groupPreviewBounds = useMemo(
+    () =>
+      getGroupBounds(
+        sections,
+        pieces,
+        groupDragPreview,
+        groupDragPreview.map((placement) => placement.pieceId),
+      ),
+    [groupDragPreview, pieces, sections],
+  );
 
   return (
     <svg
@@ -3972,14 +4379,45 @@ function WallCanvas({
             width={section.widthIn}
             height={section.heightIn}
             className={section.id === selectedSectionId ? 'wall-section selected' : 'wall-section'}
-            role="button"
-            tabIndex={0}
-            aria-pressed={section.id === selectedSectionId}
-            aria-label={`Move ${section.name}`}
-            onPointerDown={(event) => onSectionPointerDown(event, section)}
-            onMouseDown={(event) => onSectionMouseDown(event, section)}
-            onKeyDown={(event) => onSectionKeyDown(event, section)}
+            onPointerDown={onPanPointerDown}
+            onPointerMove={onPanPointerMove}
+            onMouseDown={onPanMouseDown}
+            onMouseMove={onPanMouseMove}
           />
+          {sections.length > 1 ? (
+            <g
+              className={
+                section.id === selectedSectionId
+                  ? 'wall-section-handle selected'
+                  : 'wall-section-handle'
+              }
+              role="button"
+              tabIndex={0}
+              aria-pressed={section.id === selectedSectionId}
+              aria-label={`Move ${section.name}`}
+              onPointerDown={(event) => onSectionPointerDown(event, section)}
+              onMouseDown={(event) => onSectionMouseDown(event, section)}
+              onKeyDown={(event) => onSectionKeyDown(event, section)}
+            >
+              <rect
+                x={offsetXIn + 2}
+                y={offsetYIn + 2}
+                width={6}
+                height={6}
+                rx={1}
+                className="wall-section-handle-background"
+              />
+              <Move
+                x={offsetXIn + 3}
+                y={offsetYIn + 3}
+                width={4}
+                height={4}
+                strokeWidth={2.25}
+                className="wall-section-handle-icon"
+                aria-hidden="true"
+              />
+            </g>
+          ) : null}
           <text x={offsetXIn + 2} y={offsetYIn - 2} className="section-label">
             {section.name} - {formatMeasurement(section.widthIn, unit)} x{' '}
             {formatMeasurement(section.heightIn, unit)}
@@ -4052,7 +4490,7 @@ function WallCanvas({
         const offset = sectionOffsets.get(placement.sectionId) ?? { offsetXIn: 0, offsetYIn: 0 };
         const offsetX = offset.offsetXIn;
         const offsetY = offset.offsetYIn;
-        const selected = piece.id === selectedPieceId;
+        const selected = selectedPieceIds.includes(piece.id);
         const pieceX = offsetX + placement.xIn;
         const pieceY = offsetY + placement.yIn;
         return (
@@ -4076,6 +4514,43 @@ function WallCanvas({
           </g>
         );
       })}
+      {groupDragPreview.map((placement) => {
+        const piece = piecesById.get(placement.pieceId);
+        if (!piece) {
+          return null;
+        }
+        const offset = sectionOffsets.get(placement.sectionId) ?? { offsetXIn: 0, offsetYIn: 0 };
+        return (
+          <rect
+            key={`group-preview-${placement.pieceId}`}
+            x={offset.offsetXIn + placement.xIn}
+            y={offset.offsetYIn + placement.yIn}
+            width={piece.widthIn}
+            height={piece.heightIn}
+            rx="0.8"
+            className="group-drag-piece-preview"
+          />
+        );
+      })}
+      {groupPreviewBounds ? (
+        <rect
+          x={groupPreviewBounds.left}
+          y={groupPreviewBounds.top}
+          width={groupPreviewBounds.right - groupPreviewBounds.left}
+          height={groupPreviewBounds.bottom - groupPreviewBounds.top}
+          className="group-drag-bounds-preview"
+        />
+      ) : null}
+      {selectionMarquee ? (
+        <rect
+          x={selectionMarquee.left}
+          y={selectionMarquee.top}
+          width={selectionMarquee.right - selectionMarquee.left}
+          height={selectionMarquee.bottom - selectionMarquee.top}
+          className="selection-marquee"
+          data-testid="selection-marquee"
+        />
+      ) : null}
     </svg>
   );
 }
@@ -4588,6 +5063,21 @@ function loadState(): GalleryState {
     if (!isPersistedGalleryState(parsed)) {
       return defaultState;
     }
+    const validPieceIds = new Set(parsed.pieces?.map((piece) => piece.id) ?? []);
+    const persistedRecord = parsed as Record<string, unknown>;
+    const persistedSelectedPieceIds = Array.isArray(parsed.selectedPieceIds)
+      ? [
+          ...new Set(
+            parsed.selectedPieceIds.filter(
+              (pieceId): pieceId is string =>
+                typeof pieceId === 'string' && validPieceIds.has(pieceId),
+            ),
+          ),
+        ]
+      : typeof persistedRecord.selectedPieceId === 'string' &&
+          validPieceIds.has(persistedRecord.selectedPieceId)
+        ? [persistedRecord.selectedPieceId]
+        : [];
     return {
       ...defaultState,
       ...parsed,
@@ -4604,6 +5094,7 @@ function loadState(): GalleryState {
       autoPlacementSettings: isAutoPlacementSettings(parsed.autoPlacementSettings)
         ? parsed.autoPlacementSettings
         : defaultState.autoPlacementSettings,
+      selectedPieceIds: persistedSelectedPieceIds,
       message: defaultState.message,
     };
   } catch {
