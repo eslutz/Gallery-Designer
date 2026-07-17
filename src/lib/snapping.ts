@@ -30,6 +30,7 @@ interface FeatureSnapInput {
 interface SnapAxisCandidate {
   movingValue: number;
   targetValue: number;
+  kind: 'edge' | 'center';
 }
 
 interface AxisTargets {
@@ -45,6 +46,17 @@ interface SnapRect {
   heightIn: number;
 }
 
+export interface AlignmentGuide {
+  axis: 'x' | 'y';
+  coordinateIn: number;
+  kind: 'edge' | 'center';
+}
+
+export interface SnapResult<T> {
+  value: T;
+  guides: AlignmentGuide[];
+}
+
 export function applyPlacementFeatures({
   placement,
   piece,
@@ -54,9 +66,29 @@ export function applyPlacementFeatures({
   features,
   featureRects = [],
 }: SnapInput): Placement {
+  return applyPlacementFeaturesWithMetadata({
+    placement,
+    piece,
+    sections,
+    pieces,
+    placements,
+    features,
+    featureRects,
+  }).value;
+}
+
+export function applyPlacementFeaturesWithMetadata({
+  placement,
+  piece,
+  sections,
+  pieces,
+  placements,
+  features,
+  featureRects = [],
+}: SnapInput): SnapResult<Placement> {
   const offsetX = getSectionOffsetX(sections, placement.sectionId);
   const offsetY = getSectionOffsetY(sections, placement.sectionId);
-  const snapped = applyRectPlacementFeatures({
+  const snapped = applyRectPlacementFeaturesWithMetadata({
     rect: {
       id: placement.pieceId,
       left: offsetX + placement.xIn,
@@ -66,16 +98,17 @@ export function applyPlacementFeatures({
     },
     sections,
     features,
-    staticRects: [
-      ...artRectsFromPlacements(sections, pieces, placements, placement.pieceId),
-      ...featureRectsFromFeatures(featureRects),
-    ],
+    staticRects: featureRectsFromFeatures(featureRects),
+    artRects: artRectsFromPlacements(sections, pieces, placements, placement.pieceId),
   });
 
   return {
-    ...placement,
-    xIn: roundToPrecision(snapped.left - offsetX),
-    yIn: roundToPrecision(snapped.top - offsetY),
+    value: {
+      ...placement,
+      xIn: roundToPrecision(snapped.value.left - offsetX),
+      yIn: roundToPrecision(snapped.value.top - offsetY),
+    },
+    guides: snapped.guides,
   };
 }
 
@@ -87,7 +120,25 @@ export function applyFeaturePlacementFeatures({
   features,
   featureRects,
 }: FeatureSnapInput): Pick<WallFeature, 'xIn' | 'yIn'> {
-  const snapped = applyRectPlacementFeatures({
+  return applyFeaturePlacementFeaturesWithMetadata({
+    feature,
+    sections,
+    pieces,
+    placements,
+    features,
+    featureRects,
+  }).value;
+}
+
+export function applyFeaturePlacementFeaturesWithMetadata({
+  feature,
+  sections,
+  pieces,
+  placements,
+  features,
+  featureRects,
+}: FeatureSnapInput): SnapResult<Pick<WallFeature, 'xIn' | 'yIn'>> {
+  const snapped = applyRectPlacementFeaturesWithMetadata({
     rect: {
       id: feature.id,
       left: feature.xIn,
@@ -97,30 +148,39 @@ export function applyFeaturePlacementFeatures({
     },
     sections,
     features,
-    staticRects: [
-      ...artRectsFromPlacements(sections, pieces, placements, ''),
-      ...featureRectsFromFeatures(featureRects.filter((candidate) => candidate.id !== feature.id)),
-    ],
+    staticRects: featureRectsFromFeatures(
+      featureRects.filter((candidate) => candidate.id !== feature.id),
+    ),
+    artRects: artRectsFromPlacements(sections, pieces, placements, ''),
+    includeCenterAlignment: false,
   });
 
   return {
-    xIn: roundToPrecision(snapped.left),
-    yIn: roundToPrecision(snapped.top),
+    value: {
+      xIn: roundToPrecision(snapped.value.left),
+      yIn: roundToPrecision(snapped.value.top),
+    },
+    guides: snapped.guides,
   };
 }
 
-function applyRectPlacementFeatures({
+function applyRectPlacementFeaturesWithMetadata({
   rect,
   sections,
   features,
   staticRects,
+  artRects,
+  includeCenterAlignment = true,
 }: {
   rect: SnapRect;
   sections: WallSection[];
   features: EditorFeatures;
   staticRects: SnapRect[];
-}): Pick<SnapRect, 'left' | 'top'> {
+  artRects: SnapRect[];
+  includeCenterAlignment?: boolean;
+}): SnapResult<Pick<SnapRect, 'left' | 'top'>> {
   let next = rect;
+  let guides: AlignmentGuide[] = [];
 
   if (features.snapToGrid && features.gridSizeIn > 0) {
     next = {
@@ -143,18 +203,29 @@ function applyRectPlacementFeatures({
   if (features.artPieceBuffer && features.artPieceBufferGapIn > 0) {
     next = snapRectToTargets(
       next,
-      bufferTargets(staticRects, features.artPieceBufferGapIn),
+      bufferTargets([...artRects, ...staticRects], features.artPieceBufferGapIn),
       bufferTolerance,
     );
   }
 
   if (features.snapToAlignment && features.alignmentToleranceIn > 0) {
-    next = snapRectToAlignment(next, sections, staticRects, features.alignmentToleranceIn);
+    const snapped = snapRectToAlignment({
+      rect: next,
+      sections,
+      edgeRects: [...artRects, ...staticRects],
+      centerRects: includeCenterAlignment ? artRects : [],
+      toleranceIn: features.alignmentToleranceIn,
+    });
+    next = snapped.value;
+    guides = snapped.guides;
   }
 
   return {
-    left: next.left,
-    top: next.top,
+    value: {
+      left: next.left,
+      top: next.top,
+    },
+    guides,
   };
 }
 
@@ -162,16 +233,16 @@ function snapRectToTargets(rect: SnapRect, targets: AxisTargets, toleranceIn: nu
   const moving = rectEdges(rect);
   const xDelta = closestDelta(
     [
-      { movingValue: moving.left, targetValue: 0 },
-      { movingValue: moving.right, targetValue: 0 },
+      { movingValue: moving.left, targetValue: 0, kind: 'edge' },
+      { movingValue: moving.right, targetValue: 0, kind: 'edge' },
     ],
     targets.x,
     toleranceIn,
   );
   const yDelta = closestDelta(
     [
-      { movingValue: moving.top, targetValue: 0 },
-      { movingValue: moving.bottom, targetValue: 0 },
+      { movingValue: moving.top, targetValue: 0, kind: 'edge' },
+      { movingValue: moving.bottom, targetValue: 0, kind: 'edge' },
     ],
     targets.y,
     toleranceIn,
@@ -249,59 +320,94 @@ function featureRectsFromFeatures(features: WallFeature[]): SnapRect[] {
     }));
 }
 
-function snapRectToAlignment(
-  rect: SnapRect,
-  sections: WallSection[],
-  staticRects: SnapRect[],
-  toleranceIn: number,
-): SnapRect {
+function snapRectToAlignment({
+  rect,
+  sections,
+  edgeRects,
+  centerRects,
+  toleranceIn,
+}: {
+  rect: SnapRect;
+  sections: WallSection[];
+  edgeRects: SnapRect[];
+  centerRects: SnapRect[];
+  toleranceIn: number;
+}): SnapResult<SnapRect> {
   const moving = rectEdges(rect);
-  const targetX = alignmentTargetsX(sections, staticRects);
-  const targetY = alignmentTargetsY(sections, staticRects);
+  const targetX = alignmentTargetsX(sections, edgeRects, centerRects);
+  const targetY = alignmentTargetsY(sections, edgeRects, centerRects);
 
-  const xDelta = closestDelta(
+  const xSnap = closestAlignmentDelta(
     [
-      { movingValue: moving.left, targetValue: 0 },
-      { movingValue: moving.right, targetValue: 0 },
-      { movingValue: (moving.left + moving.right) / 2, targetValue: 0 },
+      { movingValue: moving.left, targetValue: 0, kind: 'edge' },
+      { movingValue: moving.right, targetValue: 0, kind: 'edge' },
+      { movingValue: (moving.left + moving.right) / 2, targetValue: 0, kind: 'center' },
     ],
     targetX,
     toleranceIn,
   );
-  const yDelta = closestDelta(
+  const ySnap = closestAlignmentDelta(
     [
-      { movingValue: moving.top, targetValue: 0 },
-      { movingValue: moving.bottom, targetValue: 0 },
-      { movingValue: (moving.top + moving.bottom) / 2, targetValue: 0 },
+      { movingValue: moving.top, targetValue: 0, kind: 'edge' },
+      { movingValue: moving.bottom, targetValue: 0, kind: 'edge' },
+      { movingValue: (moving.top + moving.bottom) / 2, targetValue: 0, kind: 'center' },
     ],
     targetY,
     toleranceIn,
   );
 
   return {
-    ...rect,
-    left: xDelta === undefined ? rect.left : roundToPrecision(moving.left + xDelta),
-    top: yDelta === undefined ? rect.top : roundToPrecision(moving.top + yDelta),
+    value: {
+      ...rect,
+      left: xSnap === undefined ? rect.left : roundToPrecision(moving.left + xSnap.delta),
+      top: ySnap === undefined ? rect.top : roundToPrecision(moving.top + ySnap.delta),
+    },
+    guides: [
+      ...(xSnap ? [{ axis: 'x' as const, coordinateIn: xSnap.targetValue, kind: xSnap.kind }] : []),
+      ...(ySnap ? [{ axis: 'y' as const, coordinateIn: ySnap.targetValue, kind: ySnap.kind }] : []),
+    ],
   };
 }
 
-function alignmentTargetsX(sections: WallSection[], rects: SnapRect[]): number[] {
+function alignmentTargetsX(
+  sections: WallSection[],
+  edgeRects: SnapRect[],
+  centerRects: SnapRect[],
+): SnapAxisCandidate[] {
   const bounds = getWallBounds(sections);
   return [
-    bounds.minX,
-    bounds.maxX,
-    (bounds.minX + bounds.maxX) / 2,
-    ...rects.flatMap((rect) => [rect.left, rect.left + rect.widthIn, rect.left + rect.widthIn / 2]),
+    { movingValue: 0, targetValue: bounds.minX, kind: 'edge' },
+    { movingValue: 0, targetValue: bounds.maxX, kind: 'edge' },
+    ...edgeRects.flatMap((rect) => [
+      { movingValue: 0, targetValue: rect.left, kind: 'edge' as const },
+      { movingValue: 0, targetValue: rect.left + rect.widthIn, kind: 'edge' as const },
+    ]),
+    ...centerRects.map((rect) => ({
+      movingValue: 0,
+      targetValue: rect.left + rect.widthIn / 2,
+      kind: 'center' as const,
+    })),
   ];
 }
 
-function alignmentTargetsY(sections: WallSection[], rects: SnapRect[]): number[] {
+function alignmentTargetsY(
+  sections: WallSection[],
+  edgeRects: SnapRect[],
+  centerRects: SnapRect[],
+): SnapAxisCandidate[] {
   const bounds = getWallBounds(sections);
   return [
-    bounds.minY,
-    bounds.maxY,
-    (bounds.minY + bounds.maxY) / 2,
-    ...rects.flatMap((rect) => [rect.top, rect.top + rect.heightIn, rect.top + rect.heightIn / 2]),
+    { movingValue: 0, targetValue: bounds.minY, kind: 'edge' },
+    { movingValue: 0, targetValue: bounds.maxY, kind: 'edge' },
+    ...edgeRects.flatMap((rect) => [
+      { movingValue: 0, targetValue: rect.top, kind: 'edge' as const },
+      { movingValue: 0, targetValue: rect.top + rect.heightIn, kind: 'edge' as const },
+    ]),
+    ...centerRects.map((rect) => ({
+      movingValue: 0,
+      targetValue: rect.top + rect.heightIn / 2,
+      kind: 'center' as const,
+    })),
   ];
 }
 
@@ -312,6 +418,35 @@ function rectEdges(rect: SnapRect) {
     right: rect.left + rect.widthIn,
     bottom: rect.top + rect.heightIn,
   };
+}
+
+function closestAlignmentDelta(
+  movingCandidates: SnapAxisCandidate[],
+  targets: SnapAxisCandidate[],
+  toleranceIn: number,
+): { delta: number; distance: number; targetValue: number; kind: 'edge' | 'center' } | undefined {
+  let best:
+    { delta: number; distance: number; targetValue: number; kind: 'edge' | 'center' } | undefined;
+
+  for (const moving of movingCandidates) {
+    for (const target of targets) {
+      if (moving.kind !== target.kind) {
+        continue;
+      }
+      const delta = target.targetValue - moving.movingValue;
+      const distance = Math.abs(delta);
+      const isBetter =
+        distance <= toleranceIn &&
+        (!best ||
+          distance < best.distance ||
+          (distance === best.distance && moving.kind === 'edge'));
+      if (isBetter) {
+        best = { delta, distance, targetValue: target.targetValue, kind: moving.kind };
+      }
+    }
+  }
+
+  return best;
 }
 
 function closestDelta(

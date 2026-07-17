@@ -1238,6 +1238,23 @@ select:focus,
   pointer-events: none;
 }
 
+.alignment-snap-guide {
+  stroke: var(--piece-selected-stroke);
+  stroke-width: 0.45;
+  stroke-dasharray: 2 1.25;
+  pointer-events: none;
+  opacity: 0.9;
+  transition: opacity 1s ease;
+}
+
+.alignment-snap-guide.center {
+  stroke-dasharray: 0.6 0.9;
+}
+
+.alignment-snap-guide.is-lingering {
+  opacity: 0;
+}
+
 .art-piece-buffer-preview {
   overflow: visible;
 }

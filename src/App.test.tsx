@@ -1440,6 +1440,269 @@ describe('Gallery Designer app', () => {
     expect(getComputedStyle(wallPreview).overflow).toBe('visible');
   });
 
+  it('shows alignment guide lines while dragging a piece into a center snap', async () => {
+    localStorage.setItem(
+      'gallery-designer-state-v1',
+      JSON.stringify({
+        unit: 'in',
+        themeMode: 'system',
+        applicationTheme: 'slate',
+        sections: [
+          {
+            id: 'wall',
+            name: 'Wall',
+            widthIn: 96,
+            heightIn: 84,
+            cornerAfter: 'none',
+            xIn: 0,
+            yIn: 0,
+          },
+        ],
+        pieces: [
+          { id: 'moving', label: 'Moving', widthIn: 12, heightIn: 10 },
+          { id: 'fixed', label: 'Fixed', widthIn: 20, heightIn: 16 },
+        ],
+        placements: [{ pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 10 }],
+        features: {
+          snapToGrid: false,
+          gridSizeIn: 1,
+          snapToAlignment: true,
+          alignmentToleranceIn: 1,
+          wallEdgeBuffer: false,
+          wallEdgeBufferGapIn: 2,
+          artPieceBuffer: false,
+          artPieceBufferGapIn: 2,
+          measurementReferenceMode: 'relative',
+        },
+        autoPlacementSettings: {
+          wallSetupMode: 'available-sections',
+          context: { kind: 'blank', viewingPosture: 'seated' },
+          layoutPreference: 'auto',
+          wallFeatures: [],
+        },
+        selectedPieceId: 'moving',
+        message: 'Test design.',
+      }),
+    );
+    const { container } = render(<App />);
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    mockCanvasProjection(canvas);
+    mockPointerTarget(canvas);
+
+    act(() => {
+      screen
+        .getByRole('button', { name: /Drag Moving from staging/i })
+        .dispatchEvent(
+          new MouseEvent('pointerdown', { bubbles: true, clientX: 19.5, clientY: 17.5 }),
+        );
+    });
+
+    const verticalGuide = await screen.findByTestId('alignment-guide-x');
+    const horizontalGuide = await screen.findByTestId('alignment-guide-y');
+    expect(verticalGuide).toHaveAttribute('x1', '20');
+    expect(verticalGuide).toHaveAttribute('y1', '0');
+    expect(verticalGuide).toHaveAttribute('y2', '84');
+    expect(horizontalGuide).toHaveAttribute('y1', '18');
+    expect(horizontalGuide).toHaveClass('center');
+    expect(container.querySelectorAll('.alignment-snap-guide')).toHaveLength(2);
+  });
+
+  it('clears alignment guide lines when a drag moves out of snap range', async () => {
+    localStorage.setItem(
+      'gallery-designer-state-v1',
+      JSON.stringify({
+        unit: 'in',
+        themeMode: 'system',
+        applicationTheme: 'slate',
+        sections: [
+          {
+            id: 'wall',
+            name: 'Wall',
+            widthIn: 96,
+            heightIn: 84,
+            cornerAfter: 'none',
+            xIn: 0,
+            yIn: 0,
+          },
+        ],
+        pieces: [
+          { id: 'moving', label: 'Moving', widthIn: 12, heightIn: 10 },
+          { id: 'fixed', label: 'Fixed', widthIn: 20, heightIn: 16 },
+        ],
+        placements: [{ pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 10 }],
+        features: {
+          snapToGrid: false,
+          gridSizeIn: 1,
+          snapToAlignment: true,
+          alignmentToleranceIn: 1,
+          wallEdgeBuffer: false,
+          wallEdgeBufferGapIn: 2,
+          artPieceBuffer: false,
+          artPieceBufferGapIn: 2,
+          measurementReferenceMode: 'relative',
+        },
+        autoPlacementSettings: {
+          wallSetupMode: 'available-sections',
+          context: { kind: 'blank', viewingPosture: 'seated' },
+          layoutPreference: 'auto',
+          wallFeatures: [],
+        },
+        selectedPieceId: 'moving',
+        message: 'Test design.',
+      }),
+    );
+    const { container } = render(<App />);
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    mockCanvasProjection(canvas);
+    mockPointerTarget(canvas);
+
+    act(() => {
+      screen
+        .getByRole('button', { name: /Drag Moving from staging/i })
+        .dispatchEvent(
+          new MouseEvent('pointerdown', { bubbles: true, clientX: 19.5, clientY: 17.5 }),
+        );
+    });
+    await waitFor(() =>
+      expect(container.querySelectorAll('.alignment-snap-guide')).toHaveLength(2),
+    );
+
+    act(() => {
+      window.dispatchEvent(new MouseEvent('pointermove', { clientX: 60, clientY: 60 }));
+    });
+
+    expect(container.querySelectorAll('.alignment-snap-guide')).toHaveLength(0);
+  });
+
+  it('lingers alignment guide lines for one second after a snapped drag ends', async () => {
+    localStorage.setItem(
+      'gallery-designer-state-v1',
+      JSON.stringify({
+        unit: 'in',
+        themeMode: 'system',
+        applicationTheme: 'slate',
+        sections: [
+          {
+            id: 'wall',
+            name: 'Wall',
+            widthIn: 96,
+            heightIn: 84,
+            cornerAfter: 'none',
+            xIn: 0,
+            yIn: 0,
+          },
+        ],
+        pieces: [
+          { id: 'moving', label: 'Moving', widthIn: 12, heightIn: 10 },
+          { id: 'fixed', label: 'Fixed', widthIn: 20, heightIn: 16 },
+        ],
+        placements: [{ pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 10 }],
+        features: {
+          snapToGrid: false,
+          gridSizeIn: 1,
+          snapToAlignment: true,
+          alignmentToleranceIn: 1,
+          wallEdgeBuffer: false,
+          wallEdgeBufferGapIn: 2,
+          artPieceBuffer: false,
+          artPieceBufferGapIn: 2,
+          measurementReferenceMode: 'relative',
+        },
+        autoPlacementSettings: {
+          wallSetupMode: 'available-sections',
+          context: { kind: 'blank', viewingPosture: 'seated' },
+          layoutPreference: 'auto',
+          wallFeatures: [],
+        },
+        selectedPieceId: 'moving',
+        message: 'Test design.',
+      }),
+    );
+    const { container } = render(<App />);
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    mockCanvasProjection(canvas);
+    mockPointerTarget(canvas);
+
+    act(() => {
+      screen
+        .getByRole('button', { name: /Drag Moving from staging/i })
+        .dispatchEvent(
+          new MouseEvent('pointerdown', { bubbles: true, clientX: 19.5, clientY: 17.5 }),
+        );
+    });
+    await screen.findByTestId('alignment-guide-x');
+    vi.useFakeTimers();
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 19.5, clientY: 17.5 });
+
+    expect(screen.getByTestId('alignment-guide-x')).toHaveClass('is-lingering');
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(container.querySelectorAll('.alignment-snap-guide')).toHaveLength(0);
+    vi.useRealTimers();
+  });
+
+  it('shows a lingering alignment guide when a keyboard nudge lands on alignment', () => {
+    vi.useFakeTimers();
+    localStorage.setItem(
+      'gallery-designer-state-v1',
+      JSON.stringify({
+        unit: 'in',
+        themeMode: 'system',
+        applicationTheme: 'slate',
+        sections: [
+          {
+            id: 'wall',
+            name: 'Wall',
+            widthIn: 96,
+            heightIn: 84,
+            cornerAfter: 'none',
+            xIn: 0,
+            yIn: 0,
+          },
+        ],
+        pieces: [
+          { id: 'moving', label: 'Moving', widthIn: 12, heightIn: 10 },
+          { id: 'fixed', label: 'Fixed', widthIn: 20, heightIn: 16 },
+        ],
+        placements: [
+          { pieceId: 'moving', sectionId: 'wall', xIn: 13.75, yIn: 40 },
+          { pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 10 },
+        ],
+        features: {
+          snapToGrid: false,
+          gridSizeIn: 1,
+          snapToAlignment: true,
+          alignmentToleranceIn: 1,
+          wallEdgeBuffer: false,
+          wallEdgeBufferGapIn: 2,
+          artPieceBuffer: false,
+          artPieceBufferGapIn: 2,
+          measurementReferenceMode: 'relative',
+        },
+        autoPlacementSettings: {
+          wallSetupMode: 'available-sections',
+          context: { kind: 'blank', viewingPosture: 'seated' },
+          layoutPreference: 'auto',
+          wallFeatures: [],
+        },
+        selectedPieceId: 'moving',
+        message: 'Test design.',
+      }),
+    );
+    const { container } = render(<App />);
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+
+    expect(screen.getByTestId('alignment-guide-x')).toHaveAttribute('x1', '20');
+    expect(screen.getByTestId('alignment-guide-x')).toHaveClass('is-lingering');
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(container.querySelectorAll('.alignment-snap-guide')).toHaveLength(0);
+    vi.useRealTimers();
+  });
+
   it('allows selected art pieces to be deselected', () => {
     render(<App />);
 
