@@ -77,6 +77,8 @@ export type WallFeatureType =
   | 'bed'
   | 'console'
   | 'desk'
+  | 'file-cabinet'
+  | 'lamp'
   | 'bookcase'
   | 'fireplace'
   | 'tv'
@@ -89,8 +91,10 @@ export interface WallFeature {
   type: WallFeatureType;
   name: string;
   xIn: number;
+  yIn?: number;
   widthIn: number;
   heightIn: number;
+  placed?: boolean;
   clearanceOverrideIn?: number;
 }
 

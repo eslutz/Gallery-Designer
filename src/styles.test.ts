@@ -41,12 +41,22 @@ describe('application typography', () => {
   it('keeps drag cursors aligned with actual canvas interactions', () => {
     expect(stylesheet).toMatch(/\.wall-pan-surface\s*{[^}]*cursor:\s*default;/s);
     expect(stylesheet).toMatch(
-      /\.app-shell\.is-wall-pannable\s+\.wall-pan-surface,\s*\.wall-section,\s*\.piece rect,\s*\.staged-piece\s*{[^}]*cursor:\s*grab;/s,
+      /\.app-shell\.is-wall-pannable\s+\.wall-pan-surface,\s*\.wall-section,\s*\.piece rect,\s*\.wall-feature-block,\s*\.staged-piece\s*{[^}]*cursor:\s*grab;/s,
     );
     expect(stylesheet).toMatch(
       /\.app-shell\.is-panning-wall\s+\.wall-pan-surface,[^}]*\.app-shell\.is-dragging-section \*\s*{[^}]*cursor:\s*grabbing;/s,
     );
     expect(stylesheet).toMatch(/\.wall-exterior-edge\s*{[^}]*pointer-events:\s*none;/s);
+  });
+
+  it('keeps staging content intact in constrained three-column workspaces', () => {
+    expect(stylesheet).toMatch(/\.canvas-card\s*{[^}]*flex:\s*0 0 auto;/s);
+    expect(stylesheet).toMatch(
+      /\.staging-header\s+\.panel-title\s*{[^}]*flex:\s*0 0 auto;[^}]*white-space:\s*nowrap;/s,
+    );
+    expect(stylesheet).toMatch(
+      /\.staging-header\s+\.muted\s*{[^}]*flex:\s*1 1 auto;[^}]*min-width:\s*0;/s,
+    );
   });
 
   it('lets collapsed utility panels override their grid display rule', () => {
@@ -100,6 +110,18 @@ describe('application typography', () => {
       stylesheet
         .match(/@media\s*\(max-width:\s*1200px\)\s*{[\s\S]*?\.setup-panel\s*{[^}]*}/)?.[0]
         .match(/\.setup-panel\s*{[^}]*}/s)?.[0] ?? '';
+    const responsiveSetupUtilityRule =
+      stylesheet
+        .match(/@media\s*\(max-width:\s*1200px\)\s*{[\s\S]*?\.setup-utility-panel\s*{[^}]*}/)?.[0]
+        .match(/\.setup-utility-panel\s*{[^}]*}/s)?.[0] ?? '';
+    const responsiveArtPiecesPanelRule =
+      stylesheet
+        .match(/@media\s*\(max-width:\s*1200px\)\s*{[\s\S]*?\.art-pieces-panel\s*{[^}]*}/)?.[0]
+        .match(/\.art-pieces-panel\s*{[^}]*}/s)?.[0] ?? '';
+    const mobileWorkspaceRule =
+      stylesheet
+        .match(/@media\s*\(max-width:\s*680px\)\s*{[\s\S]*?\.workspace\s*{[^}]*}/)?.[0]
+        .match(/\.workspace\s*{[^}]*}/s)?.[0] ?? '';
 
     expect(stylesheet).toMatch(
       /\.app-shell\s*{[^}]*position:\s*fixed;[^}]*inset:\s*0;[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);[^}]*overflow:\s*hidden;/s,
@@ -117,6 +139,8 @@ describe('application typography', () => {
     expect(stylesheet).toMatch(/\.wall-sections-panel\s+\.section-list\s*{[^}]*overflow:\s*auto;/s);
     expect(stylesheet).toMatch(/\.art-pieces-panel\s*{[^}]*min-height:\s*0;/s);
     expect(stylesheet).toMatch(/\.art-pieces-panel\s+\.piece-list\s*{[^}]*overflow:\s*auto;/s);
+    expect(stylesheet).toMatch(/\.section-list,\s*\.piece-list\s*{[^}]*align-content:\s*start;/s);
+    expect(stylesheet).toMatch(/\.setup-row\s*{[^}]*align-content:\s*start;/s);
     expect(collapsiblePanelRule).not.toContain('min-height: 0;');
     expect(editorColumnRule).toContain('align-self: stretch;');
     expect(editorColumnRule).toContain('min-height: 0;');
@@ -133,7 +157,23 @@ describe('application typography', () => {
     expect(setupPanelRule).toContain('overflow: hidden;');
     expect(responsiveEditorColumnRule).toContain('overflow: visible;');
     expect(responsiveSetupPanelRule).toContain('position: static;');
+    expect(responsiveSetupPanelRule).toContain('flex: 0 0 auto;');
     expect(responsiveSetupPanelRule).toContain('overflow: visible;');
+    expect(responsiveSetupUtilityRule).toContain('flex: 0 0 auto;');
+    expect(responsiveSetupUtilityRule).toContain('overflow: visible;');
+    expect(responsiveArtPiecesPanelRule).toContain('flex: 0 0 auto;');
+    expect(responsiveArtPiecesPanelRule).toContain('min-height: auto;');
+    expect(mobileWorkspaceRule).toContain('display: flex;');
+    expect(mobileWorkspaceRule).toContain('flex-direction: column;');
+    expect(stylesheet).toMatch(
+      /@media\s*\(max-width:\s*680px\)\s*{[\s\S]*?\.editor-column\s*{[^}]*order:\s*-1;/,
+    );
+    expect(responsiveEditorColumnRule).toContain('flex: 0 0 auto;');
+    expect(
+      stylesheet
+        .match(/@media\s*\(max-width:\s*1200px\)\s*{[\s\S]*?\.right-panel\s*{[^}]*}/)?.[0]
+        .match(/\.right-panel\s*{[^}]*}/s)?.[0] ?? '',
+    ).toContain('flex: 0 0 auto;');
     expect(stylesheet).toMatch(
       /@media\s*\(max-width:\s*1200px\)\s*{[\s\S]*?\.workspace\s*{[^}]*overflow:\s*auto;[\s\S]*?\.right-panel\s*{[^}]*position:\s*static;[^}]*overflow:\s*visible;/,
     );

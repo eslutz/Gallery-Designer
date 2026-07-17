@@ -274,6 +274,21 @@ describe('buildExportSheetSvg', () => {
     expect(diagramMarkup).toContain('fill="#d6e0e7"');
     expect(diagramMarkup).toContain('stroke-dasharray="8 8"');
   });
+
+  it('renders explicit furniture and feature coordinates in exported wall diagrams', () => {
+    const input = makeInput();
+    input.autoPlacementSettings = makeFeatureSettings();
+    input.autoPlacementSettings.wallFeatures[0] = {
+      ...input.autoPlacementSettings.wallFeatures[0],
+      yIn: 32,
+      placed: true,
+    };
+    const { markup } = buildExportSheetSvg(input);
+
+    expect(markup).toContain('Blue sectional sofa blocked area');
+    expect(markup).toContain('<title>Blue sectional sofa</title>');
+    expect(markup).toContain('fill="#9fb0bd"');
+  });
 });
 
 describe('PDF measurement table layout', () => {

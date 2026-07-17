@@ -34,7 +34,7 @@ import {
   reassignPlacementsToContainingSections,
   reassignPlacementToContainingSection,
 } from './lib/placement';
-import { applyPlacementFeatures } from './lib/snapping';
+import { applyFeaturePlacementFeatures, applyPlacementFeatures } from './lib/snapping';
 import {
   displaySizeValue,
   displayValue,
@@ -57,7 +57,7 @@ import {
   normalizeWallSections,
   validateWallSections,
 } from './lib/wall';
-import { resolveWallFeatureRule } from './lib/wallFeatures';
+import { movePlacedFeaturesWithWallSection, resolveWallFeatureRule } from './lib/wallFeatures';
 import type {
   ArtPiece,
   AutoPlacementLayoutPreference,
@@ -100,12 +100,17 @@ interface UndoableChangeOptions {
   undoable?: boolean;
 }
 
+type DragItemKind = 'piece' | 'feature';
+
 interface DragState {
-  pieceId: string;
+  itemKind: DragItemKind;
+  itemId: string;
   source: 'staging' | 'wall';
   startPoint: DOMPoint | null;
   startPlacement: Placement | null;
   latestPlacement: Placement | null;
+  startFeature: WallFeature | null;
+  latestFeature: WallFeature | null;
   previewWidthPx: number;
   previewHeightPx: number;
 }
@@ -118,7 +123,11 @@ interface SectionDragState {
 }
 
 interface WallDragPreview {
-  pieceId: string;
+  itemId: string;
+  itemKind: DragItemKind;
+  label: string;
+  widthIn: number;
+  heightIn: number;
   clientX: number;
   clientY: number;
   widthPx: number;
@@ -203,6 +212,7 @@ export default function App() {
     diagnostics: AutoPlacementDiagnostics;
   } | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState('');
+  const [selectedFeatureId, setSelectedFeatureId] = useState('');
   const [wallDragPreview, setWallDragPreview] = useState<WallDragPreview | null>(null);
   const [undoState, setUndoState] = useState<GalleryState | null>(null);
   const [clearMenuOpen, setClearMenuOpen] = useState(false);
@@ -293,6 +303,9 @@ export default function App() {
   const selectedPiece = state.pieces.find((piece) => piece.id === state.selectedPieceId);
   const selectedPlacement = state.placements.find(
     (placement) => placement.pieceId === state.selectedPieceId,
+  );
+  const selectedFeature = state.autoPlacementSettings.wallFeatures.find(
+    (feature) => feature.id === selectedFeatureId && isPlacedWallFeature(feature),
   );
   const readyToExport = allIssues.length === 0 && state.pieces.length > 0;
 
@@ -529,26 +542,41 @@ export default function App() {
   }, [clearMenuOpen]);
 
   function selectPiece(pieceId: string) {
+    setSelectedFeatureId('');
     setState((current) => ({ ...current, selectedPieceId: pieceId }));
   }
 
   function togglePieceSelection(pieceId: string) {
+    setSelectedFeatureId('');
     setState((current) => ({
       ...current,
       selectedPieceId: current.selectedPieceId === pieceId ? '' : pieceId,
     }));
   }
 
+  function selectFeature(featureId: string) {
+    setSelectedFeatureId(featureId);
+    setState((current) => ({ ...current, selectedPieceId: '' }));
+  }
+
+  function toggleFeatureSelection(featureId: string) {
+    setSelectedFeatureId((current) => (current === featureId ? '' : featureId));
+    setState((current) => ({ ...current, selectedPieceId: '' }));
+  }
+
   function selectSection(sectionId: string) {
+    setSelectedFeatureId('');
     setSelectedSectionId(sectionId);
   }
 
   function toggleSectionSelection(sectionId: string) {
+    setSelectedFeatureId('');
     setSelectedSectionId((current) => (current === sectionId ? '' : sectionId));
   }
 
   function clearSelection() {
     setSelectedSectionId('');
+    setSelectedFeatureId('');
     setState((current) => ({ ...current, selectedPieceId: '' }));
   }
 
@@ -661,6 +689,7 @@ export default function App() {
 
   function addPiece() {
     recordUndoSnapshot();
+    setSelectedFeatureId('');
     setState((current) => {
       const index = current.pieces.length + 1;
       const piece = {
@@ -694,6 +723,7 @@ export default function App() {
 
   function removePiece(pieceId: string) {
     recordUndoSnapshot();
+    setSelectedFeatureId('');
     setState((current) => {
       const nextPieces = current.pieces.filter((piece) => piece.id !== pieceId);
       return {
@@ -717,11 +747,27 @@ export default function App() {
       pieces: current.pieces,
       placements: current.placements,
       features: current.features,
+      featureRects: current.autoPlacementSettings.wallFeatures,
     });
+  }
+
+  function applyFeatureFeatures(current: GalleryState, feature: WallFeature): WallFeature {
+    return {
+      ...feature,
+      ...applyFeaturePlacementFeatures({
+        feature,
+        sections: current.sections,
+        pieces: current.pieces,
+        placements: current.placements,
+        features: current.features,
+        featureRects: current.autoPlacementSettings.wallFeatures,
+      }),
+    };
   }
 
   function commitPiecePlacement(proposedPlacement: Placement) {
     recordUndoSnapshot();
+    setSelectedFeatureId('');
     setState((current) => {
       const section = getSectionById(current.sections, proposedPlacement.sectionId);
       const piece = current.pieces.find((candidate) => candidate.id === proposedPlacement.pieceId);
@@ -754,6 +800,7 @@ export default function App() {
 
   function nudgePiece(proposedPlacement: Placement) {
     recordUndoSnapshot();
+    setSelectedFeatureId('');
     setState((current) => ({
       ...current,
       selectedPieceId: proposedPlacement.pieceId,
@@ -767,8 +814,62 @@ export default function App() {
     }));
   }
 
+  function commitFeaturePlacement(proposedFeature: WallFeature) {
+    recordUndoSnapshot();
+    setState((current) => {
+      const feature = current.autoPlacementSettings.wallFeatures.find(
+        (candidate) => candidate.id === proposedFeature.id,
+      );
+      if (!feature) {
+        return current;
+      }
+      const placedFeature = {
+        ...applyFeatureFeatures(current, { ...feature, ...proposedFeature, placed: true }),
+        placed: true,
+      };
+      return {
+        ...current,
+        selectedPieceId: '',
+        autoPlacementSettings: {
+          ...current.autoPlacementSettings,
+          wallFeatures: current.autoPlacementSettings.wallFeatures.map((candidate) =>
+            candidate.id === placedFeature.id ? placedFeature : candidate,
+          ),
+        },
+        message: `Placed ${placedFeature.name} on the wall.`,
+      };
+    });
+    setSelectedFeatureId(proposedFeature.id);
+  }
+
+  function nudgeFeature(proposedFeature: WallFeature) {
+    recordUndoSnapshot();
+    setState((current) => {
+      const feature = current.autoPlacementSettings.wallFeatures.find(
+        (candidate) => candidate.id === proposedFeature.id,
+      );
+      if (!feature) {
+        return current;
+      }
+      const placedFeature = { ...feature, ...proposedFeature, placed: true };
+      return {
+        ...current,
+        selectedPieceId: '',
+        autoPlacementSettings: {
+          ...current.autoPlacementSettings,
+          wallFeatures: current.autoPlacementSettings.wallFeatures.map((candidate) =>
+            candidate.id === placedFeature.id ? placedFeature : candidate,
+          ),
+        },
+        message: `Moved ${placedFeature.name} on the wall.`,
+      };
+    });
+    setSelectedFeatureId(proposedFeature.id);
+  }
+
   function clearPlacedArt() {
     recordUndoSnapshot();
+    setSelectedFeatureId('');
     setState((current) => ({
       ...current,
       placements: [],
@@ -790,6 +891,7 @@ export default function App() {
 
   function clearWallFeatures() {
     recordUndoSnapshot();
+    setSelectedFeatureId('');
     setState((current) => ({
       ...current,
       autoPlacementSettings: {
@@ -894,12 +996,36 @@ export default function App() {
 
   function removePlacement(pieceId: string) {
     recordUndoSnapshot();
+    setSelectedFeatureId('');
     setState((current) => ({
       ...current,
       selectedPieceId: pieceId,
       placements: current.placements.filter((placement) => placement.pieceId !== pieceId),
       message: `Returned ${getPieceLabel(current, pieceId)} to the staging tray.`,
     }));
+  }
+
+  function removeFeaturePlacement(featureId: string) {
+    recordUndoSnapshot();
+    setState((current) => {
+      const feature = current.autoPlacementSettings.wallFeatures.find(
+        (candidate) => candidate.id === featureId,
+      );
+      return {
+        ...current,
+        selectedPieceId: '',
+        autoPlacementSettings: {
+          ...current.autoPlacementSettings,
+          wallFeatures: current.autoPlacementSettings.wallFeatures.map((candidate) =>
+            candidate.id === featureId ? { ...candidate, placed: false } : candidate,
+          ),
+        },
+        message: feature
+          ? `Returned ${feature.name} to the staging tray.`
+          : 'Returned furniture or feature to the staging tray.',
+      };
+    });
+    setSelectedFeatureId(featureId);
   }
 
   function handleWallPointerDownCapture(event: React.PointerEvent<SVGSVGElement>) {
@@ -1072,17 +1198,58 @@ export default function App() {
     }
     const size = getRenderedPieceSize(piece);
     dragRef.current = {
-      pieceId,
+      itemKind: 'piece',
+      itemId: pieceId,
       source: 'staging',
       startPoint: null,
       startPlacement: null,
       latestPlacement: placement,
+      startFeature: null,
+      latestFeature: null,
       previewWidthPx: size.widthPx,
       previewHeightPx: size.heightPx,
     };
     setCursorInteraction('dragging-piece');
     startSuppressingTextSelection();
     showSnappedPreview(placement, piece, size, event);
+  }
+
+  function handleStagedFeaturePointerDown(
+    event: React.PointerEvent<HTMLButtonElement>,
+    featureId: string,
+  ) {
+    const feature = state.autoPlacementSettings.wallFeatures.find(
+      (candidate) => candidate.id === featureId,
+    );
+    if (!feature) {
+      return;
+    }
+    event.preventDefault();
+    if (typeof event.currentTarget.setPointerCapture === 'function') {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    selectFeature(featureId);
+
+    const proposedFeature = getPointerFeaturePlacement(event, feature);
+    if (!proposedFeature) {
+      return;
+    }
+    const size = getRenderedFeatureSize(feature);
+    dragRef.current = {
+      itemKind: 'feature',
+      itemId: featureId,
+      source: 'staging',
+      startPoint: null,
+      startPlacement: null,
+      latestPlacement: null,
+      startFeature: null,
+      latestFeature: proposedFeature,
+      previewWidthPx: size.widthPx,
+      previewHeightPx: size.heightPx,
+    };
+    setCursorInteraction('dragging-piece');
+    startSuppressingTextSelection();
+    showFeatureSnappedPreview(proposedFeature, size, event);
   }
 
   function handleSectionPointerDown(
@@ -1152,6 +1319,7 @@ export default function App() {
       (placement) => !existingPieceIds.has(placement.pieceId),
     );
     recordUndoSnapshot();
+    setSelectedFeatureId('');
     setState((current) => ({
       ...current,
       placements: result.placements,
@@ -1179,11 +1347,14 @@ export default function App() {
     }
     const rect = event.currentTarget.getBoundingClientRect();
     dragRef.current = {
-      pieceId: placement.pieceId,
+      itemKind: 'piece',
+      itemId: placement.pieceId,
       source: 'wall',
       startPoint: point,
       startPlacement: placement,
       latestPlacement: placement,
+      startFeature: null,
+      latestFeature: null,
       previewWidthPx: rect.width,
       previewHeightPx: rect.height,
     };
@@ -1198,7 +1369,40 @@ export default function App() {
       { widthPx: rect.width, heightPx: rect.height },
       event,
     );
+    setSelectedFeatureId('');
     setState((current) => ({ ...current, selectedPieceId: placement.pieceId }));
+  }
+
+  function handleFeaturePointerDown(
+    event: React.PointerEvent<SVGRectElement>,
+    feature: WallFeature,
+  ) {
+    event.preventDefault();
+    const point = clientPointToSvg(event);
+    if (!point || !svgRef.current) {
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const placedFeature = { ...feature, yIn: feature.yIn ?? getLegacyFeatureYIn(feature) };
+    dragRef.current = {
+      itemKind: 'feature',
+      itemId: feature.id,
+      source: 'wall',
+      startPoint: point,
+      startPlacement: null,
+      latestPlacement: null,
+      startFeature: placedFeature,
+      latestFeature: placedFeature,
+      previewWidthPx: rect.width,
+      previewHeightPx: rect.height,
+    };
+    setCursorInteraction('dragging-piece');
+    if (typeof event.currentTarget.setPointerCapture === 'function') {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    startSuppressingTextSelection();
+    showFeatureSnappedPreview(placedFeature, { widthPx: rect.width, heightPx: rect.height }, event);
+    selectFeature(feature.id);
   }
 
   function handlePointerMove(event: React.PointerEvent<SVGSVGElement>) {
@@ -1236,6 +1440,16 @@ export default function App() {
       yIn: roundToPrecision(sectionDrag.startYIn + point.y - sectionDrag.startPoint.y),
     };
     setState((current) => {
+      const sections = moveWallSection(
+        current.sections,
+        sectionDrag.sectionId,
+        applyWallSectionFeatures(
+          current.sections,
+          sectionDrag.sectionId,
+          proposed,
+          current.features,
+        ),
+      );
       const placements = reassignPlacementsToContainingSections(
         current.sections,
         current.pieces,
@@ -1244,16 +1458,16 @@ export default function App() {
       return {
         ...current,
         placements,
-        sections: moveWallSection(
-          current.sections,
-          sectionDrag.sectionId,
-          applyWallSectionFeatures(
+        sections,
+        autoPlacementSettings: {
+          ...current.autoPlacementSettings,
+          wallFeatures: movePlacedFeaturesWithWallSection(
+            current.autoPlacementSettings.wallFeatures,
             current.sections,
+            sections,
             sectionDrag.sectionId,
-            proposed,
-            current.features,
           ),
-        ),
+        },
         message: 'Wall section moved. Sections snap together by shared edges.',
       };
     });
@@ -1269,12 +1483,23 @@ export default function App() {
     finishWallZoomGesture(event);
     const drag = dragRef.current;
     if (drag && event && pointerIsOverStagingTray(event)) {
-      removePlacement(drag.pieceId);
+      if (drag.itemKind === 'feature') {
+        removeFeaturePlacement(drag.itemId);
+      } else {
+        removePlacement(drag.itemId);
+      }
     } else if (
       drag?.latestPlacement &&
+      drag.itemKind === 'piece' &&
       (drag.source === 'wall' || (event && pointerIsOverWallCanvas(event)))
     ) {
       commitPiecePlacement(drag.latestPlacement);
+    } else if (
+      drag?.latestFeature &&
+      drag.itemKind === 'feature' &&
+      (drag.source === 'wall' || (event && pointerIsOverWallCanvas(event)))
+    ) {
+      commitFeaturePlacement(drag.latestFeature);
     }
     const sectionDragSnapshot = sectionDragUndoSnapshotRef.current;
     if (sectionDragSnapshot && hasUndoableChange(sectionDragSnapshot, latestStateRef.current)) {
@@ -1436,7 +1661,7 @@ export default function App() {
     event: Pick<React.PointerEvent | PointerEvent, 'clientX' | 'clientY'>,
   ): boolean {
     const element = document.elementFromPoint(event.clientX, event.clientY);
-    return element?.closest('[aria-label="Art staging tray"]') !== null;
+    return element?.closest('.staging-tray') !== null;
   }
 
   function pointerIsOverWallCanvas(
@@ -1453,9 +1678,6 @@ export default function App() {
     if (event.target instanceof Element && event.target.closest('svg [role="button"]')) {
       return;
     }
-    if (!selectedPiece || !selectedPlacement) {
-      return;
-    }
     const step = event.shiftKey ? 1 : 1 / 4;
     const deltas: Record<string, [number, number]> = {
       ArrowUp: [0, -step],
@@ -1465,6 +1687,22 @@ export default function App() {
     };
     const delta = deltas[event.key];
     if (!delta) {
+      return;
+    }
+
+    if (selectedFeature) {
+      event.preventDefault();
+      nudgeFeature({
+        ...selectedFeature,
+        xIn: roundToPrecision(selectedFeature.xIn + delta[0]),
+        yIn: roundToPrecision(
+          (selectedFeature.yIn ?? getLegacyFeatureYIn(selectedFeature)) + delta[1],
+        ),
+      });
+      return;
+    }
+
+    if (!selectedPiece || !selectedPlacement) {
       return;
     }
     event.preventDefault();
@@ -1496,6 +1734,16 @@ export default function App() {
     event.preventDefault();
     setSelectedSectionId(section.id);
     setState((current) => {
+      const sections = moveWallSection(
+        current.sections,
+        section.id,
+        applyWallSectionFeatures(
+          current.sections,
+          section.id,
+          { xIn: (section.xIn ?? 0) + delta[0], yIn: (section.yIn ?? 0) + delta[1] },
+          current.features,
+        ),
+      );
       const placements = reassignPlacementsToContainingSections(
         current.sections,
         current.pieces,
@@ -1504,16 +1752,16 @@ export default function App() {
       return {
         ...current,
         placements,
-        sections: moveWallSection(
-          current.sections,
-          section.id,
-          applyWallSectionFeatures(
+        sections,
+        autoPlacementSettings: {
+          ...current.autoPlacementSettings,
+          wallFeatures: movePlacedFeaturesWithWallSection(
+            current.autoPlacementSettings.wallFeatures,
             current.sections,
+            sections,
             section.id,
-            { xIn: (section.xIn ?? 0) + delta[0], yIn: (section.yIn ?? 0) + delta[1] },
-            current.features,
           ),
-        ),
+        },
         message: 'Wall section moved. Sections snap together by shared edges.',
       };
     });
@@ -1542,6 +1790,32 @@ export default function App() {
       ...placement,
       xIn: roundToPrecision(placement.xIn + deltaX),
       yIn: roundToPrecision(placement.yIn + deltaY),
+    });
+  }
+
+  function handleFeatureKeyDown(event: React.KeyboardEvent<SVGRectElement>, feature: WallFeature) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      selectFeature(feature.id);
+      return;
+    }
+
+    if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+      return;
+    }
+    event.preventDefault();
+    const step = event.shiftKey ? 1 : 1 / 4;
+    const deltas: Record<string, [number, number]> = {
+      ArrowUp: [0, -step],
+      ArrowDown: [0, step],
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+    };
+    const [deltaX, deltaY] = deltas[event.key];
+    nudgeFeature({
+      ...feature,
+      xIn: roundToPrecision(feature.xIn + deltaX),
+      yIn: roundToPrecision((feature.yIn ?? getLegacyFeatureYIn(feature)) + deltaY),
     });
   }
 
@@ -1607,27 +1881,55 @@ export default function App() {
       return;
     }
 
-    const piece = state.pieces.find((candidate) => candidate.id === drag.pieceId);
-    if (!piece) {
+    if (drag.itemKind === 'piece') {
+      const piece = state.pieces.find((candidate) => candidate.id === drag.itemId);
+      if (!piece) {
+        return;
+      }
+
+      if (drag.source === 'staging') {
+        drag.latestPlacement = getPointerPlacement(event, piece);
+      } else if (drag.startPlacement && drag.startPoint) {
+        drag.latestPlacement = {
+          ...drag.startPlacement,
+          xIn: roundToPrecision(drag.startPlacement.xIn + point.x - drag.startPoint.x),
+          yIn: roundToPrecision(drag.startPlacement.yIn + point.y - drag.startPoint.y),
+        };
+      }
+
+      if (!drag.latestPlacement) {
+        return;
+      }
+      showSnappedPreview(
+        drag.latestPlacement,
+        piece,
+        { widthPx: drag.previewWidthPx, heightPx: drag.previewHeightPx },
+        event,
+      );
       return;
     }
 
+    const feature = state.autoPlacementSettings.wallFeatures.find(
+      (candidate) => candidate.id === drag.itemId,
+    );
+    if (!feature) {
+      return;
+    }
     if (drag.source === 'staging') {
-      drag.latestPlacement = getPointerPlacement(event, piece);
-    } else if (drag.startPlacement && drag.startPoint) {
-      drag.latestPlacement = {
-        ...drag.startPlacement,
-        xIn: roundToPrecision(drag.startPlacement.xIn + point.x - drag.startPoint.x),
-        yIn: roundToPrecision(drag.startPlacement.yIn + point.y - drag.startPoint.y),
+      drag.latestFeature = getPointerFeaturePlacement(event, feature);
+    } else if (drag.startFeature && drag.startPoint) {
+      drag.latestFeature = {
+        ...drag.startFeature,
+        xIn: roundToPrecision(drag.startFeature.xIn + point.x - drag.startPoint.x),
+        yIn: roundToPrecision((drag.startFeature.yIn ?? 0) + point.y - drag.startPoint.y),
       };
     }
 
-    if (!drag.latestPlacement) {
+    if (!drag.latestFeature) {
       return;
     }
-    showSnappedPreview(
-      drag.latestPlacement,
-      piece,
+    showFeatureSnappedPreview(
+      drag.latestFeature,
       { widthPx: drag.previewWidthPx, heightPx: drag.previewHeightPx },
       event,
     );
@@ -1656,7 +1958,35 @@ export default function App() {
     };
     const clientPoint = svgPointToClient(center);
     setWallDragPreview({
-      pieceId: piece.id,
+      itemId: piece.id,
+      itemKind: 'piece',
+      label: piece.label,
+      widthIn: piece.widthIn,
+      heightIn: piece.heightIn,
+      clientX: clientPoint?.x ?? fallbackPoint.clientX,
+      clientY: clientPoint?.y ?? fallbackPoint.clientY,
+      widthPx: size.widthPx,
+      heightPx: size.heightPx,
+    });
+  }
+
+  function showFeatureSnappedPreview(
+    feature: WallFeature,
+    size: { widthPx: number; heightPx: number },
+    fallbackPoint: Pick<React.PointerEvent | PointerEvent, 'clientX' | 'clientY'>,
+  ) {
+    const snappedFeature = applyFeatureFeatures(state, { ...feature, placed: true });
+    const center = {
+      x: snappedFeature.xIn + snappedFeature.widthIn / 2,
+      y: (snappedFeature.yIn ?? 0) + snappedFeature.heightIn / 2,
+    };
+    const clientPoint = svgPointToClient(center);
+    setWallDragPreview({
+      itemId: feature.id,
+      itemKind: 'feature',
+      label: feature.name,
+      widthIn: feature.widthIn,
+      heightIn: feature.heightIn,
       clientX: clientPoint?.x ?? fallbackPoint.clientX,
       clientY: clientPoint?.y ?? fallbackPoint.clientY,
       widthPx: size.widthPx,
@@ -1665,6 +1995,17 @@ export default function App() {
   }
 
   function getRenderedPieceSize(piece: ArtPiece): { widthPx: number; heightPx: number } {
+    return getRenderedItemSize(piece.widthIn, piece.heightIn);
+  }
+
+  function getRenderedFeatureSize(feature: WallFeature): { widthPx: number; heightPx: number } {
+    return getRenderedItemSize(feature.widthIn, feature.heightIn);
+  }
+
+  function getRenderedItemSize(
+    widthIn: number,
+    heightIn: number,
+  ): { widthPx: number; heightPx: number } {
     const svg = svgRef.current;
     const viewBox = svg?.viewBox.baseVal;
     const rect = svg?.getBoundingClientRect();
@@ -1673,15 +2014,15 @@ export default function App() {
       const scale = Math.min(rect.width / viewBox.width, rect.height / viewBox.height);
       if (Number.isFinite(scale) && scale > 0) {
         return {
-          widthPx: piece.widthIn * scale,
-          heightPx: piece.heightIn * scale,
+          widthPx: widthIn * scale,
+          heightPx: heightIn * scale,
         };
       }
     }
 
     return {
-      widthPx: piece.widthIn * DRAG_PREVIEW_SCALE_PX_PER_IN,
-      heightPx: piece.heightIn * DRAG_PREVIEW_SCALE_PX_PER_IN,
+      widthPx: widthIn * DRAG_PREVIEW_SCALE_PX_PER_IN,
+      heightPx: heightIn * DRAG_PREVIEW_SCALE_PX_PER_IN,
     };
   }
 
@@ -1718,6 +2059,34 @@ export default function App() {
       xIn: roundToPrecision(dropX - target.offsetXIn - piece.widthIn / 2),
       yIn: roundToPrecision(dropY - target.offsetYIn - piece.heightIn / 2),
     };
+  }
+
+  function getPointerFeaturePlacement(
+    event: { clientX: number; clientY: number },
+    feature: WallFeature,
+  ): WallFeature | null {
+    const point = clientPointToSvg(event);
+    const layout = getWallLayout(state.sections);
+    const fallbackLayout = layout[0];
+    if (!point && !fallbackLayout) {
+      return null;
+    }
+
+    const dropX = point ? point.x : fallbackLayout.offsetXIn + fallbackLayout.section.widthIn / 2;
+    const dropY = point ? point.y : fallbackLayout.offsetYIn + fallbackLayout.section.heightIn / 2;
+
+    return {
+      ...feature,
+      xIn: roundToPrecision(dropX - feature.widthIn / 2),
+      yIn: roundToPrecision(dropY - feature.heightIn / 2),
+      placed: true,
+    };
+  }
+
+  function getLegacyFeatureYIn(feature: WallFeature): number {
+    const bounds = getWallBounds(state.sections);
+    const rule = resolveWallFeatureRule(feature);
+    return roundToPrecision(bounds.maxY - feature.heightIn - rule.clearanceIn);
   }
 
   function getExportInput(): ExportDesignInput {
@@ -2150,6 +2519,7 @@ export default function App() {
                 pieces={state.pieces}
                 placements={state.placements}
                 selectedPieceId={state.selectedPieceId}
+                selectedFeatureId={selectedFeatureId}
                 selectedSectionId={selectedSectionId}
                 autoPlacementSettings={state.autoPlacementSettings}
                 features={state.features}
@@ -2164,7 +2534,9 @@ export default function App() {
                 onPanMouseDown={handleWallPanMouseDown}
                 onPanMouseMove={handleWallPanMouseMove}
                 onPointerDown={handlePointerDown}
+                onFeaturePointerDown={handleFeaturePointerDown}
                 onPieceKeyDown={handlePieceKeyDown}
+                onFeatureKeyDown={handleFeatureKeyDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
               />
@@ -2205,10 +2577,18 @@ export default function App() {
             <StagingTray
               pieces={state.pieces}
               placements={state.placements}
+              features={
+                state.autoPlacementSettings.wallSetupMode === 'full-wall-with-features'
+                  ? state.autoPlacementSettings.wallFeatures
+                  : []
+              }
               selectedPieceId={state.selectedPieceId}
+              selectedFeatureId={selectedFeatureId}
               unit={state.unit}
               onSelect={togglePieceSelection}
+              onFeatureSelect={toggleFeatureSelection}
               onPointerDown={handleStagedPiecePointerDown}
+              onFeaturePointerDown={handleStagedFeaturePointerDown}
             />
           </div>
 
@@ -2282,7 +2662,6 @@ export default function App() {
       </section>
       <WallDragPreviewOverlay
         preview={wallDragPreview}
-        piece={state.pieces.find((piece) => piece.id === wallDragPreview?.pieceId)}
         artPieceBufferEnabled={state.features.artPieceBuffer}
         artPieceBufferGapIn={state.features.artPieceBufferGapIn}
       />
@@ -2390,6 +2769,10 @@ function getPieceLabel(state: GalleryState, pieceId: string): string {
   return state.pieces.find((piece) => piece.id === pieceId)?.label ?? 'Piece';
 }
 
+function isPlacedWallFeature(feature: WallFeature): boolean {
+  return feature.placed !== false;
+}
+
 function shouldKeepSelection(target: EventTarget): boolean {
   if (!(target instanceof Element)) {
     return false;
@@ -2405,6 +2788,7 @@ function shouldKeepSelection(target: EventTarget): boolean {
         '.setup-row',
         '.wall-section',
         '.piece rect',
+        '.wall-feature-block',
         '.staged-piece',
       ].join(','),
     ),
@@ -2423,22 +2807,27 @@ function isTextEntryTarget(target: EventTarget | null): boolean {
 
 function WallDragPreviewOverlay({
   preview,
-  piece,
   artPieceBufferEnabled,
   artPieceBufferGapIn,
 }: {
   preview: WallDragPreview | null;
-  piece?: ArtPiece;
   artPieceBufferEnabled: boolean;
   artPieceBufferGapIn: number;
 }) {
-  if (!preview || !piece) {
+  if (!preview) {
     return null;
   }
 
-  const label = fitPieceLabel(piece.label, piece.widthIn, piece.heightIn);
+  const label =
+    preview.itemKind === 'piece'
+      ? fitPieceLabel(preview.label, preview.widthIn, preview.heightIn)
+      : null;
   const bufferGapPx = artPieceBufferEnabled
-    ? getPreviewBufferGapPx(piece, preview, artPieceBufferGapIn)
+    ? getPreviewBufferGapPx(
+        { widthIn: preview.widthIn, heightIn: preview.heightIn },
+        preview,
+        artPieceBufferGapIn,
+      )
     : 0;
   const previewStyle: React.CSSProperties & { '--art-piece-buffer-gap'?: string } = {
     left: `${preview.clientX}px`,
@@ -2446,7 +2835,7 @@ function WallDragPreviewOverlay({
     width: `${preview.widthPx}px`,
     height: `${preview.heightPx}px`,
   };
-  if (bufferGapPx > 0 || label.placement === 'outside') {
+  if (bufferGapPx > 0 || label?.placement === 'outside') {
     previewStyle.overflow = 'visible';
   }
   if (bufferGapPx > 0) {
@@ -2463,14 +2852,46 @@ function WallDragPreviewOverlay({
     >
       <svg
         className="wall-drag-preview-svg"
-        viewBox={`0 0 ${piece.widthIn} ${piece.heightIn}`}
+        viewBox={`0 0 ${preview.widthIn} ${preview.heightIn}`}
         aria-hidden="true"
         focusable="false"
       >
-        <g className="piece selected">
-          <rect x="0" y="0" width={piece.widthIn} height={piece.heightIn} rx="0.8" />
-          <PieceLabelSvg piece={piece} offsetX={0} offsetY={0} clipId={`preview-${piece.id}`} />
-        </g>
+        {preview.itemKind === 'piece' ? (
+          <g className="piece selected">
+            <rect x="0" y="0" width={preview.widthIn} height={preview.heightIn} rx="0.8" />
+            <PieceLabelSvg
+              piece={{
+                id: preview.itemId,
+                label: preview.label,
+                widthIn: preview.widthIn,
+                heightIn: preview.heightIn,
+              }}
+              offsetX={0}
+              offsetY={0}
+              clipId={`preview-${preview.itemId}`}
+            />
+          </g>
+        ) : (
+          <g className="wall-feature selected">
+            <rect
+              x="0"
+              y="0"
+              width={preview.widthIn}
+              height={preview.heightIn}
+              rx="0.8"
+              className="wall-feature-block"
+            />
+            <text
+              x={preview.widthIn / 2}
+              y={preview.heightIn / 2}
+              className="wall-feature-label"
+              dominantBaseline="middle"
+              textAnchor="middle"
+            >
+              {preview.label}
+            </text>
+          </g>
+        )}
       </svg>
     </div>
   );
@@ -2485,7 +2906,7 @@ function stopSuppressingTextSelection() {
 }
 
 function getPreviewBufferGapPx(
-  piece: ArtPiece,
+  piece: Pick<ArtPiece, 'widthIn' | 'heightIn'>,
   size: { widthPx: number; heightPx: number },
   gapIn: number,
 ): number {
@@ -3003,8 +3424,10 @@ function AutoPlacementControls({
           type: 'sofa',
           name: `Wall feature ${index}`,
           xIn: 0,
+          yIn: 0,
           widthIn: 84,
           heightIn: 30,
+          placed: false,
         },
       ],
     });
@@ -3147,6 +3570,8 @@ function AutoPlacementControls({
                   <option value="bed">Bed</option>
                   <option value="console">Console</option>
                   <option value="desk">Desk</option>
+                  <option value="file-cabinet">File cabinet</option>
+                  <option value="lamp">Lamp</option>
                   <option value="bookcase">Bookcase</option>
                   <option value="fireplace">Fireplace</option>
                   <option value="tv">TV</option>
@@ -3155,16 +3580,6 @@ function AutoPlacementControls({
                   <option value="custom">Custom</option>
                 </select>
               </label>
-              <NumberField
-                label={`Feature ${index + 1} left edge (${unit})`}
-                valueIn={feature.xIn}
-                unit={unit}
-                onEditStart={onEditStart}
-                onEditEnd={onEditEnd}
-                onChange={(xIn) =>
-                  updateFeature(feature.id, { xIn: Math.max(0, xIn) }, { undoable: false })
-                }
-              />
               <NumberField
                 label={`Feature ${index + 1} width (${unit})`}
                 valueIn={feature.widthIn}
@@ -3318,32 +3733,44 @@ function HookControls({
 function StagingTray({
   pieces,
   placements,
+  features,
   selectedPieceId,
+  selectedFeatureId,
   unit,
   onSelect,
+  onFeatureSelect,
   onPointerDown,
+  onFeaturePointerDown,
 }: {
   pieces: ArtPiece[];
   placements: Placement[];
+  features: WallFeature[];
   selectedPieceId: string;
+  selectedFeatureId: string;
   unit: Unit;
   onSelect: (pieceId: string) => void;
+  onFeatureSelect: (featureId: string) => void;
   onPointerDown: (event: React.PointerEvent<HTMLButtonElement>, pieceId: string) => void;
+  onFeaturePointerDown: (event: React.PointerEvent<HTMLButtonElement>, featureId: string) => void;
 }) {
   const stagedPieces = pieces.filter(
     (piece) => !placements.some((placement) => placement.pieceId === piece.id),
   );
+  const stagedFeatures = features.filter((feature) => !isPlacedWallFeature(feature));
+  const hasStagedItems = stagedPieces.length > 0 || stagedFeatures.length > 0;
 
   return (
-    <section className="staging-tray" role="region" aria-label="Art staging tray">
+    <section className="staging-tray" role="region" aria-label="Art staging tray with furniture">
       <div className="staging-header">
         <div className="panel-title">
           <PackageOpen size={18} />
           <h2>Staging tray</h2>
         </div>
-        <p className="muted">Drag unused pieces onto the wall, or drag wall pieces back here.</p>
+        <p className="muted">
+          Drag unused art, furniture, and features onto the wall, or drag placed items back here.
+        </p>
       </div>
-      {stagedPieces.length > 0 ? (
+      {hasStagedItems ? (
         <div className="staged-piece-list">
           {stagedPieces.map((piece) => (
             <button
@@ -3372,9 +3799,38 @@ function StagingTray({
               </span>
             </button>
           ))}
+          {stagedFeatures.map((feature) => (
+            <button
+              type="button"
+              key={feature.id}
+              className={`staged-piece staged-feature ${
+                feature.id === selectedFeatureId ? 'selected' : ''
+              }`}
+              aria-label={`Drag ${feature.name} from staging`}
+              onClick={() => onFeatureSelect(feature.id)}
+              onPointerDown={(event) => onFeaturePointerDown(event, feature.id)}
+            >
+              <span
+                className="staged-piece-preview staged-feature-preview"
+                data-testid="staged-feature-preview"
+                style={{
+                  width: `${feature.widthIn * STAGING_SCALE_PX_PER_IN}px`,
+                  height: `${feature.heightIn * STAGING_SCALE_PX_PER_IN}px`,
+                }}
+                aria-hidden="true"
+              />
+              <span className="staged-piece-caption">
+                <span className="staged-piece-name">{feature.name}</span>
+                <small className="staged-piece-size">
+                  {formatMeasurement(feature.widthIn, unit)} x{' '}
+                  {formatMeasurement(feature.heightIn, unit)}
+                </small>
+              </span>
+            </button>
+          ))}
         </div>
       ) : (
-        <p className="empty-tray">All pieces are currently on the wall.</p>
+        <p className="empty-tray">All art, furniture, and features are currently on the wall.</p>
       )}
     </section>
   );
@@ -3386,6 +3842,7 @@ function WallCanvas({
   pieces,
   placements,
   selectedPieceId,
+  selectedFeatureId,
   selectedSectionId,
   autoPlacementSettings,
   features,
@@ -3400,7 +3857,9 @@ function WallCanvas({
   onPanMouseDown,
   onPanMouseMove,
   onPointerDown,
+  onFeaturePointerDown,
   onPieceKeyDown,
+  onFeatureKeyDown,
   onPointerMove,
   onPointerUp,
 }: {
@@ -3409,6 +3868,7 @@ function WallCanvas({
   pieces: ArtPiece[];
   placements: Placement[];
   selectedPieceId: string;
+  selectedFeatureId: string;
   selectedSectionId: string;
   autoPlacementSettings: AutoPlacementSettings;
   features: EditorFeatures;
@@ -3423,7 +3883,9 @@ function WallCanvas({
   onPanMouseDown: (event: React.MouseEvent<SVGRectElement>) => void;
   onPanMouseMove: (event: React.MouseEvent<SVGRectElement>) => void;
   onPointerDown: (event: React.PointerEvent<SVGRectElement>, placement: Placement) => void;
+  onFeaturePointerDown: (event: React.PointerEvent<SVGRectElement>, feature: WallFeature) => void;
   onPieceKeyDown: (event: React.KeyboardEvent<SVGRectElement>, placement: Placement) => void;
+  onFeatureKeyDown: (event: React.KeyboardEvent<SVGRectElement>, feature: WallFeature) => void;
   onPointerMove: (event: React.PointerEvent<SVGSVGElement>) => void;
   onPointerUp: (event: React.PointerEvent<SVGSVGElement>) => void;
 }) {
@@ -3442,16 +3904,20 @@ function WallCanvas({
       return [];
     }
     const bounds = getWallBounds(sections);
-    return autoPlacementSettings.wallFeatures.map((feature) => {
+    return autoPlacementSettings.wallFeatures.filter(isPlacedWallFeature).map((feature) => {
       const rule = resolveWallFeatureRule(feature);
-      const top = bounds.maxY - feature.heightIn - rule.clearanceIn;
+      const featureTop = feature.yIn ?? bounds.maxY - feature.heightIn - rule.clearanceIn;
+      const clearanceTop = Math.max(bounds.minY, featureTop - rule.clearanceIn);
       return {
         id: feature.id,
+        feature,
         label: feature.name,
         left: feature.xIn,
-        top,
+        top: featureTop,
+        clearanceTop,
         width: feature.widthIn,
-        height: bounds.maxY - top,
+        height: feature.heightIn,
+        clearanceHeight: featureTop + feature.heightIn - clearanceTop,
       };
     });
   }, [autoPlacementSettings, sections]);
@@ -3540,15 +4006,43 @@ function WallCanvas({
         />
       ))}
       {featureBlocks.map((block) => (
-        <rect
+        <g
           key={block.id}
-          x={block.left}
-          y={block.top}
-          width={block.width}
-          height={block.height}
-          className="wall-feature-block"
-          aria-label={`${block.label} blocked area`}
-        />
+          className={block.id === selectedFeatureId ? 'wall-feature selected' : 'wall-feature'}
+        >
+          <rect
+            x={block.left}
+            y={block.clearanceTop}
+            width={block.width}
+            height={block.clearanceHeight}
+            className="wall-feature-clearance"
+            aria-label={`${block.label} blocked area`}
+          />
+          <rect
+            x={block.left}
+            y={block.top}
+            width={block.width}
+            height={block.height}
+            rx="0.8"
+            className="wall-feature-block"
+            focusable="false"
+            role="button"
+            tabIndex={0}
+            aria-pressed={block.id === selectedFeatureId}
+            aria-label={`Move ${block.label}`}
+            onPointerDown={(event) => onFeaturePointerDown(event, block.feature)}
+            onKeyDown={(event) => onFeatureKeyDown(event, block.feature)}
+          />
+          <text
+            x={block.left + block.width / 2}
+            y={block.top + block.height / 2}
+            className="wall-feature-label"
+            dominantBaseline="middle"
+            textAnchor="middle"
+          >
+            {block.label}
+          </text>
+        </g>
       ))}
       {placements.map((placement) => {
         const piece = piecesById.get(placement.pieceId);
@@ -4008,8 +4502,10 @@ function isWallFeature(value: unknown): value is WallFeature {
     isWallFeatureType(value.type) &&
     typeof value.name === 'string' &&
     isFiniteNumber(value.xIn) &&
+    (value.yIn === undefined || isFiniteNumber(value.yIn)) &&
     isFiniteNumber(value.widthIn) &&
     isFiniteNumber(value.heightIn) &&
+    (value.placed === undefined || typeof value.placed === 'boolean') &&
     (value.clearanceOverrideIn === undefined || isFiniteNumber(value.clearanceOverrideIn))
   );
 }
@@ -4020,6 +4516,8 @@ function isWallFeatureType(value: unknown): value is WallFeatureType {
     value === 'bed' ||
     value === 'console' ||
     value === 'desk' ||
+    value === 'file-cabinet' ||
+    value === 'lamp' ||
     value === 'bookcase' ||
     value === 'fireplace' ||
     value === 'tv' ||

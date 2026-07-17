@@ -45,12 +45,24 @@ describe('design JSON files', () => {
       wallFeatures: [
         {
           id: 'desk',
-          type: 'desk',
-          name: 'Desk',
+          type: 'file-cabinet',
+          name: 'File cabinet',
           xIn: 8,
+          yIn: 20,
           widthIn: 72,
           heightIn: 30,
+          placed: true,
           clearanceOverrideIn: 10,
+        },
+        {
+          id: 'lamp',
+          type: 'lamp',
+          name: 'Lamp',
+          xIn: 0,
+          yIn: 0,
+          widthIn: 14,
+          heightIn: 36,
+          placed: false,
         },
       ],
     };
@@ -110,5 +122,47 @@ describe('design JSON files', () => {
       wallFeatures: [],
     });
     expect(parsed.features.measurementReferenceMode).toBe('relative');
+  });
+
+  it('keeps legacy wall features valid when placement fields are missing', () => {
+    const parsed = parseDesignFile(
+      JSON.stringify({
+        sections: [
+          {
+            id: 'section-1',
+            name: 'Section 1',
+            widthIn: 96,
+            heightIn: 84,
+            cornerAfter: 'none',
+          },
+        ],
+        pieces: [{ id: 'piece-1', label: 'Piece 1', widthIn: 16, heightIn: 20 }],
+        placements: [],
+        autoPlacementSettings: {
+          wallSetupMode: 'full-wall-with-features',
+          context: { kind: 'blank', viewingPosture: 'seated' },
+          layoutPreference: 'row',
+          wallFeatures: [
+            {
+              id: 'sofa',
+              type: 'sofa',
+              name: 'Sofa',
+              xIn: 12,
+              widthIn: 84,
+              heightIn: 30,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(parsed.autoPlacementSettings.wallFeatures[0]).toEqual({
+      id: 'sofa',
+      type: 'sofa',
+      name: 'Sofa',
+      xIn: 12,
+      widthIn: 84,
+      heightIn: 30,
+    });
   });
 });

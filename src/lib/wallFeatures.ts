@@ -1,4 +1,11 @@
-import type { AutoPlacementLayoutPreference, WallFeature, WallFeatureType } from '../types';
+import type {
+  AutoPlacementLayoutPreference,
+  WallFeature,
+  WallFeatureType,
+  WallSection,
+} from '../types';
+import { getWallBounds, getWallLayout } from './wall';
+import { roundToPrecision } from './units';
 
 export type WallFeatureAnchor = 'center' | 'usable-span' | 'none';
 
@@ -48,6 +55,16 @@ const FEATURE_RULES: Record<WallFeatureType, WallFeatureRuleDefaults> = {
     targetGroupWidthRatio: { min: 0.45, ideal: 0.6, max: 0.75 },
     preferredFamilies: ['row', 'salon'],
   },
+  'file-cabinet': {
+    clearanceIn: 4,
+    preferredAnchor: 'none',
+    preferredFamilies: [],
+  },
+  lamp: {
+    clearanceIn: 3,
+    preferredAnchor: 'none',
+    preferredFamilies: [],
+  },
   bookcase: {
     clearanceIn: 4,
     preferredAnchor: 'none',
@@ -90,4 +107,54 @@ export function resolveWallFeatureRule(feature: WallFeature): ResolvedWallFeatur
     targetGroupWidthRatio: defaults.targetGroupWidthRatio,
     preferredFamilies: defaults.preferredFamilies,
   };
+}
+
+export function movePlacedFeaturesWithWallSection(
+  features: WallFeature[],
+  sectionsBefore: WallSection[],
+  sectionsAfter: WallSection[],
+  sectionId: string,
+): WallFeature[] {
+  const previousLayout = getWallLayout(sectionsBefore).find(
+    (layout) => layout.section.id === sectionId,
+  );
+  const nextLayout = getWallLayout(sectionsAfter).find((layout) => layout.section.id === sectionId);
+  if (!previousLayout || !nextLayout) {
+    return features;
+  }
+
+  const deltaXIn = nextLayout.offsetXIn - previousLayout.offsetXIn;
+  const deltaYIn = nextLayout.offsetYIn - previousLayout.offsetYIn;
+  if (deltaXIn === 0 && deltaYIn === 0) {
+    return features;
+  }
+
+  return features.map((feature) => {
+    if (feature.placed === false) {
+      return feature;
+    }
+
+    const yIn = feature.yIn ?? getLegacyFeatureYIn(feature, sectionsBefore);
+    const centerXIn = feature.xIn + feature.widthIn / 2;
+    const centerYIn = yIn + feature.heightIn / 2;
+    const { section, offsetXIn, offsetYIn } = previousLayout;
+    const belongsToSection =
+      centerXIn >= offsetXIn &&
+      centerXIn <= offsetXIn + section.widthIn &&
+      centerYIn >= offsetYIn &&
+      centerYIn <= offsetYIn + section.heightIn;
+
+    return belongsToSection
+      ? {
+          ...feature,
+          xIn: roundToPrecision(feature.xIn + deltaXIn),
+          yIn: roundToPrecision(yIn + deltaYIn),
+        }
+      : feature;
+  });
+}
+
+function getLegacyFeatureYIn(feature: WallFeature, sections: WallSection[]): number {
+  const bounds = getWallBounds(sections);
+  return bounds.maxY - feature.heightIn - resolveWallFeatureRule(feature).clearanceIn;
 }

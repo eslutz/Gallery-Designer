@@ -5,6 +5,7 @@ import type {
   MeasurementInstruction,
   Placement,
   Unit,
+  WallFeature,
   WallSection,
 } from '../types';
 import { getHookPoints } from './hooks';
@@ -284,10 +285,18 @@ function buildDiagramFragment(
   const featureMarkup =
     input.autoPlacementSettings?.wallSetupMode === 'full-wall-with-features'
       ? input.autoPlacementSettings.wallFeatures
+          .filter(isPlacedWallFeature)
           .map((feature) => {
             const rule = resolveWallFeatureRule(feature);
-            const top = bounds.maxY - feature.heightIn - rule.clearanceIn;
-            return `<rect x="${number(originX + feature.xIn * scale)}" y="${number(originY + top * scale)}" width="${number(feature.widthIn * scale)}" height="${number((bounds.maxY - top) * scale)}" fill="#d6e0e7" fill-opacity="0.62" stroke="#607080" stroke-width="2" stroke-dasharray="8 8"><title>${escapeXml(feature.name)} blocked area</title></rect>`;
+            const featureTop = feature.yIn ?? bounds.maxY - feature.heightIn - rule.clearanceIn;
+            const blockedTop =
+              typeof feature.yIn === 'number'
+                ? Math.max(bounds.minY, featureTop - rule.clearanceIn)
+                : featureTop;
+            const blockedBottom =
+              typeof feature.yIn === 'number' ? featureTop + feature.heightIn : bounds.maxY;
+            const blockedHeight = blockedBottom - blockedTop;
+            return `<rect x="${number(originX + feature.xIn * scale)}" y="${number(originY + blockedTop * scale)}" width="${number(feature.widthIn * scale)}" height="${number(blockedHeight * scale)}" fill="#d6e0e7" fill-opacity="0.62" stroke="#607080" stroke-width="2" stroke-dasharray="8 8"><title>${escapeXml(feature.name)} blocked area</title></rect><rect x="${number(originX + feature.xIn * scale)}" y="${number(originY + featureTop * scale)}" width="${number(feature.widthIn * scale)}" height="${number(feature.heightIn * scale)}" fill="#9fb0bd" fill-opacity="0.5" stroke="#607080" stroke-width="2"><title>${escapeXml(feature.name)}</title></rect>`;
           })
           .join('')
       : '';
@@ -673,6 +682,10 @@ export function buildPdfMeasurementRowLayout(
     sideLines,
     hookLines,
   };
+}
+
+function isPlacedWallFeature(feature: WallFeature): boolean {
+  return feature.placed !== false;
 }
 
 function splitPdfText(doc: jsPDF, value: string, maxWidth: number): string[] {

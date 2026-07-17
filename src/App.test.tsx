@@ -192,11 +192,65 @@ describe('Gallery Designer app', () => {
     await user.selectOptions(screen.getByLabelText('Feature 1 type'), 'sofa');
     await user.clear(screen.getByLabelText('Feature 1 width (in)'));
     await user.type(screen.getByLabelText('Feature 1 width (in)'), '72');
-    await user.clear(screen.getByLabelText('Feature 1 left edge (in)'));
-    await user.type(screen.getByLabelText('Feature 1 left edge (in)'), '12');
     await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
 
     expect(screen.getByRole('status')).toHaveTextContent(/full wall/i);
+  });
+
+  it('stages new furniture and feature items in full-wall mode without a left-edge field', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.selectOptions(screen.getByLabelText('Wall setup'), 'full-wall-with-features');
+    await user.click(screen.getByRole('button', { name: /Add furniture or feature/i }));
+
+    expect(screen.queryByLabelText('Feature 1 left edge (in)')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /Drag Wall feature 1 from staging/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'File cabinet' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Lamp' })).toBeInTheDocument();
+  });
+
+  it('moves furniture and features from staging to the wall and back to staging', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.selectOptions(screen.getByLabelText('Wall setup'), 'full-wall-with-features');
+    await user.click(screen.getByRole('button', { name: /Add furniture or feature/i }));
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    mockCanvasProjection(canvas);
+    mockPointerTarget(canvas);
+
+    const stagedFeature = screen.getByRole('button', { name: /Drag Wall feature 1 from staging/i });
+    act(() => {
+      fireEvent.pointerDown(stagedFeature, { pointerId: 1, clientX: 50, clientY: 50 });
+      window.dispatchEvent(new MouseEvent('pointermove', { clientX: 60, clientY: 60 }));
+      window.dispatchEvent(new MouseEvent('pointerup', { clientX: 60, clientY: 60 }));
+    });
+
+    const placedFeature = screen.getByRole('button', { name: /Move Wall feature 1/i });
+    expect(placedFeature).toBeInTheDocument();
+
+    const stagingTray = screen.getByRole('region', { name: /Art staging tray/i });
+    mockPointerTarget(stagingTray);
+    act(() => {
+      placedFeature.dispatchEvent(
+        new MouseEvent('pointerdown', {
+          bubbles: true,
+          clientX: 60,
+          clientY: 60,
+        }),
+      );
+      window.dispatchEvent(new MouseEvent('pointermove', { clientX: 20, clientY: 200 }));
+      window.dispatchEvent(new MouseEvent('pointerup', { clientX: 20, clientY: 200 }));
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /Drag Wall feature 1 from staging/i }),
+      ).toBeInTheDocument(),
+    );
   });
 
   it('keeps manually placed art fixed while auto-placing the remaining pieces and supports undo', async () => {
@@ -470,6 +524,67 @@ describe('Gallery Designer app', () => {
     expect(Number(piece.getAttribute('y'))).toBe(startY + 1);
   });
 
+  it('clears furniture selection when selecting art on the wall', () => {
+    localStorage.setItem(
+      'gallery-designer-state-v1',
+      JSON.stringify({
+        sections: [
+          {
+            id: 'section-1',
+            name: 'Section 1',
+            widthIn: 100,
+            heightIn: 80,
+            cornerAfter: 'none',
+            xIn: 0,
+            yIn: 0,
+          },
+        ],
+        pieces: [{ id: 'poster', label: 'Poster', widthIn: 20, heightIn: 20 }],
+        placements: [{ pieceId: 'poster', sectionId: 'section-1', xIn: 20, yIn: 20 }],
+        autoPlacementSettings: {
+          wallSetupMode: 'full-wall-with-features',
+          context: { kind: 'blank', viewingPosture: 'seated' },
+          layoutPreference: 'auto',
+          wallFeatures: [
+            {
+              id: 'cabinet',
+              type: 'file-cabinet',
+              name: 'File Cabinet',
+              xIn: 38,
+              yIn: 28,
+              widthIn: 24,
+              heightIn: 30,
+              placed: true,
+            },
+          ],
+        },
+      }),
+    );
+    render(<App />);
+
+    const cabinet = screen.getByRole('button', { name: /^Move File Cabinet$/i });
+    const poster = screen.getByRole('button', { name: /^Move Poster$/i });
+    fireEvent.keyDown(cabinet, { key: 'Enter' });
+    expect(cabinet).toHaveAttribute('aria-pressed', 'true');
+
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    mockCanvasProjection(canvas);
+    act(() => {
+      poster.dispatchEvent(
+        new MouseEvent('pointerdown', { bubbles: true, clientX: 30, clientY: 30 }),
+      );
+      window.dispatchEvent(new MouseEvent('pointerup', { clientX: 30, clientY: 30 }));
+    });
+
+    expect(cabinet).toHaveAttribute('aria-pressed', 'false');
+    expect(poster).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+
+    expect(poster).toHaveAttribute('x', '20.25');
+    expect(cabinet).toHaveAttribute('x', '38');
+  });
+
   it('does not nudge a piece while editing a form field', () => {
     render(<App />);
 
@@ -664,6 +779,123 @@ describe('Gallery Designer app', () => {
     });
 
     expect(screen.getByRole('button', { name: /^Move Poster$/i })).toHaveAttribute('x', '10');
+  });
+
+  it('moves placed furniture with the wall section that contains it', () => {
+    localStorage.setItem(
+      'gallery-designer-state-v1',
+      JSON.stringify({
+        sections: [
+          {
+            id: 'section-1',
+            name: 'Section 1',
+            widthIn: 100,
+            heightIn: 80,
+            cornerAfter: 'none',
+            xIn: 0,
+            yIn: 0,
+          },
+        ],
+        pieces: [],
+        placements: [],
+        autoPlacementSettings: {
+          wallSetupMode: 'full-wall-with-features',
+          context: { kind: 'blank', viewingPosture: 'seated' },
+          layoutPreference: 'auto',
+          wallFeatures: [
+            {
+              id: 'cabinet',
+              type: 'file-cabinet',
+              name: 'File Cabinet',
+              xIn: 20,
+              yIn: 28,
+              widthIn: 24,
+              heightIn: 30,
+              placed: true,
+            },
+          ],
+        },
+      }),
+    );
+    render(<App />);
+
+    const section = screen.getByRole('button', { name: /^Move Section 1$/i });
+    const cabinet = screen.getByRole('button', { name: /^Move File Cabinet$/i });
+    expect(cabinet).toHaveAttribute('x', '20');
+    expect(cabinet).toHaveAttribute('y', '28');
+
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    mockCanvasProjection(canvas);
+    act(() => {
+      section.dispatchEvent(
+        new MouseEvent('pointerdown', { bubbles: true, clientX: 0, clientY: 0 }),
+      );
+      window.dispatchEvent(new MouseEvent('pointermove', { clientX: 12, clientY: 8 }));
+      window.dispatchEvent(new MouseEvent('pointerup', { clientX: 12, clientY: 8 }));
+    });
+
+    expect(section).toHaveAttribute('x', '12');
+    expect(section).toHaveAttribute('y', '8');
+    expect(cabinet).toHaveAttribute('x', '32');
+    expect(cabinet).toHaveAttribute('y', '36');
+
+    fireEvent.keyDown(section, { key: 'ArrowRight', shiftKey: true });
+
+    expect(section).toHaveAttribute('x', '13');
+    expect(cabinet).toHaveAttribute('x', '33');
+    expect(cabinet).toHaveAttribute('y', '36');
+  });
+
+  it('nudges furniture horizontally even when it starts on an alignment guide', () => {
+    localStorage.setItem(
+      'gallery-designer-state-v1',
+      JSON.stringify({
+        sections: [
+          {
+            id: 'section-1',
+            name: 'Section 1',
+            widthIn: 100,
+            heightIn: 80,
+            cornerAfter: 'none',
+            xIn: 0,
+            yIn: 0,
+          },
+        ],
+        pieces: [],
+        placements: [],
+        autoPlacementSettings: {
+          wallSetupMode: 'full-wall-with-features',
+          context: { kind: 'blank', viewingPosture: 'seated' },
+          layoutPreference: 'auto',
+          wallFeatures: [
+            {
+              id: 'cabinet',
+              type: 'file-cabinet',
+              name: 'File Cabinet',
+              xIn: 38,
+              yIn: 28,
+              widthIn: 24,
+              heightIn: 30,
+              placed: true,
+            },
+          ],
+        },
+      }),
+    );
+    render(<App />);
+
+    const cabinet = screen.getByRole('button', { name: /^Move File Cabinet$/i });
+    fireEvent.keyDown(cabinet, { key: 'ArrowRight' });
+    expect(cabinet).toHaveAttribute('x', '38.25');
+
+    fireEvent.keyDown(cabinet, { key: 'ArrowLeft' });
+    expect(cabinet).toHaveAttribute('x', '38');
+
+    fireEvent.keyDown(cabinet, { key: 'ArrowDown' });
+    expect(cabinet).toHaveAttribute('y', '28.25');
+
+    fireEvent.keyDown(cabinet, { key: 'ArrowUp' });
+    expect(cabinet).toHaveAttribute('y', '28');
   });
 
   it('falls back safely when persisted state contains invalid arrays', () => {

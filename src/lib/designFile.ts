@@ -196,6 +196,12 @@ function parseWallFeature(value: unknown): WallFeature {
     widthIn: positiveNumber(parsed.widthIn, 'wall feature width'),
     heightIn: Math.max(0, finiteNumber(parsed.heightIn, 0)),
   };
+  if (Number.isFinite(parsed.yIn)) {
+    feature.yIn = Math.max(0, Number(parsed.yIn));
+  }
+  if (typeof parsed.placed === 'boolean') {
+    feature.placed = parsed.placed;
+  }
   return Number.isFinite(parsed.clearanceOverrideIn)
     ? { ...feature, clearanceOverrideIn: Math.max(0, Number(parsed.clearanceOverrideIn)) }
     : feature;
@@ -206,6 +212,8 @@ function parseWallFeatureType(value: unknown): WallFeatureType {
     value === 'bed' ||
     value === 'console' ||
     value === 'desk' ||
+    value === 'file-cabinet' ||
+    value === 'lamp' ||
     value === 'bookcase' ||
     value === 'fireplace' ||
     value === 'tv' ||

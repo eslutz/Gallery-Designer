@@ -1,4 +1,4 @@
-import type { ArtPiece, EditorFeatures, Placement, WallSection } from '../types';
+import type { ArtPiece, EditorFeatures, Placement, WallFeature, WallSection } from '../types';
 import { globalRectForPlacement } from './placement';
 import { roundToPrecision } from './units';
 import {
@@ -15,6 +15,16 @@ interface SnapInput {
   pieces: ArtPiece[];
   placements: Placement[];
   features: EditorFeatures;
+  featureRects?: WallFeature[];
+}
+
+interface FeatureSnapInput {
+  feature: WallFeature;
+  sections: WallSection[];
+  pieces: ArtPiece[];
+  placements: Placement[];
+  features: EditorFeatures;
+  featureRects: WallFeature[];
 }
 
 interface SnapAxisCandidate {
@@ -27,6 +37,14 @@ interface AxisTargets {
   y: number[];
 }
 
+interface SnapRect {
+  id: string;
+  left: number;
+  top: number;
+  widthIn: number;
+  heightIn: number;
+}
+
 export function applyPlacementFeatures({
   placement,
   piece,
@@ -34,62 +52,114 @@ export function applyPlacementFeatures({
   pieces,
   placements,
   features,
+  featureRects = [],
 }: SnapInput): Placement {
-  let next = placement;
+  const offsetX = getSectionOffsetX(sections, placement.sectionId);
+  const offsetY = getSectionOffsetY(sections, placement.sectionId);
+  const snapped = applyRectPlacementFeatures({
+    rect: {
+      id: placement.pieceId,
+      left: offsetX + placement.xIn,
+      top: offsetY + placement.yIn,
+      widthIn: piece.widthIn,
+      heightIn: piece.heightIn,
+    },
+    sections,
+    features,
+    staticRects: [
+      ...artRectsFromPlacements(sections, pieces, placements, placement.pieceId),
+      ...featureRectsFromFeatures(featureRects),
+    ],
+  });
+
+  return {
+    ...placement,
+    xIn: roundToPrecision(snapped.left - offsetX),
+    yIn: roundToPrecision(snapped.top - offsetY),
+  };
+}
+
+export function applyFeaturePlacementFeatures({
+  feature,
+  sections,
+  pieces,
+  placements,
+  features,
+  featureRects,
+}: FeatureSnapInput): Pick<WallFeature, 'xIn' | 'yIn'> {
+  const snapped = applyRectPlacementFeatures({
+    rect: {
+      id: feature.id,
+      left: feature.xIn,
+      top: feature.yIn ?? 0,
+      widthIn: feature.widthIn,
+      heightIn: feature.heightIn,
+    },
+    sections,
+    features,
+    staticRects: [
+      ...artRectsFromPlacements(sections, pieces, placements, ''),
+      ...featureRectsFromFeatures(featureRects.filter((candidate) => candidate.id !== feature.id)),
+    ],
+  });
+
+  return {
+    xIn: roundToPrecision(snapped.left),
+    yIn: roundToPrecision(snapped.top),
+  };
+}
+
+function applyRectPlacementFeatures({
+  rect,
+  sections,
+  features,
+  staticRects,
+}: {
+  rect: SnapRect;
+  sections: WallSection[];
+  features: EditorFeatures;
+  staticRects: SnapRect[];
+}): Pick<SnapRect, 'left' | 'top'> {
+  let next = rect;
 
   if (features.snapToGrid && features.gridSizeIn > 0) {
     next = {
       ...next,
-      xIn: roundToPrecision(next.xIn, features.gridSizeIn),
-      yIn: roundToPrecision(next.yIn, features.gridSizeIn),
+      left: roundToPrecision(next.left, features.gridSizeIn),
+      top: roundToPrecision(next.top, features.gridSizeIn),
     };
   }
 
   const bufferTolerance = Math.max(0.125, features.alignmentToleranceIn);
 
   if (features.wallEdgeBuffer && features.wallEdgeBufferGapIn > 0) {
-    next = snapToTargets(
+    next = snapRectToTargets(
       next,
-      piece,
-      sections,
       wallEdgeBufferTargets(sections, features.wallEdgeBufferGapIn),
       bufferTolerance,
     );
   }
 
   if (features.artPieceBuffer && features.artPieceBufferGapIn > 0) {
-    next = snapToTargets(
+    next = snapRectToTargets(
       next,
-      piece,
-      sections,
-      artPieceBufferTargets(
-        sections,
-        pieces,
-        placements,
-        placement.pieceId,
-        features.artPieceBufferGapIn,
-      ),
+      bufferTargets(staticRects, features.artPieceBufferGapIn),
       bufferTolerance,
     );
   }
 
-  if (!features.snapToAlignment || features.alignmentToleranceIn <= 0) {
-    return next;
+  if (features.snapToAlignment && features.alignmentToleranceIn > 0) {
+    next = snapRectToAlignment(next, sections, staticRects, features.alignmentToleranceIn);
   }
 
-  return snapToAlignment(next, piece, sections, pieces, placements, features.alignmentToleranceIn);
+  return {
+    left: next.left,
+    top: next.top,
+  };
 }
 
-function snapToTargets(
-  placement: Placement,
-  piece: ArtPiece,
-  sections: WallSection[],
-  targets: AxisTargets,
-  toleranceIn: number,
-): Placement {
-  const offsetX = getSectionOffsetX(sections, placement.sectionId);
-  const offsetY = getSectionOffsetY(sections, placement.sectionId);
-  const moving = globalRectForPlacement(sections, placement, piece);
+function snapRectToTargets(rect: SnapRect, targets: AxisTargets, toleranceIn: number): SnapRect {
+  const moving = rectEdges(rect);
   const xDelta = closestDelta(
     [
       { movingValue: moving.left, targetValue: 0 },
@@ -108,9 +178,9 @@ function snapToTargets(
   );
 
   return {
-    ...placement,
-    xIn: xDelta === undefined ? placement.xIn : roundToPrecision(moving.left + xDelta - offsetX),
-    yIn: yDelta === undefined ? placement.yIn : roundToPrecision(moving.top + yDelta - offsetY),
+    ...rect,
+    left: xDelta === undefined ? rect.left : roundToPrecision(moving.left + xDelta),
+    top: yDelta === undefined ? rect.top : roundToPrecision(moving.top + yDelta),
   };
 }
 
@@ -129,44 +199,65 @@ function wallEdgeBufferTargets(sections: WallSection[], gapIn: number): AxisTarg
   return targets;
 }
 
-function artPieceBufferTargets(
-  sections: WallSection[],
-  pieces: ArtPiece[],
-  placements: Placement[],
-  movingPieceId: string,
-  gapIn: number,
-): AxisTargets {
+function bufferTargets(rects: SnapRect[], gapIn: number): AxisTargets {
   const targets: AxisTargets = { x: [], y: [] };
 
-  for (const placement of placements) {
-    if (placement.pieceId === movingPieceId) {
-      continue;
-    }
-    const piece = pieces.find((candidate) => candidate.id === placement.pieceId);
-    if (!piece) {
-      continue;
-    }
-    const rect = globalRectForPlacement(sections, placement, piece);
-    targets.x.push(rect.left - gapIn, rect.right + gapIn);
-    targets.y.push(rect.top - gapIn, rect.bottom + gapIn);
+  for (const rect of rects) {
+    targets.x.push(rect.left - gapIn, rect.left + rect.widthIn + gapIn);
+    targets.y.push(rect.top - gapIn, rect.top + rect.heightIn + gapIn);
   }
 
   return targets;
 }
 
-function snapToAlignment(
-  placement: Placement,
-  piece: ArtPiece,
+function artRectsFromPlacements(
   sections: WallSection[],
   pieces: ArtPiece[],
   placements: Placement[],
+  movingPieceId: string,
+): SnapRect[] {
+  return placements.flatMap((placement) => {
+    if (placement.pieceId === movingPieceId) {
+      return [];
+    }
+    const piece = pieces.find((candidate) => candidate.id === placement.pieceId);
+    if (!piece) {
+      return [];
+    }
+    const rect = globalRectForPlacement(sections, placement, piece);
+    return [
+      {
+        id: placement.pieceId,
+        left: rect.left,
+        top: rect.top,
+        widthIn: piece.widthIn,
+        heightIn: piece.heightIn,
+      },
+    ];
+  });
+}
+
+function featureRectsFromFeatures(features: WallFeature[]): SnapRect[] {
+  return features
+    .filter((feature) => feature.placed !== false && typeof feature.yIn === 'number')
+    .map((feature) => ({
+      id: feature.id,
+      left: feature.xIn,
+      top: feature.yIn ?? 0,
+      widthIn: feature.widthIn,
+      heightIn: feature.heightIn,
+    }));
+}
+
+function snapRectToAlignment(
+  rect: SnapRect,
+  sections: WallSection[],
+  staticRects: SnapRect[],
   toleranceIn: number,
-): Placement {
-  const offsetX = getSectionOffsetX(sections, placement.sectionId);
-  const offsetY = getSectionOffsetY(sections, placement.sectionId);
-  const moving = globalRectForPlacement(sections, placement, piece);
-  const targetX = alignmentTargetsX(sections, pieces, placements, placement.pieceId);
-  const targetY = alignmentTargetsY(sections, pieces, placements, placement.pieceId);
+): SnapRect {
+  const moving = rectEdges(rect);
+  const targetX = alignmentTargetsX(sections, staticRects);
+  const targetY = alignmentTargetsY(sections, staticRects);
 
   const xDelta = closestDelta(
     [
@@ -188,60 +279,39 @@ function snapToAlignment(
   );
 
   return {
-    ...placement,
-    xIn: xDelta === undefined ? placement.xIn : roundToPrecision(moving.left + xDelta - offsetX),
-    yIn: yDelta === undefined ? placement.yIn : roundToPrecision(moving.top + yDelta - offsetY),
+    ...rect,
+    left: xDelta === undefined ? rect.left : roundToPrecision(moving.left + xDelta),
+    top: yDelta === undefined ? rect.top : roundToPrecision(moving.top + yDelta),
   };
 }
 
-function alignmentTargetsX(
-  sections: WallSection[],
-  pieces: ArtPiece[],
-  placements: Placement[],
-  movingPieceId: string,
-): number[] {
+function alignmentTargetsX(sections: WallSection[], rects: SnapRect[]): number[] {
   const bounds = getWallBounds(sections);
   return [
     bounds.minX,
     bounds.maxX,
     (bounds.minX + bounds.maxX) / 2,
-    ...placements.flatMap((placement) => {
-      if (placement.pieceId === movingPieceId) {
-        return [];
-      }
-      const piece = pieces.find((candidate) => candidate.id === placement.pieceId);
-      if (!piece) {
-        return [];
-      }
-      const rect = globalRectForPlacement(sections, placement, piece);
-      return [rect.left, rect.right, (rect.left + rect.right) / 2];
-    }),
+    ...rects.flatMap((rect) => [rect.left, rect.left + rect.widthIn, rect.left + rect.widthIn / 2]),
   ];
 }
 
-function alignmentTargetsY(
-  sections: WallSection[],
-  pieces: ArtPiece[],
-  placements: Placement[],
-  movingPieceId: string,
-): number[] {
+function alignmentTargetsY(sections: WallSection[], rects: SnapRect[]): number[] {
   const bounds = getWallBounds(sections);
   return [
     bounds.minY,
     bounds.maxY,
     (bounds.minY + bounds.maxY) / 2,
-    ...placements.flatMap((placement) => {
-      if (placement.pieceId === movingPieceId) {
-        return [];
-      }
-      const piece = pieces.find((candidate) => candidate.id === placement.pieceId);
-      if (!piece) {
-        return [];
-      }
-      const rect = globalRectForPlacement(sections, placement, piece);
-      return [rect.top, rect.bottom, (rect.top + rect.bottom) / 2];
-    }),
+    ...rects.flatMap((rect) => [rect.top, rect.top + rect.heightIn, rect.top + rect.heightIn / 2]),
   ];
+}
+
+function rectEdges(rect: SnapRect) {
+  return {
+    left: rect.left,
+    top: rect.top,
+    right: rect.left + rect.widthIn,
+    bottom: rect.top + rect.heightIn,
+  };
 }
 
 function closestDelta(

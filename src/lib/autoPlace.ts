@@ -336,7 +336,7 @@ function resolveSettings(options: AutoPlacementOptions): ResolvedSettings {
     wallSetupMode: settings.wallSetupMode,
     wallFeatures:
       settings.wallSetupMode === 'full-wall-with-features'
-        ? settings.wallFeatures.map((feature) => ({
+        ? settings.wallFeatures.filter(isPlacedWallFeature).map((feature) => ({
             feature,
             rule: resolveWallFeatureRule(feature),
           }))
@@ -1438,13 +1438,27 @@ function featureBlockRect(
   wallFeature: ResolvedWallFeature,
   bounds: ReturnType<typeof getWallBounds>,
 ): Rect {
-  const top = bounds.maxY - wallFeature.feature.heightIn - wallFeature.rule.clearanceIn;
+  if (typeof wallFeature.feature.yIn !== 'number') {
+    const top = bounds.maxY - wallFeature.feature.heightIn - wallFeature.rule.clearanceIn;
+    return {
+      left: wallFeature.feature.xIn,
+      top,
+      right: wallFeature.feature.xIn + wallFeature.feature.widthIn,
+      bottom: bounds.maxY,
+    };
+  }
+
+  const top = Math.max(bounds.minY, wallFeature.feature.yIn - wallFeature.rule.clearanceIn);
   return {
     left: wallFeature.feature.xIn,
     top,
     right: wallFeature.feature.xIn + wallFeature.feature.widthIn,
-    bottom: bounds.maxY,
+    bottom: wallFeature.feature.yIn + wallFeature.feature.heightIn,
   };
+}
+
+function isPlacedWallFeature(feature: WallFeature): boolean {
+  return feature.placed !== false;
 }
 
 function rectCanFitSomewhere(

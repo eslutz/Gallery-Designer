@@ -776,11 +776,13 @@ button:not(:disabled):active {
 .section-list,
 .piece-list {
   display: grid;
+  align-content: start;
   gap: 12px;
 }
 
 .setup-row {
   display: grid;
+  align-content: start;
   gap: 10px;
   padding: 12px;
   border: 1px solid var(--row-border);
@@ -1121,6 +1123,7 @@ select:focus,
 }
 
 .canvas-card {
+  flex: 0 0 auto;
   min-height: 460px;
   padding: 14px;
   overflow: hidden;
@@ -1178,6 +1181,7 @@ select:focus,
 .app-shell.is-wall-pannable .wall-pan-surface,
 .wall-section,
 .piece rect,
+.wall-feature-block,
 .staged-piece {
   cursor: grab;
 }
@@ -1206,12 +1210,25 @@ select:focus,
   pointer-events: none;
 }
 
-.wall-feature-block {
+.wall-feature-clearance {
   fill: rgba(75, 100, 123, 0.16);
   stroke: rgba(75, 100, 123, 0.42);
   stroke-width: 0.35;
   stroke-dasharray: 1.5 1;
   pointer-events: none;
+}
+
+.wall-feature-block {
+  fill: rgba(92, 114, 134, 0.42);
+  stroke: rgba(57, 75, 92, 0.7);
+  stroke-width: 0.45;
+  filter: var(--piece-shadow);
+}
+
+.wall-feature.selected .wall-feature-block {
+  fill: rgba(126, 158, 180, 0.5);
+  stroke: var(--piece-selected-stroke);
+  stroke-width: 0.62;
 }
 
 .wall-edge-buffer-guide,
@@ -1253,7 +1270,8 @@ select:focus,
 }
 
 .wall-section:focus-visible,
-.piece rect:focus-visible {
+.piece rect:focus-visible,
+.wall-feature-block:focus-visible {
   outline: none;
   stroke: var(--focus-color);
   stroke-width: 1.2;
@@ -1262,6 +1280,13 @@ select:focus,
 
 .piece-label {
   fill: var(--piece-label);
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.wall-feature-label {
+  fill: var(--piece-label);
+  font-size: 3px;
   font-weight: 800;
   pointer-events: none;
 }
@@ -1295,9 +1320,19 @@ select:focus,
 
 .staging-header {
   display: flex;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   align-items: start;
+}
+
+.staging-header .panel-title {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.staging-header .muted {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
 }
 
 .staged-piece-list {
@@ -1358,6 +1393,11 @@ select:focus,
   border-radius: 8px;
   background: var(--piece-fill);
   box-shadow: var(--staged-piece-shadow);
+}
+
+.staged-feature-preview {
+  background: rgba(92, 114, 134, 0.28);
+  border-style: dashed;
 }
 
 .staged-piece-caption {
@@ -1591,11 +1631,18 @@ th {
 
   .setup-panel {
     position: static;
+    flex: 0 0 auto;
     max-height: none;
     overflow: visible;
   }
 
+  .setup-utility-panel {
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+
   .wall-sections-panel {
+    flex: 0 0 auto;
     grid-template-rows: none;
     max-height: none;
   }
@@ -1609,7 +1656,9 @@ th {
   }
 
   .art-pieces-panel {
+    flex: 0 0 auto;
     grid-template-rows: none;
+    min-height: auto;
   }
 
   .art-pieces-panel-content {
@@ -1621,6 +1670,7 @@ th {
   }
 
   .editor-column {
+    flex: 0 0 auto;
     min-height: auto;
     overflow: visible;
     padding-bottom: 0;
@@ -1628,6 +1678,7 @@ th {
 
   .right-panel {
     position: static;
+    flex: 0 0 auto;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: start;
     min-height: auto;

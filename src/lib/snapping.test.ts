@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { applyPlacementFeatures } from './snapping';
-import type { ArtPiece, EditorFeatures, Placement, WallSection } from '../types';
+import { applyFeaturePlacementFeatures, applyPlacementFeatures } from './snapping';
+import type { ArtPiece, EditorFeatures, Placement, WallFeature, WallSection } from '../types';
 
 const sections: WallSection[] = [
   { id: 'wall', name: 'Wall', widthIn: 96, heightIn: 84, cornerAfter: 'none', xIn: 0, yIn: 0 },
@@ -131,5 +131,56 @@ describe('placement snapping features', () => {
         features: { ...baseFeatures, artPieceBuffer: true, artPieceBufferGapIn: 2 },
       }),
     ).toEqual(placement);
+  });
+
+  it('snaps dragged furniture and features to the configured grid size', () => {
+    const feature: WallFeature = {
+      id: 'lamp',
+      type: 'lamp',
+      name: 'Lamp',
+      xIn: 13.1,
+      yIn: 16.9,
+      widthIn: 14,
+      heightIn: 36,
+      placed: true,
+    };
+
+    expect(
+      applyFeaturePlacementFeatures({
+        feature,
+        sections,
+        pieces,
+        placements: [],
+        featureRects: [],
+        features: { ...baseFeatures, snapToGrid: true, gridSizeIn: 6 },
+      }),
+    ).toEqual({ xIn: 12, yIn: 18 });
+  });
+
+  it('snaps art alignment to placed furniture and feature edges', () => {
+    const placement: Placement = { pieceId: 'moving', sectionId: 'wall', xIn: 31.5, yIn: 10 };
+
+    expect(
+      applyPlacementFeatures({
+        placement,
+        piece: pieces[0],
+        sections,
+        pieces,
+        placements: [],
+        featureRects: [
+          {
+            id: 'file-cabinet',
+            type: 'file-cabinet',
+            name: 'File cabinet',
+            xIn: 10,
+            yIn: 10,
+            widthIn: 20,
+            heightIn: 28,
+            placed: true,
+          },
+        ],
+        features: { ...baseFeatures, snapToAlignment: true, alignmentToleranceIn: 2 },
+      }).xIn,
+    ).toBe(30);
   });
 });

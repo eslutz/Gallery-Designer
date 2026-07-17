@@ -83,6 +83,65 @@ describe('automatic placement', () => {
     expect(result.placements.every((placement) => placement.yIn + 18 <= 36)).toBe(true);
   });
 
+  it('keeps auto-placement out of a freely positioned feature clearance block', () => {
+    const pieces: ArtPiece[] = [
+      { id: 'one', label: 'One', widthIn: 24, heightIn: 18 },
+      { id: 'two', label: 'Two', widthIn: 24, heightIn: 18 },
+    ];
+
+    const result = autoPlacePieces(wall, pieces, {
+      settings: {
+        wallSetupMode: 'full-wall-with-features',
+        context: { kind: 'blank', viewingPosture: 'seated' },
+        layoutPreference: 'row',
+        wallFeatures: [
+          {
+            id: 'cabinet',
+            type: 'file-cabinet',
+            name: 'File cabinet',
+            xIn: 0,
+            yIn: 40,
+            widthIn: 120,
+            heightIn: 24,
+            placed: true,
+          },
+        ],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(
+      result.placements.every((placement) => placement.yIn + 18 <= 36 || placement.yIn >= 64),
+    ).toBe(true);
+  });
+
+  it('ignores staged furniture and features during auto-placement', () => {
+    const pieces: ArtPiece[] = [{ id: 'one', label: 'One', widthIn: 24, heightIn: 18 }];
+
+    const result = autoPlacePieces(wall, pieces, {
+      settings: {
+        wallSetupMode: 'full-wall-with-features',
+        context: { kind: 'blank', viewingPosture: 'seated' },
+        layoutPreference: 'row',
+        wallFeatures: [
+          {
+            id: 'cabinet',
+            type: 'file-cabinet',
+            name: 'File cabinet',
+            xIn: 0,
+            yIn: 0,
+            widthIn: 120,
+            heightIn: 96,
+            placed: false,
+          },
+        ],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
   it('keeps a mixed salon composition inside the connected wall union with quarter-inch precision', () => {
     const sections: WallSection[] = [
       { id: 'left', name: 'Left', widthIn: 60, heightIn: 84, cornerAfter: 'none', xIn: 0, yIn: 0 },

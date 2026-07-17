@@ -285,6 +285,40 @@ test('keeps responsive workspace panels contained and switches mobile measuremen
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await expectStatusMessageWithinPanel();
+
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.goto('/');
+  const constrainedThreeColumnLayout = await page.evaluate(() => {
+    const getBox = (selector: string) => {
+      const element = document.querySelector<HTMLElement>(selector);
+      if (!element) {
+        throw new Error(`Could not find ${selector}`);
+      }
+      const rect = element.getBoundingClientRect();
+      return {
+        bottom: rect.bottom,
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        top: rect.top,
+      };
+    };
+
+    return {
+      canvasCard: getBox('.canvas-card'),
+      editor: getBox('.editor-column'),
+      stagingTray: getBox('.staging-tray'),
+    };
+  });
+  expect(constrainedThreeColumnLayout.stagingTray.bottom).toBeLessThanOrEqual(
+    constrainedThreeColumnLayout.canvasCard.bottom + 1,
+  );
+  expect(constrainedThreeColumnLayout.canvasCard.scrollHeight).toBeLessThanOrEqual(
+    constrainedThreeColumnLayout.canvasCard.clientHeight + 1,
+  );
+  expect(constrainedThreeColumnLayout.editor.scrollHeight).toBeGreaterThan(
+    constrainedThreeColumnLayout.editor.clientHeight,
+  );
+
   for (const width of [988, 986, 982]) {
     await page.setViewportSize({ width, height: 900 });
     await expectStatusMessageWithinPanel();
@@ -344,9 +378,13 @@ test('keeps responsive workspace panels contained and switches mobile measuremen
   await page.goto('/');
   const editorBox = await page.locator('.editor-column').boundingBox();
   const setupBox = await page.locator('.setup-panel').boundingBox();
+  const rightPanelBox = await page.locator('.right-panel').boundingBox();
   expect(editorBox).not.toBeNull();
   expect(setupBox).not.toBeNull();
+  expect(rightPanelBox).not.toBeNull();
   expect(editorBox?.y).toBeLessThan(setupBox?.y ?? Number.POSITIVE_INFINITY);
+  expect(setupBox?.height).toBeGreaterThan(0);
+  expect(rightPanelBox?.y).toBeGreaterThanOrEqual((setupBox?.y ?? 0) + (setupBox?.height ?? 0));
   await expect(page.locator('.measurements-table')).toHaveCSS('display', 'none');
 
   const stagedPiece = page.getByRole('button', { name: 'Drag Piece 1 from staging' });
