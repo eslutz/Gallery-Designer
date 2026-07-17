@@ -1,10 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import jsPDF from 'jspdf';
 import type { ArtPiece, Placement, WallSection } from '../types';
 import { buildMeasurementInstructions } from './measurements';
+import { buildMeasurementTableRows } from './measurementTable';
 import {
+  buildPdfMeasurementRowLayout,
   buildExportSheetSvg,
   downloadBlob,
   fitWithin,
+  getPdfMeasurementInitialRequiredHeight,
+  getSvgMeasurementRowHeight,
   renderSvgToPngBlob,
   type ExportDesignInput,
 } from './exportDesign';
@@ -57,6 +62,44 @@ function makeInput(): ExportDesignInput {
     pieces,
     placements,
     measurements: buildMeasurementInstructions(sections, pieces, placements, 'in'),
+    unit: 'in',
+  };
+}
+
+function makeTwoHookInput(): ExportDesignInput {
+  const longPiece: ArtPiece = {
+    id: 'piece-two-hook',
+    label: 'Wide framed city panorama with very long descriptive label',
+    widthIn: 36,
+    heightIn: 18,
+    hookSpec: {
+      count: 2,
+      leftTopOffsetIn: 3,
+      leftSideOffsetIn: 5,
+      rightTopOffsetIn: 3,
+      rightSideOffsetIn: 5,
+    },
+  };
+  const inputSections: WallSection[] = [
+    {
+      id: 'wall-wide',
+      name: 'Long hallway section with a descriptive name',
+      widthIn: 96,
+      heightIn: 72,
+      cornerAfter: 'none',
+      xIn: 0,
+      yIn: 0,
+    },
+  ];
+  const inputPlacements: Placement[] = [
+    { pieceId: longPiece.id, sectionId: 'wall-wide', xIn: 15, yIn: 12 },
+  ];
+
+  return {
+    sections: inputSections,
+    pieces: [longPiece],
+    placements: inputPlacements,
+    measurements: buildMeasurementInstructions(inputSections, [longPiece], inputPlacements, 'in'),
     unit: 'in',
   };
 }
@@ -118,6 +161,18 @@ describe('buildExportSheetSvg', () => {
     expect(inventoryMarkup).not.toContain('height="52"');
   });
 
+  it('wraps long hook instructions in PNG measurement rows', () => {
+    const input = makeTwoHookInput();
+    const row = buildMeasurementTableRows(input.measurements, { includeDimensions: true })[0];
+    const { markup } = buildExportSheetSvg(input);
+    const measurementMarkup = markup.slice(markup.indexOf('Installation measurements'));
+
+    expect(row.hooks).toContain('; Right hook:');
+    expect(getSvgMeasurementRowHeight(row)).toBeGreaterThan(78);
+    expect(measurementMarkup).toContain('<tspan');
+    expect(measurementMarkup).not.toContain(`>${row.hooks}</text>`);
+  });
+
   it('matches the app wall diagram with exterior edges and outside section labels', () => {
     const alignedInput = makeInput();
     alignedInput.sections = [
@@ -151,6 +206,28 @@ describe('buildExportSheetSvg', () => {
     expect(diagramMarkup).toContain('stroke="#607080" stroke-width="3"');
     expect(verticalExteriorLines).toHaveLength(2);
     expect(mainLabelY).toBeLessThan(mainWallY);
+  });
+});
+
+describe('PDF measurement table layout', () => {
+  it('reserves space for the title, header, and first row before drawing the table', () => {
+    const input = makeTwoHookInput();
+    const rows = buildMeasurementTableRows(input.measurements, { includeDimensions: true });
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
+    const firstRowLayout = buildPdfMeasurementRowLayout(doc, rows[0]);
+
+    expect(getPdfMeasurementInitialRequiredHeight(doc, rows)).toBe(42 + firstRowLayout.rowHeight);
+  });
+
+  it('grows PDF rows when labels, references, or hooks wrap', () => {
+    const input = makeTwoHookInput();
+    const row = buildMeasurementTableRows(input.measurements, { includeDimensions: true })[0];
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
+    const layout = buildPdfMeasurementRowLayout(doc, row);
+
+    expect(layout.hookLines.length).toBeGreaterThan(1);
+    expect(layout.pieceLines.length + layout.sectionLines.length).toBeGreaterThan(2);
+    expect(layout.rowHeight).toBeGreaterThan(34);
   });
 });
 

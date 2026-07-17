@@ -18,6 +18,12 @@ const PDF_MARGIN = 42;
 const PDF_PAGE_WIDTH = 792;
 const PDF_PAGE_HEIGHT = 612;
 const PDF_CONTENT_WIDTH = PDF_PAGE_WIDTH - PDF_MARGIN * 2;
+const PDF_MEASUREMENT_TITLE_HEIGHT = 20;
+const PDF_MEASUREMENT_HEADER_HEIGHT = 22;
+const PDF_MEASUREMENT_ROW_GAP = 3;
+const SVG_MEASUREMENT_MIN_ROW_HEIGHT = 78;
+const SVG_MEASUREMENT_HOOK_MAX_CHARS = 32;
+const SVG_MEASUREMENT_HOOK_LINE_HEIGHT = 20;
 
 export interface ExportDesignInput {
   sections: WallSection[];
@@ -44,6 +50,17 @@ interface DiagramSvg {
   markup: string;
   width: number;
   height: number;
+}
+
+export interface PdfMeasurementRowLayout {
+  rowHeight: number;
+  orderLines: string[];
+  pieceLines: string[];
+  sectionLines: string[];
+  dimensionLines: string[];
+  topLines: string[];
+  sideLines: string[];
+  hookLines: string[];
 }
 
 export async function downloadPng(
@@ -91,7 +108,7 @@ export function buildExportSheetSvg(input: ExportDesignInput): ExportSheetSvg {
   const measurementRows = buildMeasurementTableRows(input.measurements, {
     includeDimensions: true,
   });
-  const measurementHeight = 52 + measurementRows.length * 78;
+  const measurementHeight = getSvgMeasurementTableHeight(measurementRows);
   const diagramY = 132;
   const inventoryY = diagramY + DIAGRAM_HEIGHT + 68;
   const measurementsY = inventoryY + inventoryHeight + 76;
@@ -338,11 +355,14 @@ function buildMeasurementTableSvg(rows: MeasurementTableRow[], startY: number): 
   const tableX = SHEET_MARGIN;
   const tableWidth = SHEET_WIDTH - SHEET_MARGIN * 2;
   const headerY = startY + 46;
-  const rowHeight = 78;
   const columnX = [tableX + 18, tableX + 105, tableX + 430, tableX + 650, tableX + 1120];
+  let nextRowY = headerY + 46;
   const body = rows
     .map((row, index) => {
-      const rowY = headerY + 46 + index * rowHeight;
+      const rowY = nextRowY;
+      const rowHeight = getSvgMeasurementRowHeight(row);
+      const hookLines = wrapExportText(row.hooks, SVG_MEASUREMENT_HOOK_MAX_CHARS);
+      nextRowY += rowHeight;
       const fill = index % 2 === 0 ? '#f8faf9' : '#eef2f3';
       return [
         `<rect x="${tableX}" y="${rowY}" width="${tableWidth}" height="${rowHeight}" fill="${fill}" stroke="#d4dbe0" stroke-width="1"/>`,
@@ -352,7 +372,14 @@ function buildMeasurementTableSvg(rows: MeasurementTableRow[], startY: number): 
         `<text x="${columnX[2]}" y="${rowY + 42}" font-size="16" fill="#1c252e">${escapeXml(row.dimensions ?? '')}</text>`,
         `<text x="${columnX[3]}" y="${rowY + 30}" font-size="16" fill="#1c252e">${escapeXml(`Top: ${row.topReference}`)}</text>`,
         `<text x="${columnX[3]}" y="${rowY + 56}" font-size="16" fill="#1c252e">${escapeXml(`Side: ${row.sideReference}`)}</text>`,
-        `<text x="${columnX[4]}" y="${rowY + 42}" font-size="16" fill="#566472">${escapeXml(row.hooks)}</text>`,
+        buildSvgMultilineText(
+          hookLines,
+          columnX[4],
+          rowY + 28,
+          16,
+          SVG_MEASUREMENT_HOOK_LINE_HEIGHT,
+          '#566472',
+        ),
       ].join('');
     })
     .join('');
@@ -366,6 +393,73 @@ function buildMeasurementTableSvg(rows: MeasurementTableRow[], startY: number): 
     ),
     body,
   ].join('');
+}
+
+export function getSvgMeasurementTableHeight(rows: MeasurementTableRow[]): number {
+  return 92 + rows.reduce((total, row) => total + getSvgMeasurementRowHeight(row), 0);
+}
+
+export function getSvgMeasurementRowHeight(row: MeasurementTableRow): number {
+  const hookLineCount = wrapExportText(row.hooks, SVG_MEASUREMENT_HOOK_MAX_CHARS).length;
+  return Math.max(
+    SVG_MEASUREMENT_MIN_ROW_HEIGHT,
+    34 + hookLineCount * SVG_MEASUREMENT_HOOK_LINE_HEIGHT,
+  );
+}
+
+export function wrapExportText(value: string, maxCharacters: number): string[] {
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) {
+    return [''];
+  }
+
+  const lines: string[] = [];
+  let currentLine = '';
+
+  for (const word of words) {
+    if (word.length > maxCharacters) {
+      if (currentLine) {
+        lines.push(currentLine);
+        currentLine = '';
+      }
+      for (let index = 0; index < word.length; index += maxCharacters) {
+        lines.push(word.slice(index, index + maxCharacters));
+      }
+      continue;
+    }
+
+    const nextLine = currentLine ? `${currentLine} ${word}` : word;
+    if (nextLine.length > maxCharacters && currentLine) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = nextLine;
+    }
+  }
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines;
+}
+
+function buildSvgMultilineText(
+  lines: string[],
+  x: number,
+  y: number,
+  fontSize: number,
+  lineHeight: number,
+  fill: string,
+): string {
+  const tspans = lines
+    .map((line, index) => {
+      const dy = index === 0 ? 0 : lineHeight;
+      return `<tspan x="${x}" dy="${dy}">${escapeXml(line)}</tspan>`;
+    })
+    .join('');
+
+  return `<text x="${x}" y="${y}" font-size="${fontSize}" fill="${fill}">${tspans}</text>`;
 }
 
 function getInventoryRows(input: ExportDesignInput): InventoryRow[] {
@@ -444,15 +538,41 @@ function drawPdfInventoryHeader(doc: jsPDF, y: number): number {
 }
 
 function drawPdfMeasurementTable(doc: jsPDF, rows: MeasurementTableRow[], startY: number): void {
-  let y = ensurePdfSpace(doc, startY, 40);
+  let y = ensurePdfSpace(doc, startY, getPdfMeasurementInitialRequiredHeight(doc, rows));
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
   doc.setTextColor(28, 37, 46);
   doc.text('Installation measurements', PDF_MARGIN, y);
-  y += 20;
+  y += PDF_MEASUREMENT_TITLE_HEIGHT;
+  y = drawPdfMeasurementHeader(doc, y);
 
+  for (const row of rows) {
+    const layout = buildPdfMeasurementRowLayout(doc, row);
+    if (y + layout.rowHeight > PDF_PAGE_HEIGHT - PDF_MARGIN) {
+      doc.addPage('letter', 'landscape');
+      y = drawPdfMeasurementHeader(doc, PDF_MARGIN);
+    }
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(28, 37, 46);
+    doc.setFontSize(8.5);
+    drawPdfLines(doc, layout.orderLines, PDF_MARGIN + 6, y + 12);
+    doc.setFont('helvetica', 'bold');
+    drawPdfLines(doc, layout.pieceLines, PDF_MARGIN + 48, y + 12);
+    doc.setFont('helvetica', 'normal');
+    drawPdfLines(doc, layout.sectionLines, PDF_MARGIN + 48, y + 12 + layout.pieceLines.length * 10);
+    drawPdfLines(doc, layout.dimensionLines, PDF_MARGIN + 210, y + 12);
+    drawPdfLines(doc, layout.topLines, PDF_MARGIN + 300, y + 12);
+    drawPdfLines(doc, layout.sideLines, PDF_MARGIN + 300, y + 12 + layout.topLines.length * 10);
+    drawPdfLines(doc, layout.hookLines, PDF_MARGIN + 555, y + 12);
+    doc.setDrawColor(212, 219, 224);
+    doc.line(PDF_MARGIN, y + layout.rowHeight, PDF_PAGE_WIDTH - PDF_MARGIN, y + layout.rowHeight);
+    y += layout.rowHeight + PDF_MEASUREMENT_ROW_GAP;
+  }
+}
+
+function drawPdfMeasurementHeader(doc: jsPDF, y: number): number {
   doc.setFillColor(52, 68, 84);
-  doc.rect(PDF_MARGIN, y, PDF_CONTENT_WIDTH, 22, 'F');
+  doc.rect(PDF_MARGIN, y, PDF_CONTENT_WIDTH, PDF_MEASUREMENT_HEADER_HEIGHT, 'F');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
   doc.setTextColor(255, 255, 255);
@@ -461,41 +581,62 @@ function drawPdfMeasurementTable(doc: jsPDF, rows: MeasurementTableRow[], startY
   doc.text(EXPORT_MEASUREMENT_TABLE_HEADERS[2], PDF_MARGIN + 210, y + 14);
   doc.text(EXPORT_MEASUREMENT_TABLE_HEADERS[3], PDF_MARGIN + 300, y + 14);
   doc.text(EXPORT_MEASUREMENT_TABLE_HEADERS[4], PDF_MARGIN + 555, y + 14);
-  y += 22;
+  return y + PDF_MEASUREMENT_HEADER_HEIGHT;
+}
 
-  for (const row of rows) {
-    const rowHeight = 34;
-    if (y + rowHeight > PDF_PAGE_HEIGHT - PDF_MARGIN) {
-      doc.addPage('letter', 'landscape');
-      y = PDF_MARGIN;
-      doc.setFillColor(52, 68, 84);
-      doc.rect(PDF_MARGIN, y, PDF_CONTENT_WIDTH, 22, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.5);
-      doc.setTextColor(255, 255, 255);
-      doc.text(EXPORT_MEASUREMENT_TABLE_HEADERS[0], PDF_MARGIN + 6, y + 14);
-      doc.text(EXPORT_MEASUREMENT_TABLE_HEADERS[1], PDF_MARGIN + 48, y + 14);
-      doc.text(EXPORT_MEASUREMENT_TABLE_HEADERS[2], PDF_MARGIN + 210, y + 14);
-      doc.text(EXPORT_MEASUREMENT_TABLE_HEADERS[3], PDF_MARGIN + 300, y + 14);
-      doc.text(EXPORT_MEASUREMENT_TABLE_HEADERS[4], PDF_MARGIN + 555, y + 14);
-      y += 22;
-    }
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(28, 37, 46);
-    doc.setFontSize(8.5);
-    doc.text(String(row.order), PDF_MARGIN + 6, y + 14);
-    doc.setFont('helvetica', 'bold');
-    doc.text(row.pieceLabel, PDF_MARGIN + 48, y + 12, { maxWidth: 170 });
-    doc.setFont('helvetica', 'normal');
-    doc.text(row.sectionName, PDF_MARGIN + 48, y + 25, { maxWidth: 170 });
-    doc.text(row.dimensions ?? '', PDF_MARGIN + 210, y + 18, { maxWidth: 80 });
-    doc.text(`Top: ${row.topReference}`, PDF_MARGIN + 300, y + 12, { maxWidth: 245 });
-    doc.text(`Side: ${row.sideReference}`, PDF_MARGIN + 300, y + 25, { maxWidth: 245 });
-    doc.text(row.hooks, PDF_MARGIN + 555, y + 18, { maxWidth: 145 });
-    doc.setDrawColor(212, 219, 224);
-    doc.line(PDF_MARGIN, y + rowHeight, PDF_PAGE_WIDTH - PDF_MARGIN, y + rowHeight);
-    y += rowHeight + 3;
-  }
+export function getPdfMeasurementInitialRequiredHeight(
+  doc: jsPDF,
+  rows: MeasurementTableRow[],
+): number {
+  const firstRowHeight = rows[0] ? buildPdfMeasurementRowLayout(doc, rows[0]).rowHeight : 0;
+  return PDF_MEASUREMENT_TITLE_HEIGHT + PDF_MEASUREMENT_HEADER_HEIGHT + firstRowHeight;
+}
+
+export function buildPdfMeasurementRowLayout(
+  doc: jsPDF,
+  row: MeasurementTableRow,
+): PdfMeasurementRowLayout {
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  const orderLines = splitPdfText(doc, String(row.order), 28);
+  const pieceLines = splitPdfText(doc, row.pieceLabel, 150);
+  const sectionLines = splitPdfText(doc, row.sectionName, 150);
+  const dimensionLines = splitPdfText(doc, row.dimensions ?? '', 80);
+  const topLines = splitPdfText(doc, `Top: ${row.topReference}`, 245);
+  const sideLines = splitPdfText(doc, `Side: ${row.sideReference}`, 245);
+  const hookLines = splitPdfText(doc, row.hooks, 145);
+  const lineHeight = 10;
+  const rowContentHeight =
+    12 +
+    Math.max(
+      orderLines.length * lineHeight,
+      (pieceLines.length + sectionLines.length) * lineHeight,
+      dimensionLines.length * lineHeight,
+      (topLines.length + sideLines.length) * lineHeight,
+      hookLines.length * lineHeight,
+    );
+
+  return {
+    rowHeight: Math.max(34, rowContentHeight),
+    orderLines,
+    pieceLines,
+    sectionLines,
+    dimensionLines,
+    topLines,
+    sideLines,
+    hookLines,
+  };
+}
+
+function splitPdfText(doc: jsPDF, value: string, maxWidth: number): string[] {
+  const lines = doc.splitTextToSize(value, maxWidth);
+  return Array.isArray(lines) ? lines : [lines];
+}
+
+function drawPdfLines(doc: jsPDF, lines: string[], x: number, y: number): void {
+  lines.forEach((line, index) => {
+    doc.text(line, x, y + index * 10);
+  });
 }
 
 function ensurePdfSpace(doc: jsPDF, y: number, requiredHeight: number): number {
