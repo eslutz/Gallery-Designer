@@ -31,6 +31,7 @@ describe('design JSON files', () => {
       snapToGrid: true,
       gridSizeIn: 2.5,
       snapToAlignment: false,
+      showAlignmentGuides: false,
       alignmentToleranceIn: 1.5,
       wallEdgeBuffer: true,
       wallEdgeBufferGapIn: 3,
@@ -159,6 +160,7 @@ describe('design JSON files', () => {
       wallFeatures: [],
     });
     expect(parsed.features.measurementReferenceMode).toBe('relative');
+    expect(parsed.features.showAlignmentGuides).toBe(true);
   });
 
   it('keeps legacy wall features valid when placement fields are missing', () => {

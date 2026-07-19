@@ -160,6 +160,8 @@ function parseFeatures(value: unknown): EditorFeatures {
     snapToGrid: typeof parsed.snapToGrid === 'boolean' ? parsed.snapToGrid : true,
     gridSizeIn: Math.max(0.125, finiteNumber(parsed.gridSizeIn, 1)),
     snapToAlignment: typeof parsed.snapToAlignment === 'boolean' ? parsed.snapToAlignment : true,
+    showAlignmentGuides:
+      typeof parsed.showAlignmentGuides === 'boolean' ? parsed.showAlignmentGuides : true,
     alignmentToleranceIn: Math.max(0.125, finiteNumber(parsed.alignmentToleranceIn, 1)),
     wallEdgeBuffer: typeof parsed.wallEdgeBuffer === 'boolean' ? parsed.wallEdgeBuffer : false,
     wallEdgeBufferGapIn: Math.max(0.125, finiteNumber(parsed.wallEdgeBufferGapIn, 2)),

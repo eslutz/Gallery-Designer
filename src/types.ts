@@ -51,6 +51,7 @@ export interface EditorFeatures {
   snapToGrid: boolean;
   gridSizeIn: number;
   snapToAlignment: boolean;
+  showAlignmentGuides: boolean;
   alignmentToleranceIn: number;
   wallEdgeBuffer: boolean;
   wallEdgeBufferGapIn: number;

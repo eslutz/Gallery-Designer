@@ -18,7 +18,8 @@ import {
   ZoomOut,
   Wand2,
 } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { autoPlacePieces, type AutoPlacementDiagnostics } from './lib/autoPlace';
 import {
   applicationThemeOptions,
@@ -42,10 +43,12 @@ import {
   type Rect,
 } from './lib/placement';
 import {
-  applyFeaturePlacementFeatures,
-  applyPlacementFeatures,
+  applyFeaturePlacementFeaturesWithMetadata,
+  applyPlacementFeaturesWithMetadata,
   applyPlacementGroupFeatures,
+  type AlignmentGuide,
 } from './lib/snapping';
+import { calculateTooltipPosition, type TooltipPosition } from './lib/tooltipPosition';
 import {
   displaySizeValue,
   displayValue,
@@ -106,6 +109,11 @@ interface GalleryState {
   autoPlacementSettings: AutoPlacementSettings;
   selectedPieceIds: string[];
   message: string;
+}
+
+interface VisibleAlignmentGuides {
+  guides: AlignmentGuide[];
+  isLingering: boolean;
 }
 
 interface UndoableChangeOptions {
@@ -226,6 +234,7 @@ const defaultState: GalleryState = {
     snapToGrid: true,
     gridSizeIn: 1,
     snapToAlignment: true,
+    showAlignmentGuides: true,
     alignmentToleranceIn: 1,
     wallEdgeBuffer: false,
     wallEdgeBufferGapIn: 2,
@@ -254,6 +263,10 @@ export default function App() {
   const [wallDragPreview, setWallDragPreview] = useState<WallDragPreview | null>(null);
   const [groupDragPreview, setGroupDragPreview] = useState<Placement[]>([]);
   const [selectionMarquee, setSelectionMarquee] = useState<Rect | null>(null);
+  const [visibleAlignmentGuides, setVisibleAlignmentGuides] = useState<VisibleAlignmentGuides>({
+    guides: [],
+    isLingering: false,
+  });
   const [undoState, setUndoState] = useState<GalleryState | null>(null);
   const [clearMenuOpen, setClearMenuOpen] = useState(false);
   const [cursorInteraction, setCursorInteraction] = useState<CursorInteraction>('idle');
@@ -274,6 +287,7 @@ export default function App() {
   const dragRef = useRef<DragState | null>(null);
   const marqueeRef = useRef<MarqueeState | null>(null);
   const spacePressedRef = useRef(false);
+  const alignmentGuideTimeoutRef = useRef<number | null>(null);
   const sectionDragRef = useRef<SectionDragState | null>(null);
   const wallZoomGestureRef = useRef<WallZoomGesture | null>(null);
   const wallPanRef = useRef<WallPanState | null>(null);
@@ -372,6 +386,15 @@ export default function App() {
   useEffect(() => {
     latestStateRef.current = state;
   }, [state]);
+
+  useEffect(() => () => clearAlignmentGuideTimeout(), []);
+
+  useEffect(() => {
+    if (!state.features.showAlignmentGuides) {
+      clearAlignmentGuideTimeout();
+      setVisibleAlignmentGuides({ guides: [], isLingering: false });
+    }
+  }, [state.features.showAlignmentGuides]);
 
   useEffect(() => {
     try {
@@ -818,11 +841,18 @@ export default function App() {
   }
 
   function applyFeatures(current: GalleryState, placement: Placement): Placement {
+    return applyFeaturesWithMetadata(current, placement).value;
+  }
+
+  function applyFeaturesWithMetadata(
+    current: GalleryState,
+    placement: Placement,
+  ): { value: Placement; guides: AlignmentGuide[] } {
     const piece = current.pieces.find((candidate) => candidate.id === placement.pieceId);
     if (!piece) {
-      return placement;
+      return { value: placement, guides: [] };
     }
-    return applyPlacementFeatures({
+    return applyPlacementFeaturesWithMetadata({
       placement,
       piece,
       sections: current.sections,
@@ -834,22 +864,81 @@ export default function App() {
   }
 
   function applyFeatureFeatures(current: GalleryState, feature: WallFeature): WallFeature {
+    return applyFeatureFeaturesWithMetadata(current, feature).value;
+  }
+
+  function applyFeatureFeaturesWithMetadata(
+    current: GalleryState,
+    feature: WallFeature,
+  ): { value: WallFeature; guides: AlignmentGuide[] } {
+    const snapped = applyFeaturePlacementFeaturesWithMetadata({
+      feature,
+      sections: current.sections,
+      pieces: current.pieces,
+      placements: current.placements,
+      features: current.features,
+      featureRects: current.autoPlacementSettings.wallFeatures,
+    });
     return {
-      ...feature,
-      ...applyFeaturePlacementFeatures({
-        feature,
-        sections: current.sections,
-        pieces: current.pieces,
-        placements: current.placements,
-        features: current.features,
-        featureRects: current.autoPlacementSettings.wallFeatures,
-      }),
+      value: {
+        ...feature,
+        ...snapped.value,
+      },
+      guides: snapped.guides,
     };
+  }
+
+  function clearAlignmentGuideTimeout() {
+    if (alignmentGuideTimeoutRef.current !== null) {
+      window.clearTimeout(alignmentGuideTimeoutRef.current);
+      alignmentGuideTimeoutRef.current = null;
+    }
+  }
+
+  function showAlignmentGuides(guides: AlignmentGuide[]) {
+    clearAlignmentGuideTimeout();
+    setVisibleAlignmentGuides({
+      guides: guides.slice(0, 2),
+      isLingering: false,
+    });
+  }
+
+  function lingerAlignmentGuides() {
+    clearAlignmentGuideTimeout();
+    setVisibleAlignmentGuides((current) => {
+      if (current.guides.length === 0) {
+        return current;
+      }
+      return { ...current, isLingering: true };
+    });
+    alignmentGuideTimeoutRef.current = window.setTimeout(() => {
+      alignmentGuideTimeoutRef.current = null;
+      setVisibleAlignmentGuides({ guides: [], isLingering: false });
+    }, 1000);
+  }
+
+  function placementsMatch(a: Placement, b: Placement): boolean {
+    return (
+      a.pieceId === b.pieceId &&
+      a.sectionId === b.sectionId &&
+      Math.abs(a.xIn - b.xIn) < 0.0001 &&
+      Math.abs(a.yIn - b.yIn) < 0.0001
+    );
+  }
+
+  function featuresMatch(a: WallFeature, b: WallFeature): boolean {
+    return (
+      a.id === b.id &&
+      Math.abs(a.xIn - b.xIn) < 0.0001 &&
+      Math.abs((a.yIn ?? 0) - (b.yIn ?? 0)) < 0.0001
+    );
   }
 
   function commitPiecePlacement(proposedPlacement: Placement) {
     recordUndoSnapshot();
     setSelectedFeatureId('');
+    const snapped = applyFeaturesWithMetadata(latestStateRef.current, proposedPlacement);
+    const guides = placementsMatch(snapped.value, proposedPlacement) ? snapped.guides : [];
     setState((current) => {
       const section = getSectionById(current.sections, proposedPlacement.sectionId);
       const piece = current.pieces.find((candidate) => candidate.id === proposedPlacement.pieceId);
@@ -878,6 +967,10 @@ export default function App() {
             : 'Placed a piece on the wall.',
       };
     });
+    if (guides.length > 0) {
+      showAlignmentGuides(guides);
+    }
+    lingerAlignmentGuides();
   }
 
   function commitPiecePlacementGroup(proposedPlacements: Placement[], pieceIds: string[]) {
@@ -898,6 +991,7 @@ export default function App() {
           ? `Moved ${getPieceLabel(current, proposedPlacements[0].pieceId)} on the wall.`
           : `Moved ${proposedPlacements.length} art pieces as a group.`,
     }));
+    showAlignmentGuides([]);
   }
 
   function nudgePieceGroup(pieceIds: string[], deltaXIn: number, deltaYIn: number) {
@@ -909,11 +1003,47 @@ export default function App() {
       deltaXIn,
       deltaYIn,
     );
+    if (pieceIds.length === 1 && proposedPlacements[0]) {
+      const proposedPlacement = proposedPlacements[0];
+      recordUndoSnapshot();
+      setSelectedFeatureId('');
+      const snapped = applyFeaturesWithMetadata(
+        {
+          ...latestStateRef.current,
+          features: {
+            ...latestStateRef.current.features,
+            snapToAlignment: false,
+          },
+        },
+        proposedPlacement,
+      );
+      const guides = snapped.guides;
+      setState((current) => ({
+        ...current,
+        selectedPieceIds: [proposedPlacement.pieceId],
+        placements: [
+          ...current.placements.filter(
+            (candidate) => candidate.pieceId !== proposedPlacement.pieceId,
+          ),
+          proposedPlacement,
+        ],
+        message: `Moved ${getPieceLabel(current, proposedPlacement.pieceId)} on the wall.`,
+      }));
+      if (guides.length > 0) {
+        showAlignmentGuides(guides);
+      } else {
+        showAlignmentGuides([]);
+      }
+      lingerAlignmentGuides();
+      return;
+    }
     commitPiecePlacementGroup(proposedPlacements, pieceIds);
   }
 
   function commitFeaturePlacement(proposedFeature: WallFeature) {
     recordUndoSnapshot();
+    const snapped = applyFeatureFeaturesWithMetadata(latestStateRef.current, proposedFeature);
+    const guides = featuresMatch(snapped.value, proposedFeature) ? snapped.guides : [];
     setState((current) => {
       const feature = current.autoPlacementSettings.wallFeatures.find(
         (candidate) => candidate.id === proposedFeature.id,
@@ -938,10 +1068,16 @@ export default function App() {
       };
     });
     setSelectedFeatureId(proposedFeature.id);
+    if (guides.length > 0) {
+      showAlignmentGuides(guides);
+    }
+    lingerAlignmentGuides();
   }
 
   function nudgeFeature(proposedFeature: WallFeature) {
     recordUndoSnapshot();
+    const snapped = applyFeatureFeaturesWithMetadata(latestStateRef.current, proposedFeature);
+    const guides = featuresMatch(snapped.value, proposedFeature) ? snapped.guides : [];
     setState((current) => {
       const feature = current.autoPlacementSettings.wallFeatures.find(
         (candidate) => candidate.id === proposedFeature.id,
@@ -963,6 +1099,12 @@ export default function App() {
       };
     });
     setSelectedFeatureId(proposedFeature.id);
+    if (guides.length > 0) {
+      showAlignmentGuides(guides);
+    } else {
+      showAlignmentGuides([]);
+    }
+    lingerAlignmentGuides();
   }
 
   function clearPlacedArt() {
@@ -1715,9 +1857,10 @@ export default function App() {
   function finishPieceDrag(event?: { clientX: number; clientY: number; pointerId?: number }) {
     finishWallZoomGesture(event);
     const drag = dragRef.current;
+    const droppedInTray = Boolean(drag && event && pointerIsOverStagingTray(event));
     if (drag?.itemKind === 'piece' && drag.source === 'wall' && !drag.hasMoved) {
       // A click selects the piece without creating an undoable placement change.
-    } else if (drag && event && pointerIsOverStagingTray(event)) {
+    } else if (drag && droppedInTray) {
       if (drag.itemKind === 'feature') {
         removeFeaturePlacement(drag.itemId);
       } else if (drag.source === 'wall') {
@@ -1754,6 +1897,11 @@ export default function App() {
     setCursorInteraction('idle');
     setWallDragPreview(null);
     setGroupDragPreview([]);
+    if (drag && !droppedInTray) {
+      lingerAlignmentGuides();
+    } else {
+      showAlignmentGuides([]);
+    }
     stopSuppressingTextSelection();
   }
 
@@ -2226,7 +2374,9 @@ export default function App() {
       return;
     }
 
-    const snappedPlacement = applyFeatures(state, placement);
+    const snapped = applyFeaturesWithMetadata(state, placement);
+    const snappedPlacement = snapped.value;
+    showAlignmentGuides(snapped.guides);
     const center = {
       x:
         getSectionOffsetX(state.sections, snappedPlacement.sectionId) +
@@ -2258,6 +2408,7 @@ export default function App() {
     fallbackPoint: Pick<React.PointerEvent | PointerEvent, 'clientX' | 'clientY'>,
     singlePieceSize: { widthPx: number; heightPx: number },
   ) {
+    showAlignmentGuides([]);
     const bounds = getGroupBounds(
       state.sections,
       state.pieces,
@@ -2320,7 +2471,9 @@ export default function App() {
     size: { widthPx: number; heightPx: number },
     fallbackPoint: Pick<React.PointerEvent | PointerEvent, 'clientX' | 'clientY'>,
   ) {
-    const snappedFeature = applyFeatureFeatures(state, { ...feature, placed: true });
+    const snapped = applyFeatureFeaturesWithMetadata(state, { ...feature, placed: true });
+    const snappedFeature = snapped.value;
+    showAlignmentGuides(snapped.guides);
     const center = {
       x: snappedFeature.xIn + snappedFeature.widthIn / 2,
       y: (snappedFeature.yIn ?? 0) + snappedFeature.heightIn / 2,
@@ -2872,6 +3025,11 @@ export default function App() {
                 groupDragPreview={groupDragPreview}
                 autoPlacementSettings={state.autoPlacementSettings}
                 features={state.features}
+                alignmentGuides={
+                  state.features.showAlignmentGuides
+                    ? visibleAlignmentGuides
+                    : { guides: [], isLingering: false }
+                }
                 unit={state.unit}
                 viewBox={wallViewBox}
                 onSectionPointerDown={handleSectionPointerDown}
@@ -3635,6 +3793,12 @@ function FeatureControls({
         info="Pieces snap to nearby artwork and wall alignment guides. Alignment tolerance controls how close a piece must be before snapping engages."
         onChange={(checked) => onChange({ snapToAlignment: checked })}
       />
+      <ToggleFieldWithInfo
+        label="Show alignment guides"
+        checked={features.showAlignmentGuides}
+        info="Shows dotted guide lines when alignment snapping engages. Turn this off to keep snapping without the visual guides."
+        onChange={(checked) => onChange({ showAlignmentGuides: checked })}
+      />
       <NumberField
         label={`Alignment tolerance (${unitLabel})`}
         valueIn={features.alignmentToleranceIn}
@@ -3733,20 +3897,122 @@ function ToggleFieldWithInfo({
 
 function InfoTooltipButton({ label, info }: { label: string; info: string }) {
   const tooltipId = useId();
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const tooltipRef = useRef<HTMLSpanElement | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [position, setPosition] = useState<TooltipPosition>(() =>
+    calculateTooltipPosition(
+      { left: 0, top: 0, width: 0, height: 0 },
+      { width: 240, height: 0 },
+      { width: 1024, height: 768 },
+    ),
+  );
+
+  const updatePosition = useCallback(() => {
+    const button = buttonRef.current;
+    const tooltip = tooltipRef.current;
+
+    if (!button || !tooltip || typeof window === 'undefined') {
+      return;
+    }
+
+    const triggerRect = button.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const visualViewport = window.visualViewport;
+    const viewport = {
+      width: visualViewport?.width ?? window.innerWidth,
+      height: visualViewport?.height ?? window.innerHeight,
+    };
+    const viewportOffsetLeft = visualViewport?.offsetLeft ?? 0;
+    const viewportOffsetTop = visualViewport?.offsetTop ?? 0;
+    const nextPosition = calculateTooltipPosition(
+      {
+        left: triggerRect.left - viewportOffsetLeft,
+        top: triggerRect.top - viewportOffsetTop,
+        width: triggerRect.width,
+        height: triggerRect.height,
+      },
+      {
+        width: tooltipRect.width || 240,
+        height: tooltipRect.height || 0,
+      },
+      viewport,
+    );
+
+    setPosition({
+      ...nextPosition,
+      left: nextPosition.left + viewportOffsetLeft,
+      top: nextPosition.top + viewportOffsetTop,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (isOpen) {
+      updatePosition();
+    }
+  }, [isOpen, info, updatePosition]);
+
+  useEffect(() => {
+    if (!isOpen || typeof window === 'undefined') {
+      return;
+    }
+
+    const visualViewport = window.visualViewport;
+
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    visualViewport?.addEventListener('resize', updatePosition);
+    visualViewport?.addEventListener('scroll', updatePosition);
+
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+      visualViewport?.removeEventListener('resize', updatePosition);
+      visualViewport?.removeEventListener('scroll', updatePosition);
+    };
+  }, [isOpen, info, updatePosition]);
 
   return (
-    <span className="info-tip">
+    <span
+      className="info-tip"
+      onMouseEnter={() => setIsOpen(true)}
+      onMouseLeave={() => setIsOpen(false)}
+      onFocus={() => setIsOpen(true)}
+      onBlur={() => setIsOpen(false)}
+    >
       <button
+        ref={buttonRef}
         type="button"
         className="info-button"
         aria-label={`${label} information`}
         aria-describedby={tooltipId}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            setIsOpen(false);
+            event.currentTarget.blur();
+          }
+        }}
       >
         <Info size={14} aria-hidden="true" />
       </button>
-      <span className="info-tooltip" id={tooltipId} role="tooltip">
-        {info}
-      </span>
+      {createPortal(
+        <span
+          ref={tooltipRef}
+          className={`info-tooltip${isOpen ? ' info-tooltip-open' : ''}`}
+          data-placement={position.placement}
+          id={tooltipId}
+          role="tooltip"
+          style={{
+            left: position.left,
+            top: position.top,
+            maxWidth: position.maxWidth,
+            maxHeight: position.maxHeight,
+          }}
+        >
+          {info}
+        </span>,
+        document.body,
+      )}
     </span>
   );
 }
@@ -4241,6 +4507,7 @@ function WallCanvas({
   groupDragPreview,
   autoPlacementSettings,
   features,
+  alignmentGuides,
   unit,
   viewBox,
   onSectionPointerDown,
@@ -4269,6 +4536,7 @@ function WallCanvas({
   groupDragPreview: Placement[];
   autoPlacementSettings: AutoPlacementSettings;
   features: EditorFeatures;
+  alignmentGuides: VisibleAlignmentGuides;
   unit: Unit;
   viewBox: WallViewBox;
   onSectionPointerDown: (event: React.PointerEvent<SVGGElement>, section: WallSection) => void;
@@ -4326,6 +4594,7 @@ function WallCanvas({
         : [],
     [features.wallEdgeBuffer, features.wallEdgeBufferGapIn, sections],
   );
+  const wallBounds = useMemo(() => getWallBounds(sections), [sections]);
   const groupPreviewBounds = useMemo(
     () =>
       getGroupBounds(
@@ -4443,6 +4712,59 @@ function WallCanvas({
           strokeWidth="0.25"
         />
       ))}
+      {alignmentGuides.guides.map((guide) =>
+        guide.axis === 'x' ? (
+          <g
+            key={`alignment-guide-${guide.axis}-${guide.coordinateIn}-${guide.kind}`}
+            className={alignmentGuides.isLingering ? 'is-lingering' : ''}
+          >
+            <line
+              x1={guide.coordinateIn}
+              y1={wallBounds.minY}
+              x2={guide.coordinateIn}
+              y2={wallBounds.maxY}
+              className={`alignment-snap-guide-backdrop ${guide.kind} ${
+                alignmentGuides.isLingering ? 'is-lingering' : ''
+              }`}
+            />
+            <line
+              x1={guide.coordinateIn}
+              y1={wallBounds.minY}
+              x2={guide.coordinateIn}
+              y2={wallBounds.maxY}
+              className={`alignment-snap-guide ${guide.kind} ${
+                alignmentGuides.isLingering ? 'is-lingering' : ''
+              }`}
+              data-testid="alignment-guide-x"
+            />
+          </g>
+        ) : (
+          <g
+            key={`alignment-guide-${guide.axis}-${guide.coordinateIn}-${guide.kind}`}
+            className={alignmentGuides.isLingering ? 'is-lingering' : ''}
+          >
+            <line
+              x1={wallBounds.minX}
+              y1={guide.coordinateIn}
+              x2={wallBounds.maxX}
+              y2={guide.coordinateIn}
+              className={`alignment-snap-guide-backdrop ${guide.kind} ${
+                alignmentGuides.isLingering ? 'is-lingering' : ''
+              }`}
+            />
+            <line
+              x1={wallBounds.minX}
+              y1={guide.coordinateIn}
+              x2={wallBounds.maxX}
+              y2={guide.coordinateIn}
+              className={`alignment-snap-guide ${guide.kind} ${
+                alignmentGuides.isLingering ? 'is-lingering' : ''
+              }`}
+              data-testid="alignment-guide-y"
+            />
+          </g>
+        ),
+      )}
       {featureBlocks.map((block) => (
         <g
           key={block.id}
@@ -4913,6 +5235,7 @@ function isEditorFeatures(value: unknown): value is EditorFeatures {
     typeof value.snapToGrid === 'boolean' &&
     isFiniteNumber(value.gridSizeIn) &&
     typeof value.snapToAlignment === 'boolean' &&
+    (value.showAlignmentGuides === undefined || typeof value.showAlignmentGuides === 'boolean') &&
     isFiniteNumber(value.alignmentToleranceIn) &&
     typeof value.wallEdgeBuffer === 'boolean' &&
     isFiniteNumber(value.wallEdgeBufferGapIn) &&
@@ -4928,6 +5251,7 @@ function normalizeEditorFeatures(value: EditorFeatures): EditorFeatures {
   return {
     ...defaultState.features,
     ...value,
+    showAlignmentGuides: value.showAlignmentGuides ?? defaultState.features.showAlignmentGuides,
     measurementReferenceMode:
       value.measurementReferenceMode === 'absolute' ? 'absolute' : 'relative',
   };

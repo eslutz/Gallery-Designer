@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyFeaturePlacementFeatures,
+  applyFeaturePlacementFeaturesWithMetadata,
   applyPlacementFeatures,
+  applyPlacementFeaturesWithMetadata,
   applyPlacementGroupFeatures,
 } from './snapping';
 import type { ArtPiece, EditorFeatures, Placement, WallFeature, WallSection } from '../types';
@@ -19,6 +21,7 @@ const baseFeatures: EditorFeatures = {
   snapToGrid: false,
   gridSizeIn: 1,
   snapToAlignment: false,
+  showAlignmentGuides: true,
   alignmentToleranceIn: 2,
   wallEdgeBuffer: false,
   wallEdgeBufferGapIn: 2,
@@ -57,6 +60,146 @@ describe('placement snapping features', () => {
         features: { ...baseFeatures, snapToAlignment: true, alignmentToleranceIn: 2 },
       }).xIn,
     ).toBe(30);
+  });
+
+  it('snaps to nearby artwork vertical centers and returns guide metadata', () => {
+    const placement: Placement = { pieceId: 'moving', sectionId: 'wall', xIn: 14.5, yIn: 10 };
+    const fixedPlacement: Placement = { pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 10 };
+
+    const snapped = applyPlacementFeaturesWithMetadata({
+      placement,
+      piece: pieces[0],
+      sections,
+      pieces,
+      placements: [fixedPlacement],
+      features: { ...baseFeatures, snapToAlignment: true, alignmentToleranceIn: 1 },
+    });
+
+    expect(snapped.value.xIn).toBe(14);
+    expect(snapped.guides).toContainEqual({ axis: 'x', coordinateIn: 20, kind: 'center' });
+  });
+
+  it('snaps to nearby artwork horizontal centers and returns guide metadata', () => {
+    const placement: Placement = { pieceId: 'moving', sectionId: 'wall', xIn: 14, yIn: 13.5 };
+    const fixedPlacement: Placement = { pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 10 };
+
+    const snapped = applyPlacementFeaturesWithMetadata({
+      placement,
+      piece: pieces[0],
+      sections,
+      pieces,
+      placements: [fixedPlacement],
+      features: { ...baseFeatures, snapToAlignment: true, alignmentToleranceIn: 1 },
+    });
+
+    expect(snapped.value.yIn).toBe(13);
+    expect(snapped.guides).toContainEqual({ axis: 'y', coordinateIn: 18, kind: 'center' });
+  });
+
+  it('does not match moving centers to target edges', () => {
+    const placement: Placement = { pieceId: 'moving', sectionId: 'wall', xIn: 24, yIn: 40 };
+    const fixedPlacement: Placement = { pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 10 };
+
+    const snapped = applyPlacementFeaturesWithMetadata({
+      placement,
+      piece: pieces[0],
+      sections,
+      pieces,
+      placements: [fixedPlacement],
+      features: { ...baseFeatures, snapToAlignment: true, alignmentToleranceIn: 1 },
+    });
+
+    expect(snapped.value).toEqual(placement);
+    expect(snapped.guides).toEqual([]);
+  });
+
+  it('does not use wall centers as center alignment targets', () => {
+    const placement: Placement = { pieceId: 'moving', sectionId: 'wall', xIn: 41.5, yIn: 40 };
+
+    const snapped = applyPlacementFeaturesWithMetadata({
+      placement,
+      piece: pieces[0],
+      sections,
+      pieces,
+      placements: [],
+      features: { ...baseFeatures, snapToAlignment: true, alignmentToleranceIn: 1 },
+    });
+
+    expect(snapped.value).toEqual(placement);
+    expect(snapped.guides).toEqual([]);
+  });
+
+  it('does not use feature centers as center alignment targets', () => {
+    const placement: Placement = { pieceId: 'moving', sectionId: 'wall', xIn: 14.5, yIn: 40 };
+
+    const snapped = applyPlacementFeaturesWithMetadata({
+      placement,
+      piece: pieces[0],
+      sections,
+      pieces,
+      placements: [],
+      featureRects: [
+        {
+          id: 'file-cabinet',
+          type: 'file-cabinet',
+          name: 'File cabinet',
+          xIn: 10,
+          yIn: 10,
+          widthIn: 20,
+          heightIn: 28,
+          placed: true,
+        },
+      ],
+      features: { ...baseFeatures, snapToAlignment: true, alignmentToleranceIn: 1 },
+    });
+
+    expect(snapped.value).toEqual(placement);
+    expect(snapped.guides).toEqual([]);
+  });
+
+  it('reports alignment guide metadata when snapping is disabled but guides are enabled', () => {
+    const placement: Placement = { pieceId: 'moving', sectionId: 'wall', xIn: 14.5, yIn: 40 };
+    const fixedPlacement: Placement = { pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 10 };
+
+    const snapped = applyPlacementFeaturesWithMetadata({
+      placement,
+      piece: pieces[0],
+      sections,
+      pieces,
+      placements: [fixedPlacement],
+      features: {
+        ...baseFeatures,
+        snapToAlignment: false,
+        showAlignmentGuides: true,
+        alignmentToleranceIn: 1,
+      },
+    });
+
+    expect(snapped.value).toEqual(placement);
+    expect(snapped.guides).toContainEqual({ axis: 'x', coordinateIn: 20, kind: 'center' });
+  });
+
+  it('prefers edge alignment over center alignment when distances tie', () => {
+    const wideMoving: ArtPiece = {
+      id: 'wide-moving',
+      label: 'Wide moving',
+      widthIn: 20,
+      heightIn: 10,
+    };
+    const placement: Placement = { pieceId: 'wide-moving', sectionId: 'wall', xIn: -11, yIn: 40 };
+    const fixedPlacement: Placement = { pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 10 };
+
+    const snapped = applyPlacementFeaturesWithMetadata({
+      placement,
+      piece: wideMoving,
+      sections,
+      pieces: [...pieces, wideMoving],
+      placements: [fixedPlacement],
+      features: { ...baseFeatures, snapToAlignment: true, alignmentToleranceIn: 1 },
+    });
+
+    expect(snapped.value.xIn).toBe(-10);
+    expect(snapped.guides).toContainEqual({ axis: 'x', coordinateIn: 10, kind: 'edge' });
   });
 
   it('leaves placement unchanged when snapping features are disabled', () => {
@@ -186,6 +329,32 @@ describe('placement snapping features', () => {
         features: { ...baseFeatures, snapToAlignment: true, alignmentToleranceIn: 2 },
       }).xIn,
     ).toBe(30);
+  });
+
+  it('keeps furniture alignment snapping edge-only while returning edge guide metadata', () => {
+    const feature: WallFeature = {
+      id: 'lamp',
+      type: 'lamp',
+      name: 'Lamp',
+      xIn: 31.5,
+      yIn: 10,
+      widthIn: 14,
+      heightIn: 36,
+      placed: true,
+    };
+    const fixedPlacement: Placement = { pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 10 };
+
+    const snapped = applyFeaturePlacementFeaturesWithMetadata({
+      feature,
+      sections,
+      pieces,
+      placements: [fixedPlacement],
+      featureRects: [],
+      features: { ...baseFeatures, snapToAlignment: true, alignmentToleranceIn: 2 },
+    });
+
+    expect(snapped.value.xIn).toBe(30);
+    expect(snapped.guides).toContainEqual({ axis: 'x', coordinateIn: 30, kind: 'edge' });
   });
 
   it('snaps a placement group with one shared grid delta', () => {

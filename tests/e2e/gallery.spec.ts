@@ -140,6 +140,82 @@ test('immediately picks up a piece placed from the staging tray without selectin
   expect(await page.evaluate(() => window.getSelection()?.toString() ?? '')).toBe('');
 });
 
+test('shows an alignment guide while pointer dragging into a center snap', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      'gallery-designer-state-v1',
+      JSON.stringify({
+        unit: 'in',
+        themeMode: 'system',
+        applicationTheme: 'slate',
+        sections: [
+          {
+            id: 'wall',
+            name: 'Wall',
+            widthIn: 96,
+            heightIn: 84,
+            cornerAfter: 'none',
+            xIn: 0,
+            yIn: 0,
+          },
+        ],
+        pieces: [
+          { id: 'moving', label: 'Moving', widthIn: 12, heightIn: 10 },
+          { id: 'fixed', label: 'Fixed', widthIn: 20, heightIn: 16 },
+        ],
+        placements: [{ pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 10 }],
+        features: {
+          snapToGrid: false,
+          gridSizeIn: 1,
+          snapToAlignment: true,
+          showAlignmentGuides: true,
+          alignmentToleranceIn: 1,
+          wallEdgeBuffer: false,
+          wallEdgeBufferGapIn: 2,
+          artPieceBuffer: false,
+          artPieceBufferGapIn: 2,
+          measurementReferenceMode: 'relative',
+        },
+        autoPlacementSettings: {
+          wallSetupMode: 'available-sections',
+          context: { kind: 'blank', viewingPosture: 'seated' },
+          layoutPreference: 'auto',
+          wallFeatures: [],
+        },
+        selectedPieceIds: ['moving'],
+        message: 'Test design.',
+      }),
+    );
+  });
+  await page.goto('/');
+
+  const canvas = page.getByRole('img', { name: 'Scaled gallery wall layout' });
+  const canvasBox = await canvas.boundingBox();
+  if (!canvasBox) {
+    throw new Error('Canvas was not visible enough to drag.');
+  }
+
+  const target = await page.locator('.wall-canvas').evaluate((svg) => {
+    const matrix = (svg as SVGSVGElement).getScreenCTM();
+    if (!matrix) {
+      throw new Error('Canvas screen matrix was not available.');
+    }
+    return {
+      x: 20 * matrix.a + 18 * matrix.c + matrix.e,
+      y: 20 * matrix.b + 18 * matrix.d + matrix.f,
+    };
+  });
+  await pointerDragTo(
+    page,
+    page.getByRole('button', { name: 'Drag Moving from staging' }),
+    target.x,
+    target.y,
+  );
+
+  await expect(page.getByTestId('alignment-guide-x')).toHaveClass(/center/);
+  await expect(page.getByTestId('alignment-guide-x')).toHaveAttribute('x1', '20');
+});
+
 test('modifier and marquee selection move placed art as a group', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Add art piece' }).click();
@@ -457,6 +533,29 @@ test('keeps responsive workspace panels contained and switches mobile measuremen
   await expect(page.locator('.measurement-cards')).toHaveCSS('display', 'grid');
 });
 
+test('info tooltips stay inside a narrow viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+
+  for (const label of ['Snap to alignment information', 'Print/export layout information']) {
+    const button = page.getByRole('button', { name: label });
+    await button.scrollIntoViewIfNeeded();
+    await button.hover();
+
+    const tooltip = page.locator('.info-tooltip-open');
+    await expect(tooltip).toBeVisible();
+    const box = await tooltip.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(844);
+
+    await page.mouse.move(0, 0);
+    await expect(tooltip).toHaveCount(0);
+  }
+});
+
 async function piecePositions(locators: import('@playwright/test').Locator[]) {
   return Promise.all(
     locators.map(async (piece) => ({
@@ -495,6 +594,33 @@ async function pointerDrag(
   targetX: number,
   targetY: number,
 ) {
+  await pointerDragTo(page, source, targetX, targetY);
+  await page.evaluate(
+    ({ x, y }) => {
+      window.dispatchEvent(
+        new PointerEvent('pointerup', {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 1,
+          pointerType: 'mouse',
+          isPrimary: true,
+          button: 0,
+          buttons: 0,
+          clientX: x,
+          clientY: y,
+        }),
+      );
+    },
+    { x: targetX, y: targetY },
+  );
+}
+
+async function pointerDragTo(
+  page: import('@playwright/test').Page,
+  source: import('@playwright/test').Locator,
+  targetX: number,
+  targetY: number,
+) {
   const sourceBox = await source.boundingBox();
   if (!sourceBox) {
     throw new Error('Pointer drag source was not visible.');
@@ -524,24 +650,6 @@ async function pointerDrag(
           isPrimary: true,
           button: 0,
           buttons: 1,
-          clientX: x,
-          clientY: y,
-        }),
-      );
-    },
-    { x: targetX, y: targetY },
-  );
-  await page.evaluate(
-    ({ x, y }) => {
-      window.dispatchEvent(
-        new PointerEvent('pointerup', {
-          bubbles: true,
-          cancelable: true,
-          pointerId: 1,
-          pointerType: 'mouse',
-          isPrimary: true,
-          button: 0,
-          buttons: 0,
           clientX: x,
           clientY: y,
         }),
