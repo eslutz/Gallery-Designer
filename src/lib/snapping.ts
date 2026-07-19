@@ -208,7 +208,10 @@ function applyRectPlacementFeaturesWithMetadata({
     );
   }
 
-  if (features.snapToAlignment && features.alignmentToleranceIn > 0) {
+  if (
+    (features.snapToAlignment || features.showAlignmentGuides) &&
+    features.alignmentToleranceIn > 0
+  ) {
     const snapped = snapRectToAlignment({
       rect: next,
       sections,
@@ -216,8 +219,10 @@ function applyRectPlacementFeaturesWithMetadata({
       centerRects: includeCenterAlignment ? artRects : [],
       toleranceIn: features.alignmentToleranceIn,
     });
-    next = snapped.value;
     guides = snapped.guides;
+    if (features.snapToAlignment) {
+      next = snapped.value;
+    }
   }
 
   return {

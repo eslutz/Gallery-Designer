@@ -313,6 +313,28 @@ describe('placement snapping features', () => {
     ]);
   });
 
+  it('still reports alignment guides when snapping is disabled but guides are enabled', () => {
+    const placement: Placement = { pieceId: 'moving', sectionId: 'wall', xIn: 13.5, yIn: 4 };
+    const fixedPlacement: Placement = { pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 40 };
+
+    const snapped = applyPlacementFeaturesWithMetadata({
+      placement,
+      piece: pieces[0],
+      sections,
+      pieces,
+      placements: [fixedPlacement],
+      features: {
+        ...baseFeatures,
+        snapToAlignment: false,
+        showAlignmentGuides: true,
+        alignmentToleranceIn: 1,
+      },
+    });
+
+    expect(snapped.value).toEqual(placement);
+    expect(snapped.guides).toContainEqual({ axis: 'x', coordinateIn: 20, kind: 'center' });
+  });
+
   it('keeps furniture alignment snapping edge-only while returning edge guide metadata', () => {
     const feature: WallFeature = {
       id: 'lamp',

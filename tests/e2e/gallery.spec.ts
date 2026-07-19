@@ -472,6 +472,29 @@ test('keeps responsive workspace panels contained and switches mobile measuremen
   await expect(page.locator('.measurement-cards')).toHaveCSS('display', 'grid');
 });
 
+test('info tooltips stay inside a narrow viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+
+  for (const label of ['Snap to alignment information', 'Print/export layout information']) {
+    const button = page.getByRole('button', { name: label });
+    await button.scrollIntoViewIfNeeded();
+    await button.hover();
+
+    const tooltip = page.locator('.info-tooltip-open');
+    await expect(tooltip).toBeVisible();
+    const box = await tooltip.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(844);
+
+    await page.mouse.move(0, 0);
+    await expect(tooltip).toHaveCount(0);
+  }
+});
+
 async function pointerDrag(
   page: import('@playwright/test').Page,
   source: import('@playwright/test').Locator,

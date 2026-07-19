@@ -24,6 +24,8 @@ describe('Gallery Designer app', () => {
     document.documentElement.removeAttribute('data-palette');
     document.documentElement.style.colorScheme = '';
     document.body.classList.remove('suppress-text-selection');
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 768 });
     window.matchMedia = vi.fn(
       (query: string) =>
         ({
@@ -181,6 +183,78 @@ describe('Gallery Designer app', () => {
       /context sets placement priorities/i,
     );
     expect(screen.getAllByRole('tooltip')[1]).toHaveTextContent(/shifts the group vertically/i);
+  });
+
+  it('shows and hides info tooltips from hover, focus, and Escape', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const button = screen.getByRole('button', { name: 'Snap to alignment information' });
+    const tooltip = document.getElementById(button.getAttribute('aria-describedby') ?? '');
+
+    expect(tooltip).toHaveClass('info-tooltip');
+    expect(tooltip).not.toHaveClass('info-tooltip-open');
+
+    await user.hover(button);
+    await waitFor(() => expect(tooltip).toHaveClass('info-tooltip-open'));
+
+    await user.unhover(button);
+    await waitFor(() => expect(tooltip).not.toHaveClass('info-tooltip-open'));
+
+    fireEvent.focus(button);
+    await waitFor(() => expect(tooltip).toHaveClass('info-tooltip-open'));
+
+    fireEvent.keyDown(button, { key: 'Escape' });
+    await waitFor(() => expect(tooltip).not.toHaveClass('info-tooltip-open'));
+  });
+
+  it('positions info tooltips inside a narrow viewport', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 844 });
+    render(<App />);
+
+    const button = screen.getByRole('button', { name: 'Snap to alignment information' });
+    const tooltip = document.getElementById(button.getAttribute('aria-describedby') ?? '');
+    expect(tooltip).not.toBeNull();
+
+    button.getBoundingClientRect = vi.fn(
+      () =>
+        ({
+          left: 376,
+          top: 120,
+          width: 18,
+          height: 18,
+          right: 394,
+          bottom: 138,
+          x: 376,
+          y: 120,
+          toJSON: vi.fn(),
+        }) as DOMRect,
+    );
+    tooltip!.getBoundingClientRect = vi.fn(
+      () =>
+        ({
+          left: 0,
+          top: 0,
+          width: 240,
+          height: 96,
+          right: 240,
+          bottom: 96,
+          x: 0,
+          y: 0,
+          toJSON: vi.fn(),
+        }) as DOMRect,
+    );
+
+    await user.hover(button);
+
+    await waitFor(() => expect(Number.parseFloat(tooltip!.style.left)).toBe(142));
+    expect(Number.parseFloat(tooltip!.style.left)).toBeGreaterThanOrEqual(8);
+    expect(
+      Number.parseFloat(tooltip!.style.left) + Number.parseFloat(tooltip!.style.maxWidth),
+    ).toBeLessThanOrEqual(382);
+    expect(Number.parseFloat(tooltip!.style.top)).toBeGreaterThanOrEqual(8);
   });
 
   it('uses full-wall feature settings when placing pieces', async () => {
@@ -1205,6 +1279,7 @@ describe('Gallery Designer app', () => {
     ).not.toBeInTheDocument();
     expect(screen.getByLabelText('Snap to grid')).toBeChecked();
     expect(screen.getByLabelText('Snap to alignment')).toBeChecked();
+    expect(screen.getByLabelText('Show alignment guides')).toBeChecked();
     expect(screen.getByLabelText('Wall edge buffer')).not.toBeChecked();
     expect(screen.getByLabelText('Art piece buffer')).not.toBeChecked();
     expect(screen.getByLabelText('Grid size (in)')).toBeInTheDocument();
@@ -1222,6 +1297,9 @@ describe('Gallery Designer app', () => {
     expect(
       screen.getByRole('button', { name: 'Snap to alignment information' }),
     ).toHaveAccessibleDescription(/nearby artwork and wall alignment.*how close/i);
+    expect(
+      screen.getByRole('button', { name: 'Show alignment guides information' }),
+    ).toHaveAccessibleDescription(/dotted guide lines.*snapping engages/i);
     expect(
       screen.queryByRole('button', { name: 'Alignment tolerance (in) information' }),
     ).not.toBeInTheDocument();
@@ -1248,6 +1326,9 @@ describe('Gallery Designer app', () => {
         .queryAllByText(/Absolute measurements use the continuous wall's top-left origin/i)
         .some((element) => element.closest('.feature-help')),
     ).toBe(false);
+
+    await user.click(screen.getByLabelText('Show alignment guides'));
+    expect(screen.getByLabelText('Show alignment guides')).not.toBeChecked();
 
     await user.clear(screen.getByLabelText('Grid size (in)'));
     await user.type(screen.getByLabelText('Grid size (in)'), '2.5');
@@ -1505,6 +1586,73 @@ describe('Gallery Designer app', () => {
     expect(horizontalGuide).toHaveAttribute('y1', '18');
     expect(horizontalGuide).toHaveClass('center');
     expect(container.querySelectorAll('.alignment-snap-guide')).toHaveLength(2);
+    expect(container.querySelectorAll('.alignment-snap-guide-backdrop')).toHaveLength(2);
+  });
+
+  it('hides alignment guide lines when the visibility toggle is off', async () => {
+    localStorage.setItem(
+      'gallery-designer-state-v1',
+      JSON.stringify({
+        unit: 'in',
+        themeMode: 'system',
+        applicationTheme: 'slate',
+        sections: [
+          {
+            id: 'wall',
+            name: 'Wall',
+            widthIn: 96,
+            heightIn: 84,
+            cornerAfter: 'none',
+            xIn: 0,
+            yIn: 0,
+          },
+        ],
+        pieces: [
+          { id: 'moving', label: 'Moving', widthIn: 12, heightIn: 10 },
+          { id: 'fixed', label: 'Fixed', widthIn: 20, heightIn: 16 },
+        ],
+        placements: [{ pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 10 }],
+        features: {
+          snapToGrid: false,
+          gridSizeIn: 1,
+          snapToAlignment: true,
+          showAlignmentGuides: true,
+          alignmentToleranceIn: 1,
+          wallEdgeBuffer: false,
+          wallEdgeBufferGapIn: 2,
+          artPieceBuffer: false,
+          artPieceBufferGapIn: 2,
+          measurementReferenceMode: 'relative',
+        },
+        autoPlacementSettings: {
+          wallSetupMode: 'available-sections',
+          context: { kind: 'blank', viewingPosture: 'seated' },
+          layoutPreference: 'auto',
+          wallFeatures: [],
+        },
+        selectedPieceId: 'moving',
+        message: 'Test design.',
+      }),
+    );
+    const { container } = render(<App />);
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    mockCanvasProjection(canvas);
+    mockPointerTarget(canvas);
+
+    await userEvent.click(screen.getByLabelText('Show alignment guides'));
+    expect(screen.getByLabelText('Show alignment guides')).not.toBeChecked();
+
+    act(() => {
+      screen
+        .getByRole('button', { name: /Drag Moving from staging/i })
+        .dispatchEvent(
+          new MouseEvent('pointerdown', { bubbles: true, clientX: 19.5, clientY: 17.5 }),
+        );
+    });
+
+    await waitFor(() =>
+      expect(container.querySelectorAll('.alignment-snap-guide')).toHaveLength(0),
+    );
   });
 
   it('clears alignment guide lines when a drag moves out of snap range', async () => {
@@ -1916,10 +2064,10 @@ describe('Gallery Designer app', () => {
     expect(within(exportPanel).queryByText(/Needs attention/i)).not.toBeInTheDocument();
     expect(within(exportPanel).getByText(/Print\/export layout/i)).toBeInTheDocument();
     expect(within(exportPanel).getByText(/Save\/load design/i)).toBeInTheDocument();
-    expect(
-      within(exportPanel).getByText(/PNG and PDF exports include the visual layout/i),
-    ).toHaveClass('info-tooltip');
-    expect(within(exportPanel).getByText(/editable project file/i)).toHaveClass('info-tooltip');
+    expect(screen.getByText(/PNG and PDF exports include the visual layout/i)).toHaveClass(
+      'info-tooltip',
+    );
+    expect(screen.getByText(/editable project file/i)).toHaveClass('info-tooltip');
     expect(
       within(exportPanel).queryByText(/saved locally in this browser/i),
     ).not.toBeInTheDocument();

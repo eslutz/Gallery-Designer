@@ -905,7 +905,6 @@ button:not(:disabled):active {
 }
 
 .info-tip {
-  position: relative;
   display: inline-flex;
 }
 
@@ -931,11 +930,9 @@ button:not(:disabled):active {
 }
 
 .info-tooltip {
-  position: absolute;
-  z-index: 5;
-  top: calc(100% + 8px);
-  left: 0;
-  width: 240px;
+  position: fixed;
+  z-index: 30;
+  width: max-content;
   padding: 8px 10px;
   border: 1px solid var(--row-border);
   border-radius: 6px;
@@ -945,18 +942,19 @@ button:not(:disabled):active {
   font-size: 0.76rem;
   font-weight: 600;
   line-height: 1.35;
+  overflow: auto;
+  overflow-wrap: anywhere;
   opacity: 0;
   pointer-events: none;
+  white-space: normal;
   transform: translateY(-4px);
   transition:
     opacity 120ms ease,
     transform 120ms ease;
 }
 
-.info-tip:hover .info-tooltip,
-.info-button:focus-visible + .info-tooltip {
+.info-tooltip-open {
   opacity: 1;
-  pointer-events: auto;
   transform: translateY(0);
 }
 
@@ -1238,20 +1236,29 @@ select:focus,
   pointer-events: none;
 }
 
+.alignment-snap-guide,
+.alignment-snap-guide-backdrop {
+  pointer-events: none;
+  transition: opacity 1s ease;
+}
+
 .alignment-snap-guide {
   stroke: var(--piece-selected-stroke);
   stroke-width: 0.45;
   stroke-dasharray: 2 1.25;
-  pointer-events: none;
   opacity: 0.9;
-  transition: opacity 1s ease;
 }
 
-.alignment-snap-guide.center {
-  stroke-dasharray: 0.6 0.9;
+.alignment-snap-guide-backdrop {
+  stroke: var(--panel-solid);
+  stroke-width: 1.2;
+  opacity: 0.95;
 }
 
-.alignment-snap-guide.is-lingering {
+.is-lingering .alignment-snap-guide,
+.is-lingering .alignment-snap-guide-backdrop,
+.alignment-snap-guide.is-lingering,
+.alignment-snap-guide-backdrop.is-lingering {
   opacity: 0;
 }
 

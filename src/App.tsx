@@ -18,7 +18,8 @@ import {
   ZoomOut,
   Wand2,
 } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { autoPlacePieces, type AutoPlacementDiagnostics } from './lib/autoPlace';
 import {
   applicationThemeOptions,
@@ -39,6 +40,7 @@ import {
   applyPlacementFeaturesWithMetadata,
   type AlignmentGuide,
 } from './lib/snapping';
+import { calculateTooltipPosition, type TooltipPosition } from './lib/tooltipPosition';
 import {
   displaySizeValue,
   displayValue,
@@ -197,6 +199,7 @@ const defaultState: GalleryState = {
     snapToGrid: true,
     gridSizeIn: 1,
     snapToAlignment: true,
+    showAlignmentGuides: true,
     alignmentToleranceIn: 1,
     wallEdgeBuffer: false,
     wallEdgeBufferGapIn: 2,
@@ -341,6 +344,13 @@ export default function App() {
   }, [state]);
 
   useEffect(() => () => clearAlignmentGuideTimeout(), []);
+
+  useEffect(() => {
+    if (!state.features.showAlignmentGuides) {
+      clearAlignmentGuideTimeout();
+      setVisibleAlignmentGuides({ guides: [], isLingering: false });
+    }
+  }, [state.features.showAlignmentGuides]);
 
   useEffect(() => {
     try {
@@ -2624,7 +2634,11 @@ export default function App() {
                 selectedSectionId={selectedSectionId}
                 autoPlacementSettings={state.autoPlacementSettings}
                 features={state.features}
-                alignmentGuides={visibleAlignmentGuides}
+                alignmentGuides={
+                  state.features.showAlignmentGuides
+                    ? visibleAlignmentGuides
+                    : { guides: [], isLingering: false }
+                }
                 unit={state.unit}
                 viewBox={wallViewBox}
                 onSectionPointerDown={handleSectionPointerDown}
@@ -3344,6 +3358,12 @@ function FeatureControls({
         info="Pieces snap to nearby artwork and wall alignment guides. Alignment tolerance controls how close a piece must be before snapping engages."
         onChange={(checked) => onChange({ snapToAlignment: checked })}
       />
+      <ToggleFieldWithInfo
+        label="Show alignment guides"
+        checked={features.showAlignmentGuides}
+        info="Shows dotted guide lines when alignment snapping engages. Turn this off to keep snapping without the visual guides."
+        onChange={(checked) => onChange({ showAlignmentGuides: checked })}
+      />
       <NumberField
         label={`Alignment tolerance (${unitLabel})`}
         valueIn={features.alignmentToleranceIn}
@@ -3442,20 +3462,122 @@ function ToggleFieldWithInfo({
 
 function InfoTooltipButton({ label, info }: { label: string; info: string }) {
   const tooltipId = useId();
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const tooltipRef = useRef<HTMLSpanElement | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [position, setPosition] = useState<TooltipPosition>(() =>
+    calculateTooltipPosition(
+      { left: 0, top: 0, width: 0, height: 0 },
+      { width: 240, height: 0 },
+      { width: 1024, height: 768 },
+    ),
+  );
+
+  const updatePosition = useCallback(() => {
+    const button = buttonRef.current;
+    const tooltip = tooltipRef.current;
+
+    if (!button || !tooltip || typeof window === 'undefined') {
+      return;
+    }
+
+    const triggerRect = button.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const visualViewport = window.visualViewport;
+    const viewport = {
+      width: visualViewport?.width ?? window.innerWidth,
+      height: visualViewport?.height ?? window.innerHeight,
+    };
+    const viewportOffsetLeft = visualViewport?.offsetLeft ?? 0;
+    const viewportOffsetTop = visualViewport?.offsetTop ?? 0;
+    const nextPosition = calculateTooltipPosition(
+      {
+        left: triggerRect.left - viewportOffsetLeft,
+        top: triggerRect.top - viewportOffsetTop,
+        width: triggerRect.width,
+        height: triggerRect.height,
+      },
+      {
+        width: tooltipRect.width || 240,
+        height: tooltipRect.height || 0,
+      },
+      viewport,
+    );
+
+    setPosition({
+      ...nextPosition,
+      left: nextPosition.left + viewportOffsetLeft,
+      top: nextPosition.top + viewportOffsetTop,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (isOpen) {
+      updatePosition();
+    }
+  }, [isOpen, info, updatePosition]);
+
+  useEffect(() => {
+    if (!isOpen || typeof window === 'undefined') {
+      return;
+    }
+
+    const visualViewport = window.visualViewport;
+
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    visualViewport?.addEventListener('resize', updatePosition);
+    visualViewport?.addEventListener('scroll', updatePosition);
+
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+      visualViewport?.removeEventListener('resize', updatePosition);
+      visualViewport?.removeEventListener('scroll', updatePosition);
+    };
+  }, [isOpen, info, updatePosition]);
 
   return (
-    <span className="info-tip">
+    <span
+      className="info-tip"
+      onMouseEnter={() => setIsOpen(true)}
+      onMouseLeave={() => setIsOpen(false)}
+      onFocus={() => setIsOpen(true)}
+      onBlur={() => setIsOpen(false)}
+    >
       <button
+        ref={buttonRef}
         type="button"
         className="info-button"
         aria-label={`${label} information`}
         aria-describedby={tooltipId}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            setIsOpen(false);
+            event.currentTarget.blur();
+          }
+        }}
       >
         <Info size={14} aria-hidden="true" />
       </button>
-      <span className="info-tooltip" id={tooltipId} role="tooltip">
-        {info}
-      </span>
+      {createPortal(
+        <span
+          ref={tooltipRef}
+          className={`info-tooltip${isOpen ? ' info-tooltip-open' : ''}`}
+          data-placement={position.placement}
+          id={tooltipId}
+          role="tooltip"
+          style={{
+            left: position.left,
+            top: position.top,
+            maxWidth: position.maxWidth,
+            maxHeight: position.maxHeight,
+          }}
+        >
+          {info}
+        </span>,
+        document.body,
+      )}
     </span>
   );
 }
@@ -4112,29 +4234,55 @@ function WallCanvas({
       ))}
       {alignmentGuides.guides.map((guide) =>
         guide.axis === 'x' ? (
-          <line
+          <g
             key={`alignment-guide-${guide.axis}-${guide.coordinateIn}-${guide.kind}`}
-            x1={guide.coordinateIn}
-            y1={wallBounds.minY}
-            x2={guide.coordinateIn}
-            y2={wallBounds.maxY}
-            className={`alignment-snap-guide ${guide.kind} ${
-              alignmentGuides.isLingering ? 'is-lingering' : ''
-            }`}
-            data-testid="alignment-guide-x"
-          />
+            className={alignmentGuides.isLingering ? 'is-lingering' : ''}
+          >
+            <line
+              x1={guide.coordinateIn}
+              y1={wallBounds.minY}
+              x2={guide.coordinateIn}
+              y2={wallBounds.maxY}
+              className={`alignment-snap-guide-backdrop ${guide.kind} ${
+                alignmentGuides.isLingering ? 'is-lingering' : ''
+              }`}
+            />
+            <line
+              x1={guide.coordinateIn}
+              y1={wallBounds.minY}
+              x2={guide.coordinateIn}
+              y2={wallBounds.maxY}
+              className={`alignment-snap-guide ${guide.kind} ${
+                alignmentGuides.isLingering ? 'is-lingering' : ''
+              }`}
+              data-testid="alignment-guide-x"
+            />
+          </g>
         ) : (
-          <line
+          <g
             key={`alignment-guide-${guide.axis}-${guide.coordinateIn}-${guide.kind}`}
-            x1={wallBounds.minX}
-            y1={guide.coordinateIn}
-            x2={wallBounds.maxX}
-            y2={guide.coordinateIn}
-            className={`alignment-snap-guide ${guide.kind} ${
-              alignmentGuides.isLingering ? 'is-lingering' : ''
-            }`}
-            data-testid="alignment-guide-y"
-          />
+            className={alignmentGuides.isLingering ? 'is-lingering' : ''}
+          >
+            <line
+              x1={wallBounds.minX}
+              y1={guide.coordinateIn}
+              x2={wallBounds.maxX}
+              y2={guide.coordinateIn}
+              className={`alignment-snap-guide-backdrop ${guide.kind} ${
+                alignmentGuides.isLingering ? 'is-lingering' : ''
+              }`}
+            />
+            <line
+              x1={wallBounds.minX}
+              y1={guide.coordinateIn}
+              x2={wallBounds.maxX}
+              y2={guide.coordinateIn}
+              className={`alignment-snap-guide ${guide.kind} ${
+                alignmentGuides.isLingering ? 'is-lingering' : ''
+              }`}
+              data-testid="alignment-guide-y"
+            />
+          </g>
         ),
       )}
       {featureBlocks.map((block) => (
@@ -4570,6 +4718,7 @@ function isEditorFeatures(value: unknown): value is EditorFeatures {
     typeof value.snapToGrid === 'boolean' &&
     isFiniteNumber(value.gridSizeIn) &&
     typeof value.snapToAlignment === 'boolean' &&
+    (value.showAlignmentGuides === undefined || typeof value.showAlignmentGuides === 'boolean') &&
     isFiniteNumber(value.alignmentToleranceIn) &&
     typeof value.wallEdgeBuffer === 'boolean' &&
     isFiniteNumber(value.wallEdgeBufferGapIn) &&
@@ -4585,6 +4734,7 @@ function normalizeEditorFeatures(value: EditorFeatures): EditorFeatures {
   return {
     ...defaultState.features,
     ...value,
+    showAlignmentGuides: value.showAlignmentGuides ?? defaultState.features.showAlignmentGuides,
     measurementReferenceMode:
       value.measurementReferenceMode === 'absolute' ? 'absolute' : 'relative',
   };
