@@ -145,7 +145,7 @@ describe('Gallery Designer app', () => {
       screen.getByRole('heading', { name: /Features/i }),
     );
     expect(screen.getByRole('complementary', { name: /Details and export/i })).toContainElement(
-      screen.getByRole('heading', { name: /Auto-placement/i }),
+      screen.getByRole('heading', { name: /Auto-placement settings/i }),
     );
     expect(screen.queryByRole('button', { name: /Place on first wall/i })).not.toBeInTheDocument();
 
@@ -1454,11 +1454,11 @@ describe('Gallery Designer app', () => {
     expect(screen.queryByText(/from top of Section 1/i)).not.toBeInTheDocument();
   });
 
-  it('collapses and expands the Auto-placement and Features panels', async () => {
+  it('collapses and expands the Auto-placement settings and Features panels', async () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const autoPlacementToggle = screen.getByRole('button', { name: /Auto-placement/i });
+    const autoPlacementToggle = screen.getByRole('button', { name: /Auto-placement settings/i });
     expect(autoPlacementToggle).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByLabelText('Wall setup')).toBeInTheDocument();
 
@@ -2472,7 +2472,7 @@ describe('Gallery Designer app', () => {
     expect(primaryColumn).toBeInTheDocument();
     expect(secondaryColumn).toBeInTheDocument();
     expect(
-      within(primaryColumn as Element).getByRole('heading', { name: /Auto-placement/i }),
+      within(primaryColumn as Element).getByRole('heading', { name: /Auto-placement settings/i }),
     ).toBeInTheDocument();
     expect(primaryColumn).toContainElement(statusPanel);
     expect(

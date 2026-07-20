@@ -3161,7 +3161,7 @@ export default function App() {
           <div className="right-panel-column right-panel-column-primary">
             <CollapsiblePanel
               icon={<Wand2 size={18} />}
-              title="Auto-placement"
+              title="Auto-placement settings"
               ariaLabel="Auto-placement settings"
               className="right-panel-auto"
             >
