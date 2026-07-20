@@ -163,14 +163,18 @@ describe('application typography', () => {
     );
     expect(stylesheet).toMatch(/\.workspace\s*{[^}]*scroll-padding-bottom:\s*20px;/s);
     expect(stylesheet).toMatch(
-      /\.setup-panel\s*{[^}]*position:\s*sticky;[^}]*align-self:\s*stretch;[^}]*max-height:\s*none;[^}]*overflow:\s*hidden;/s,
+      /\.setup-panel\s*{[^}]*position:\s*sticky;[^}]*align-self:\s*stretch;[^}]*max-height:\s*none;[^}]*overflow:\s*auto;/s,
     );
     expect(stylesheet).toMatch(
-      /\.wall-sections-panel\s*{[^}]*max-height:\s*min\(560px,\s*52%\);[^}]*min-height:\s*0;/s,
+      /\.wall-sections-panel\s*{[^}]*flex:\s*0 0 auto;[^}]*max-height:\s*none;[^}]*min-height:\s*auto;/s,
     );
-    expect(stylesheet).toMatch(/\.wall-sections-panel\s+\.section-list\s*{[^}]*overflow:\s*auto;/s);
-    expect(stylesheet).toMatch(/\.art-pieces-panel\s*{[^}]*min-height:\s*0;/s);
-    expect(stylesheet).toMatch(/\.art-pieces-panel\s+\.piece-list\s*{[^}]*overflow:\s*auto;/s);
+    expect(stylesheet).toMatch(
+      /\.wall-sections-panel\s+\.section-list\s*{[^}]*overflow:\s*visible;/s,
+    );
+    expect(stylesheet).toMatch(
+      /\.art-pieces-panel\s*{[^}]*flex:\s*0 0 auto;[^}]*min-height:\s*auto;/s,
+    );
+    expect(stylesheet).toMatch(/\.art-pieces-panel\s+\.piece-list\s*{[^}]*overflow:\s*visible;/s);
     expect(stylesheet).toMatch(/\.section-list,\s*\.piece-list\s*{[^}]*align-content:\s*start;/s);
     expect(stylesheet).toMatch(/\.setup-row\s*{[^}]*align-content:\s*start;/s);
     expect(collapsiblePanelRule).not.toContain('min-height: 0;');
@@ -186,7 +190,9 @@ describe('application typography', () => {
     expect(rightPanelRule).toContain('overscroll-behavior: contain;');
     expect(rightPanelRule).toContain('padding-bottom: 20px;');
     expect(setupPanelRule).toContain('position: sticky;');
-    expect(setupPanelRule).toContain('overflow: hidden;');
+    expect(setupPanelRule).toContain('overflow: auto;');
+    expect(setupPanelRule).toContain('overscroll-behavior: contain;');
+    expect(setupPanelRule).toContain('padding: 0 0 20px;');
     expect(responsiveEditorColumnRule).toContain('overflow: visible;');
     expect(responsiveSetupPanelRule).toContain('position: static;');
     expect(responsiveSetupPanelRule).toContain('flex: 0 0 auto;');

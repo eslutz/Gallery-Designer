@@ -710,9 +710,9 @@ button:not(:disabled):active {
   gap: 14px;
   min-height: 0;
   max-height: none;
-  overflow: hidden;
+  overflow: auto;
   overscroll-behavior: contain;
-  padding: 0;
+  padding: 0 0 20px;
   border: 0;
   background: transparent;
   box-shadow: none;
@@ -808,44 +808,42 @@ button:not(:disabled):active {
 
 .setup-utility-panel {
   flex: 0 0 auto;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .wall-sections-panel {
-  flex: 0 1 auto;
-  grid-template-rows: auto minmax(0, 1fr);
-  max-height: min(560px, 52%);
-  min-height: 0;
+  flex: 0 0 auto;
+  grid-template-rows: none;
+  max-height: none;
+  min-height: auto;
 }
 
 .wall-sections-panel-content {
-  min-height: 0;
-  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: auto;
+  grid-template-rows: none;
 }
 
 .wall-sections-panel .section-list {
-  min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-  padding-right: 4px;
+  min-height: auto;
+  overflow: visible;
+  padding-right: 0;
 }
 
 .art-pieces-panel {
-  flex: 1 1 280px;
-  grid-template-rows: auto minmax(0, 1fr);
-  min-height: 0;
+  flex: 0 0 auto;
+  grid-template-rows: none;
+  min-height: auto;
 }
 
 .art-pieces-panel-content {
-  min-height: 0;
-  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: auto;
+  grid-template-rows: none;
 }
 
 .art-pieces-panel .piece-list {
-  min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-  padding-right: 4px;
+  min-height: auto;
+  overflow: visible;
+  padding-right: 0;
 }
 
 .feature-help {
