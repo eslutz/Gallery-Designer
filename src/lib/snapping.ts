@@ -134,10 +134,32 @@ export function applyPlacementGroupFeatures({
   features,
   featureRects = [],
 }: PlacementGroupSnapInput): Placement[] {
+  return applyPlacementGroupFeaturesWithMetadata({
+    proposedPlacements,
+    movingPieceIds,
+    sections,
+    pieces,
+    placements,
+    features,
+    featureRects,
+  }).value;
+}
+
+export function applyPlacementGroupFeaturesWithMetadata({
+  proposedPlacements,
+  movingPieceIds,
+  sections,
+  pieces,
+  placements,
+  features,
+  featureRects = [],
+}: PlacementGroupSnapInput): SnapResult<Placement[]> {
   const bounds = getGroupBounds(sections, pieces, proposedPlacements, movingPieceIds);
   if (!bounds) {
-    return [];
+    return { value: [], guides: [] };
   }
+  const artRects = artRectsFromPlacements(sections, pieces, placements, movingPieceIds);
+  const staticRects = [...artRects, ...featureRectsFromFeatures(featureRects)];
   const snapped = applyRectPlacementFeaturesWithMetadata({
     rect: {
       id: 'placement-group',
@@ -148,20 +170,20 @@ export function applyPlacementGroupFeatures({
     },
     sections,
     features,
-    edgeRects: [
-      ...artRectsFromPlacements(sections, pieces, placements, movingPieceIds),
-      ...featureRectsFromFeatures(featureRects),
-    ],
-    centerRects: [],
+    edgeRects: staticRects,
+    centerRects: artRects,
   });
-  return translatePlacementGroup(
-    sections,
-    pieces,
-    proposedPlacements,
-    movingPieceIds,
-    snapped.value.left - bounds.left,
-    snapped.value.top - bounds.top,
-  );
+  return {
+    value: translatePlacementGroup(
+      sections,
+      pieces,
+      proposedPlacements,
+      movingPieceIds,
+      snapped.value.left - bounds.left,
+      snapped.value.top - bounds.top,
+    ),
+    guides: snapped.guides,
+  };
 }
 
 export function applyFeaturePlacementFeatures({

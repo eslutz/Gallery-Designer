@@ -45,7 +45,7 @@ import {
 import {
   applyFeaturePlacementFeaturesWithMetadata,
   applyPlacementFeaturesWithMetadata,
-  applyPlacementGroupFeatures,
+  applyPlacementGroupFeaturesWithMetadata,
   type AlignmentGuide,
 } from './lib/snapping';
 import { calculateTooltipPosition, type TooltipPosition } from './lib/tooltipPosition';
@@ -136,6 +136,7 @@ interface DragState {
   pieceIds: string[];
   startPlacements: Placement[];
   latestPlacements: Placement[];
+  latestGuides: AlignmentGuide[];
   startClientX: number;
   startClientY: number;
   hasMoved: boolean;
@@ -271,7 +272,7 @@ export default function App() {
   const [clearMenuOpen, setClearMenuOpen] = useState(false);
   const [cursorInteraction, setCursorInteraction] = useState<CursorInteraction>('idle');
   const [wallZoom, setWallZoom] = useState<WallZoomState>(() =>
-    getDefaultWallZoomState(getWallCanvasBaseViewBox(defaultState.sections, defaultState.features)),
+    getDefaultWallZoomState(getWallCanvasBaseViewBox(defaultState.sections)),
   );
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [exporting, setExporting] = useState<'png' | 'pdf' | null>(null);
@@ -318,10 +319,7 @@ export default function App() {
   } | null>(null);
 
   const wallIssues = useMemo(() => validateWallSections(state.sections), [state.sections]);
-  const wallBaseViewBox = useMemo(
-    () => getWallCanvasBaseViewBox(state.sections, state.features),
-    [state.sections, state.features],
-  );
+  const wallBaseViewBox = useMemo(() => getWallCanvasBaseViewBox(state.sections), [state.sections]);
   const wallViewBox = useMemo(
     () => getWallZoomedViewBox(wallBaseViewBox, wallZoom),
     [wallBaseViewBox, wallZoom],
@@ -973,7 +971,11 @@ export default function App() {
     lingerAlignmentGuides();
   }
 
-  function commitPiecePlacementGroup(proposedPlacements: Placement[], pieceIds: string[]) {
+  function commitPiecePlacementGroup(
+    proposedPlacements: Placement[],
+    pieceIds: string[],
+    guides: AlignmentGuide[] = [],
+  ) {
     if (proposedPlacements.length === 0) {
       return;
     }
@@ -991,7 +993,7 @@ export default function App() {
           ? `Moved ${getPieceLabel(current, proposedPlacements[0].pieceId)} on the wall.`
           : `Moved ${proposedPlacements.length} art pieces as a group.`,
     }));
-    showAlignmentGuides([]);
+    showAlignmentGuides(guides);
   }
 
   function nudgePieceGroup(pieceIds: string[], deltaXIn: number, deltaYIn: number) {
@@ -1037,7 +1039,21 @@ export default function App() {
       lingerAlignmentGuides();
       return;
     }
-    commitPiecePlacementGroup(proposedPlacements, pieceIds);
+    const snapped = applyPlacementGroupFeaturesWithMetadata({
+      proposedPlacements,
+      movingPieceIds: pieceIds,
+      sections: latestStateRef.current.sections,
+      pieces: latestStateRef.current.pieces,
+      placements: latestStateRef.current.placements,
+      features: {
+        ...latestStateRef.current.features,
+        snapToGrid: false,
+        snapToAlignment: false,
+      },
+      featureRects: latestStateRef.current.autoPlacementSettings.wallFeatures,
+    });
+    commitPiecePlacementGroup(snapped.value, pieceIds, snapped.guides);
+    lingerAlignmentGuides();
   }
 
   function commitFeaturePlacement(proposedFeature: WallFeature) {
@@ -1166,7 +1182,7 @@ export default function App() {
       selectedPieceIds: [],
       message: 'Reset the entire design. Add wall sections and art pieces to start over.',
     });
-    setWallZoom(getDefaultWallZoomState(getWallCanvasBaseViewBox([], defaultState.features)));
+    setWallZoom(getDefaultWallZoomState(getWallCanvasBaseViewBox([])));
   }
 
   function runClearAction(action: () => void) {
@@ -1495,6 +1511,7 @@ export default function App() {
       pieceIds: [pieceId],
       startPlacements: [],
       latestPlacements: [placement],
+      latestGuides: [],
       startClientX: event.clientX,
       startClientY: event.clientY,
       hasMoved: false,
@@ -1539,6 +1556,7 @@ export default function App() {
       pieceIds: [],
       startPlacements: [],
       latestPlacements: [],
+      latestGuides: [],
       startClientX: event.clientX,
       startClientY: event.clientY,
       hasMoved: false,
@@ -1665,6 +1683,7 @@ export default function App() {
       pieceIds,
       startPlacements,
       latestPlacements: startPlacements,
+      latestGuides: [],
       startClientX: event.clientX,
       startClientY: event.clientY,
       hasMoved: false,
@@ -1674,12 +1693,38 @@ export default function App() {
       event.currentTarget.setPointerCapture(event.pointerId);
     }
     startSuppressingTextSelection();
-    showSnappedPreview(
-      placement,
-      state.pieces.find((piece) => piece.id === placement.pieceId),
-      { widthPx: rect.width, heightPx: rect.height },
-      event,
-    );
+    if (startPlacements.length > 1) {
+      const snapped = applyPlacementGroupFeaturesWithMetadata({
+        proposedPlacements: startPlacements,
+        movingPieceIds: pieceIds,
+        sections: state.sections,
+        pieces: state.pieces,
+        placements: state.placements,
+        features: {
+          ...state.features,
+          snapToGrid: false,
+          snapToAlignment: false,
+        },
+        featureRects: state.autoPlacementSettings.wallFeatures,
+      });
+      dragRef.current.latestPlacements = snapped.value;
+      dragRef.current.latestGuides = snapped.guides;
+      setGroupDragPreview(snapped.value);
+      showGroupDragPreview(
+        snapped.value,
+        placement.pieceId,
+        event,
+        { widthPx: rect.width, heightPx: rect.height },
+        snapped.guides,
+      );
+    } else {
+      showSnappedPreview(
+        placement,
+        state.pieces.find((piece) => piece.id === placement.pieceId),
+        { widthPx: rect.width, heightPx: rect.height },
+        event,
+      );
+    }
     setSelectedFeatureId('');
     if (!state.selectedPieceIds.includes(placement.pieceId)) {
       selectPiece(placement.pieceId);
@@ -1711,6 +1756,7 @@ export default function App() {
       pieceIds: [],
       startPlacements: [],
       latestPlacements: [],
+      latestGuides: [],
       startClientX: event.clientX,
       startClientY: event.clientY,
       hasMoved: false,
@@ -1873,7 +1919,7 @@ export default function App() {
       drag.source === 'wall' &&
       drag.latestPlacements.length > 0
     ) {
-      commitPiecePlacementGroup(drag.latestPlacements, drag.pieceIds);
+      commitPiecePlacementGroup(drag.latestPlacements, drag.pieceIds, drag.latestGuides);
     } else if (
       drag?.latestPlacement &&
       drag.itemKind === 'piece' &&
@@ -2307,7 +2353,7 @@ export default function App() {
           point.x - drag.startPoint.x,
           point.y - drag.startPoint.y,
         );
-        drag.latestPlacements = applyPlacementGroupFeatures({
+        const snapped = applyPlacementGroupFeaturesWithMetadata({
           proposedPlacements,
           movingPieceIds: drag.pieceIds,
           sections: state.sections,
@@ -2316,13 +2362,21 @@ export default function App() {
           features: state.features,
           featureRects: state.autoPlacementSettings.wallFeatures,
         });
+        drag.latestPlacements = snapped.value;
+        drag.latestGuides = snapped.guides;
         drag.latestPlacement =
           drag.latestPlacements.find((placement) => placement.pieceId === drag.itemId) ?? null;
         setGroupDragPreview(drag.latestPlacements);
-        showGroupDragPreview(drag.latestPlacements, drag.itemId, event, {
-          widthPx: drag.previewWidthPx,
-          heightPx: drag.previewHeightPx,
-        });
+        showGroupDragPreview(
+          drag.latestPlacements,
+          drag.itemId,
+          event,
+          {
+            widthPx: drag.previewWidthPx,
+            heightPx: drag.previewHeightPx,
+          },
+          snapped.guides,
+        );
         return;
       }
 
@@ -2407,8 +2461,9 @@ export default function App() {
     grabbedPieceId: string,
     fallbackPoint: Pick<React.PointerEvent | PointerEvent, 'clientX' | 'clientY'>,
     singlePieceSize: { widthPx: number; heightPx: number },
+    guides: AlignmentGuide[] = [],
   ) {
-    showAlignmentGuides([]);
+    showAlignmentGuides(guides);
     const bounds = getGroupBounds(
       state.sections,
       state.pieces,
@@ -3332,7 +3387,7 @@ function WallDragPreviewOverlay({
       ? fitPieceLabel(preview.label, preview.widthIn, preview.heightIn)
       : null;
   const bufferGapPx =
-    artPieceBufferEnabled && !isGroupPreview
+    artPieceBufferEnabled && preview.itemKind === 'piece'
       ? getPreviewBufferGapPx(
           { widthIn: preview.widthIn, heightIn: preview.heightIn },
           preview,
@@ -3460,10 +3515,9 @@ function getPreviewBufferGapPx(
   return scales.length > 0 ? Math.min(...scales) * gapIn : 0;
 }
 
-function getWallCanvasBaseViewBox(sections: WallSection[], features: EditorFeatures): WallViewBox {
+function getWallCanvasBaseViewBox(sections: WallSection[]): WallViewBox {
   const wallBounds = getWallBounds(sections);
-  const bufferPadding = features.wallEdgeBuffer ? features.wallEdgeBufferGapIn : 0;
-  const padding = DEFAULT_WALL_PADDING_IN + bufferPadding;
+  const padding = DEFAULT_WALL_PADDING_IN;
   return {
     x: wallBounds.minX - padding,
     y: wallBounds.minY - padding,
@@ -4669,19 +4723,19 @@ function WallCanvas({
               onKeyDown={(event) => onSectionKeyDown(event, section)}
             >
               <rect
-                x={offsetXIn + 2}
-                y={offsetYIn + 2}
-                width={6}
-                height={6}
-                rx={1}
+                x={offsetXIn - 3.8}
+                y={offsetYIn - 4.9}
+                width={3.6}
+                height={3.6}
+                rx={0.6}
                 className="wall-section-handle-background"
               />
               <Move
-                x={offsetXIn + 3}
-                y={offsetYIn + 3}
-                width={4}
-                height={4}
-                strokeWidth={2.25}
+                x={offsetXIn - 3.1}
+                y={offsetYIn - 4.2}
+                width={2.2}
+                height={2.2}
+                strokeWidth={2.5}
                 className="wall-section-handle-icon"
                 aria-hidden="true"
               />

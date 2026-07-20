@@ -5,6 +5,7 @@ import {
   applyPlacementFeatures,
   applyPlacementFeaturesWithMetadata,
   applyPlacementGroupFeatures,
+  applyPlacementGroupFeaturesWithMetadata,
 } from './snapping';
 import type { ArtPiece, EditorFeatures, Placement, WallFeature, WallSection } from '../types';
 
@@ -405,5 +406,87 @@ describe('placement snapping features', () => {
         features: { ...baseFeatures, snapToAlignment: true, alignmentToleranceIn: 2 },
       }).map(({ xIn }) => xIn),
     ).toEqual([30, 48.5]);
+  });
+
+  it('snaps a placement group to the wall edge buffer using the group bounds', () => {
+    const groupMember: ArtPiece = {
+      id: 'group-member',
+      label: 'Group member',
+      widthIn: 8,
+      heightIn: 8,
+    };
+    const proposed: Placement[] = [
+      { pieceId: 'moving', sectionId: 'wall', xIn: 1.25, yIn: 2.5 },
+      { pieceId: 'group-member', sectionId: 'wall', xIn: 20.25, yIn: 4.5 },
+    ];
+
+    expect(
+      applyPlacementGroupFeatures({
+        proposedPlacements: proposed,
+        movingPieceIds: ['moving', 'group-member'],
+        sections,
+        pieces: [...pieces, groupMember],
+        placements: proposed,
+        features: { ...baseFeatures, wallEdgeBuffer: true, wallEdgeBufferGapIn: 2 },
+      }),
+    ).toEqual([
+      { ...proposed[0], xIn: 2, yIn: 2 },
+      { ...proposed[1], xIn: 21, yIn: 4 },
+    ]);
+  });
+
+  it('snaps a placement group to the art piece buffer using the group bounds', () => {
+    const groupMember: ArtPiece = {
+      id: 'group-member',
+      label: 'Group member',
+      widthIn: 8,
+      heightIn: 8,
+    };
+    const proposed: Placement[] = [
+      { pieceId: 'moving', sectionId: 'wall', xIn: 31.25, yIn: 10 },
+      { pieceId: 'group-member', sectionId: 'wall', xIn: 50.25, yIn: 12 },
+    ];
+    const fixedPlacement: Placement = { pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 10 };
+
+    expect(
+      applyPlacementGroupFeatures({
+        proposedPlacements: proposed,
+        movingPieceIds: ['moving', 'group-member'],
+        sections,
+        pieces: [...pieces, groupMember],
+        placements: [...proposed, fixedPlacement],
+        features: { ...baseFeatures, artPieceBuffer: true, artPieceBufferGapIn: 2 },
+      }).map(({ xIn }) => xIn),
+    ).toEqual([32, 51]);
+  });
+
+  it('returns group edge and center alignment guides from the group bounds', () => {
+    const groupMember: ArtPiece = {
+      id: 'group-member',
+      label: 'Group member',
+      widthIn: 8,
+      heightIn: 8,
+    };
+    const proposed: Placement[] = [
+      { pieceId: 'moving', sectionId: 'wall', xIn: 31.5, yIn: 12.5 },
+      { pieceId: 'group-member', sectionId: 'wall', xIn: 50, yIn: 12.5 },
+    ];
+    const fixedPlacement: Placement = { pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 10 };
+
+    const snapped = applyPlacementGroupFeaturesWithMetadata({
+      proposedPlacements: proposed,
+      movingPieceIds: ['moving', 'group-member'],
+      sections,
+      pieces: [...pieces, groupMember],
+      placements: [...proposed, fixedPlacement],
+      features: { ...baseFeatures, snapToAlignment: true, alignmentToleranceIn: 2 },
+    });
+
+    expect(snapped.value.map(({ xIn, yIn }) => ({ xIn, yIn }))).toEqual([
+      { xIn: 30, yIn: 13 },
+      { xIn: 48.5, yIn: 13 },
+    ]);
+    expect(snapped.guides).toContainEqual({ axis: 'x', coordinateIn: 30, kind: 'edge' });
+    expect(snapped.guides).toContainEqual({ axis: 'y', coordinateIn: 18, kind: 'center' });
   });
 });

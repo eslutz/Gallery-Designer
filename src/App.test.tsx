@@ -575,9 +575,19 @@ describe('Gallery Designer app', () => {
     fireEvent.click(screen.getByRole('button', { name: /Add wall section/i }));
 
     const sectionHandles = screen.getAllByRole('button', { name: /^Move Section \d+$/i });
+    const wallSections = Array.from(document.querySelectorAll('.wall-section'));
     expect(sectionHandles).toHaveLength(2);
-    sectionHandles.forEach((handle) => {
-      expect(handle.querySelector('.wall-section-handle-icon')).toBeInTheDocument();
+    sectionHandles.forEach((handle, index) => {
+      const background = handle.querySelector('.wall-section-handle-background');
+      const icon = handle.querySelector('.wall-section-handle-icon');
+      const sectionX = Number(wallSections[index]?.getAttribute('x'));
+      const sectionY = Number(wallSections[index]?.getAttribute('y'));
+      expect(icon).toBeInTheDocument();
+      expect(background).toHaveAttribute('x', String(sectionX - 3.8));
+      expect(background).toHaveAttribute('y', String(sectionY - 4.9));
+      expect(background).toHaveAttribute('height', '3.6');
+      expect(icon).toHaveAttribute('x', String(sectionX - 3.1));
+      expect(icon).toHaveAttribute('y', String(sectionY - 4.2));
     });
   });
 
@@ -1553,11 +1563,14 @@ describe('Gallery Designer app', () => {
 
   it('shows wall buffer guides persistently and art buffer guides only while moving a piece', () => {
     const { container } = render(<App />);
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    const initialViewBox = canvas.getAttribute('viewBox');
 
     expect(container.querySelectorAll('.wall-edge-buffer-guide')).toHaveLength(0);
     expect(container.querySelectorAll('.art-piece-buffer-guide')).toHaveLength(0);
 
     fireEvent.click(screen.getByLabelText('Wall edge buffer'));
+    expect(canvas.getAttribute('viewBox')).toBe(initialViewBox);
     const wallGuides = container.querySelectorAll('.wall-edge-buffer-guide');
     expect(wallGuides.length).toBeGreaterThan(0);
     expect(wallGuides[0]).toHaveAttribute('stroke-dasharray');
@@ -1565,7 +1578,6 @@ describe('Gallery Designer app', () => {
 
     fireEvent.click(screen.getByLabelText('Art piece buffer'));
     const stagedPiece = screen.getByRole('button', { name: /Drag Piece 1 from staging/i });
-    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
     mockCanvasProjection(canvas);
     mockPointerTarget(canvas);
     fireEvent.pointerDown(stagedPiece, { pointerId: 1, clientX: 0, clientY: 0 });
@@ -2092,6 +2104,111 @@ describe('Gallery Designer app', () => {
     expect(after[0].x - before[0].x).toBe(after[1].x - before[1].x);
     expect(after[0].y - before[0].y).toBe(after[1].y - before[1].y);
     expect(after[0]).not.toEqual(before[0]);
+  });
+
+  it('shows the group outline and art buffer immediately when grabbing a selected group', async () => {
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+    await user.click(screen.getByLabelText('Art piece buffer'));
+
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    mockCanvasProjection(canvas);
+    mockPointerTarget(canvas);
+    const first = screen.getByRole('button', { name: /^Move Piece 1$/i });
+    const second = screen.getByRole('button', { name: /^Move Piece 2$/i });
+    fireEvent(
+      second,
+      new MouseEvent('pointerdown', { bubbles: true, shiftKey: true, clientX: 40, clientY: 20 }),
+    );
+
+    const start = {
+      clientX: Number(first.getAttribute('x')) + 1,
+      clientY: Number(first.getAttribute('y')) + 1,
+    };
+    fireEvent(first, new MouseEvent('pointerdown', { bubbles: true, ...start, button: 0 }));
+
+    const preview = screen.getByTestId('wall-drag-preview');
+    expect(preview.querySelectorAll('[data-testid="group-drag-preview-piece"]')).toHaveLength(2);
+    expect(preview).toHaveClass('art-piece-buffer-preview');
+    expect(preview.style.getPropertyValue('--art-piece-buffer-gap')).not.toBe('');
+    expect(container.querySelector('.group-drag-bounds-preview')).toBeInTheDocument();
+  });
+
+  it('shows alignment guide lines while dragging a selected group into a group snap', async () => {
+    localStorage.setItem(
+      'gallery-designer-state-v1',
+      JSON.stringify({
+        unit: 'in',
+        themeMode: 'system',
+        applicationTheme: 'slate',
+        sections: [
+          {
+            id: 'wall',
+            name: 'Wall',
+            widthIn: 96,
+            heightIn: 84,
+            cornerAfter: 'none',
+            xIn: 0,
+            yIn: 0,
+          },
+        ],
+        pieces: [
+          { id: 'moving', label: 'Moving', widthIn: 12, heightIn: 10 },
+          { id: 'group-member', label: 'Group member', widthIn: 8, heightIn: 8 },
+          { id: 'fixed', label: 'Fixed', widthIn: 20, heightIn: 16 },
+        ],
+        placements: [
+          { pieceId: 'moving', sectionId: 'wall', xIn: 26.5, yIn: 12.5 },
+          { pieceId: 'group-member', sectionId: 'wall', xIn: 45, yIn: 12.5 },
+          { pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 10 },
+        ],
+        features: {
+          snapToGrid: false,
+          gridSizeIn: 1,
+          snapToAlignment: true,
+          showAlignmentGuides: true,
+          alignmentToleranceIn: 2,
+          wallEdgeBuffer: false,
+          wallEdgeBufferGapIn: 2,
+          artPieceBuffer: false,
+          artPieceBufferGapIn: 2,
+          measurementReferenceMode: 'relative',
+        },
+        autoPlacementSettings: {
+          wallSetupMode: 'available-sections',
+          context: { kind: 'blank', viewingPosture: 'seated' },
+          layoutPreference: 'auto',
+          wallFeatures: [],
+        },
+        selectedPieceIds: ['moving', 'group-member'],
+        selectedPieceId: 'moving',
+        message: 'Test design.',
+      }),
+    );
+    const { container } = render(<App />);
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    mockCanvasProjection(canvas);
+    mockPointerTarget(canvas);
+
+    const moving = screen.getByRole('button', { name: /^Move Moving$/i });
+    fireEvent(
+      moving,
+      new MouseEvent('pointerdown', { bubbles: true, clientX: 27.5, clientY: 13.5, button: 0 }),
+    );
+    fireEvent(
+      window,
+      new MouseEvent('pointermove', { bubbles: true, clientX: 32.5, clientY: 13.5 }),
+    );
+
+    const verticalGuide = await screen.findByTestId('alignment-guide-x');
+    const horizontalGuide = await screen.findByTestId('alignment-guide-y');
+    expect(verticalGuide).toHaveAttribute('x1', '30');
+    expect(verticalGuide).toHaveClass('edge');
+    expect(horizontalGuide).toHaveAttribute('y1', '18');
+    expect(horizontalGuide).toHaveClass('center');
+    expect(container.querySelectorAll('.alignment-snap-guide')).toHaveLength(2);
   });
 
   it('nudges and returns a selected group with one undo snapshot', async () => {

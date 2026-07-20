@@ -87,6 +87,34 @@ describe('application typography', () => {
     );
   });
 
+  it('uses separate art label tokens for inside and outside labels', () => {
+    expect(stylesheet).toMatch(/\.piece-label\s*{[^}]*fill:\s*var\(--piece-label-inside\)/s);
+    expect(stylesheet).toMatch(
+      /\.wall-feature-label\s*{[^}]*fill:\s*var\(--piece-label-outside\)/s,
+    );
+    expect(stylesheet).toMatch(
+      /\.outside-piece-label\s*{[^}]*fill:\s*var\(--piece-label-outside\)/s,
+    );
+  });
+
+  it('defines distinct dark-mode art colors for every application theme', () => {
+    expect(stylesheet).toMatch(
+      /:root\[data-theme='dark'\]\s*{[^}]*--piece-fill:\s*#dbece2;[^}]*--piece-selected-fill:\s*#b8dbc8;[^}]*--piece-label-outside:\s*#e7f0ea;/s,
+    );
+    expect(stylesheet).toMatch(
+      /:root\[data-theme='dark'\]\[data-palette='coastal-blue'\]\s*{[^}]*--piece-fill:\s*#d7e7f6;[^}]*--piece-selected-fill:\s*#bad6ef;[^}]*--piece-label-outside:\s*#eaf2fb;/s,
+    );
+    expect(stylesheet).toMatch(
+      /:root\[data-theme='dark'\]\[data-palette='aubergine'\]\s*{[^}]*--piece-fill:\s*#e9d8f0;[^}]*--piece-selected-fill:\s*#d9bfe5;[^}]*--piece-label-outside:\s*#f3eaf8;/s,
+    );
+    expect(stylesheet).toMatch(
+      /:root\[data-theme='dark'\]\[data-palette='terracotta'\]\s*{[^}]*--piece-fill:\s*#f7dccf;[^}]*--piece-selected-fill:\s*#efc2ab;[^}]*--piece-label-outside:\s*#f8eee8;/s,
+    );
+    expect(stylesheet).toMatch(
+      /:root\[data-theme='dark'\]\[data-palette='slate'\]\s*{[^}]*--piece-fill:\s*#d7e2ed;[^}]*--piece-selected-fill:\s*#bfcedc;[^}]*--piece-label-outside:\s*#edf3f7;/s,
+    );
+  });
+
   it('uses readable secondary controls and staging labels in the reviewed palettes', () => {
     expect(stylesheet).toMatch(
       /:root\[data-palette='terracotta'\]\s*{[^}]*--secondary-text:\s*#7d3d24/s,
