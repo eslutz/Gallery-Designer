@@ -2474,13 +2474,15 @@ describe('Gallery Designer app', () => {
     expect(
       within(primaryColumn as Element).getByRole('heading', { name: /Auto-placement settings/i }),
     ).toBeInTheDocument();
-    expect(primaryColumn).toContainElement(statusPanel);
+    expect(primaryColumn).not.toContainElement(statusPanel);
     expect(
       within(secondaryColumn as Element).getByRole('heading', { name: /Features/i }),
     ).toBeInTheDocument();
     expect(
       within(secondaryColumn as Element).getByRole('heading', { name: /^Export$/i }),
     ).toBeInTheDocument();
+    expect(secondaryColumn).toContainElement(statusPanel);
+    expect(secondaryColumn?.lastElementChild).toBe(statusPanel);
     expect(screen.getByRole('group', { name: /Appearance controls/i })).toContainElement(
       screen.getByLabelText('Theme'),
     );

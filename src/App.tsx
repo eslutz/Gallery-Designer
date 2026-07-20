@@ -3173,18 +3173,6 @@ export default function App() {
                 onEditEnd={finishFieldEdit}
               />
             </CollapsiblePanel>
-            <section className="status-panel right-panel-status" aria-label="Latest update">
-              <p className="status-panel-label">Latest update</p>
-              <div className="status-content" role="status" aria-live="polite">
-                <p className="status-message">{state.message}</p>
-                {autoPlacementFailure?.message === state.message ? (
-                  <AutoPlacementFailureDetails
-                    diagnostics={autoPlacementFailure.diagnostics}
-                    unit={state.unit}
-                  />
-                ) : null}
-              </div>
-            </section>
           </div>
           <div className="right-panel-column right-panel-column-secondary">
             <CollapsiblePanel
@@ -3211,6 +3199,18 @@ export default function App() {
               onImportClick={() => importInputRef.current?.click()}
               className="right-panel-export"
             />
+            <section className="status-panel right-panel-status" aria-label="Latest update">
+              <p className="status-panel-label">Latest update</p>
+              <div className="status-content" role="status" aria-live="polite">
+                <p className="status-message">{state.message}</p>
+                {autoPlacementFailure?.message === state.message ? (
+                  <AutoPlacementFailureDetails
+                    diagnostics={autoPlacementFailure.diagnostics}
+                    unit={state.unit}
+                  />
+                ) : null}
+              </div>
+            </section>
           </div>
           <input
             ref={importInputRef}
