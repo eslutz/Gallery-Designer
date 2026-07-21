@@ -4,8 +4,10 @@ import { readFile } from 'node:fs/promises';
 test('downloads complete PNG and PDF installation sheets', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Auto-place pieces' }).click();
+  await page.getByRole('button', { name: 'Advanced', exact: true }).click();
 
   const pngDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export PNG' }).scrollIntoViewIfNeeded();
   await page.getByRole('button', { name: 'Export PNG' }).click();
   const pngDownload = await pngDownloadPromise;
   expect(pngDownload.suggestedFilename()).toBe('gallery-wall-layout.png');
@@ -15,9 +17,11 @@ test('downloads complete PNG and PDF installation sheets', async ({ page }) => {
   expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
   expect(png.readUInt32BE(16)).toBe(1600);
   expect(png.readUInt32BE(20)).toBeGreaterThan(900);
-  await expect(page.getByRole('status')).toContainText('PNG export generated.');
+  const latestUpdate = page.getByRole('region', { name: 'Latest update' }).getByRole('status');
+  await expect(latestUpdate).toContainText('PNG export generated.');
 
   const pdfDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export PDF' }).scrollIntoViewIfNeeded();
   await page.getByRole('button', { name: 'Export PDF' }).click();
   const pdfDownload = await pdfDownloadPromise;
   expect(pdfDownload.suggestedFilename()).toBe('gallery-wall-layout.pdf');
@@ -26,7 +30,7 @@ test('downloads complete PNG and PDF installation sheets', async ({ page }) => {
   const pdf = await readFile(pdfPath!);
   expect(pdf.subarray(0, 4).toString()).toBe('%PDF');
   expect(pdf.byteLength).toBeGreaterThan(10_000);
-  await expect(page.getByRole('status')).toContainText('PDF export generated.');
+  await expect(latestUpdate).toContainText('PDF export generated.');
 });
 
 test('paginates eight installation instructions without a nearly empty trailing page', async ({
@@ -37,8 +41,10 @@ test('paginates eight installation instructions without a nearly empty trailing 
     await page.getByRole('button', { name: 'Add art piece' }).click();
   }
   await page.getByRole('button', { name: 'Auto-place pieces' }).click();
+  await page.getByRole('button', { name: 'Advanced', exact: true }).click();
 
   const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export PDF' }).scrollIntoViewIfNeeded();
   await page.getByRole('button', { name: 'Export PDF' }).click();
   const download = await downloadPromise;
   const downloadPath = await download.path();
@@ -52,10 +58,10 @@ test('paginates eight installation instructions without a nearly empty trailing 
 test('MVP layout flow exports measurements', async ({ page }) => {
   await page.goto('/');
 
-  await page.getByLabel('Section 1 width').fill('120');
-  await page.getByLabel('Section 1 height').fill('96');
-  await page.getByLabel('Piece 1 width').fill('10');
-  await page.getByLabel('Piece 1 height').fill('20');
+  await page.getByLabel('Section 1 width', { exact: true }).fill('120');
+  await page.getByLabel('Section 1 height', { exact: true }).fill('96');
+  await page.getByLabel('Piece 1 width', { exact: true }).fill('10');
+  await page.getByLabel('Piece 1 height', { exact: true }).fill('20');
   await expect(page.getByRole('region', { name: 'Art staging tray' })).toBeVisible();
   await expect(
     page.locator('.canvas-card').getByRole('region', { name: 'Art staging tray' }),
@@ -76,14 +82,17 @@ test('MVP layout flow exports measurements', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Drag Piece 1 from staging' })).toContainText(
     '10 in x 20 in',
   );
-  await expect(page.getByRole('complementary', { name: 'Details and export' })).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'Details and export' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Advanced', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Advanced' })).toContainText('Design files');
+  await page.getByRole('button', { name: 'Close Advanced', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Place on first wall' })).toHaveCount(0);
   await page.getByLabel('Piece 1 label').fill('MCFN');
-  await page.getByLabel('Piece 1 width').fill('2');
-  await page.getByLabel('Piece 1 height').fill('6');
+  await page.getByLabel('Piece 1 width', { exact: true }).fill('2');
+  await page.getByLabel('Piece 1 height', { exact: true }).fill('6');
   await page.getByRole('button', { name: 'Add wall section' }).click();
-  await page.getByLabel('Section 2 width').fill('72');
-  await page.getByLabel('Section 2 height').fill('96');
+  await page.getByLabel('Section 2 width', { exact: true }).fill('72');
+  await page.getByLabel('Section 2 height', { exact: true }).fill('96');
   await page.getByRole('button', { name: 'Add art piece' }).click();
   await page.getByRole('button', { name: 'Add art piece' }).click();
   await page.getByRole('button', { name: 'Auto-place pieces' }).click();
@@ -154,7 +163,6 @@ test('shows an alignment guide while pointer dragging into a center snap', async
             name: 'Wall',
             widthIn: 96,
             heightIn: 84,
-            cornerAfter: 'none',
             xIn: 0,
             yIn: 0,
           },
@@ -289,8 +297,8 @@ test('auto-placement preserves manually positioned art while placing the remaini
   await pointerDrag(
     page,
     page.getByRole('button', { name: 'Drag Piece 1 from staging' }),
-    canvasBox.x + 220,
-    canvasBox.y + 180,
+    canvasBox.x + canvasBox.width / 2,
+    canvasBox.y + canvasBox.height / 2,
   );
 
   const fixedPiece = page.getByRole('button', { name: 'Move Piece 1', exact: true });
@@ -307,9 +315,14 @@ test('auto-placement preserves manually positioned art while placing the remaini
   await expect(fixedPiece).toHaveAttribute('y', fixedPosition.y ?? '');
   await expect(page.getByRole('button', { name: 'Move Piece 2', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Move Piece 3', exact: true })).toBeVisible();
-  await expect(page.getByRole('status')).toContainText(
-    'Auto-placement placed 2 remaining pieces around 1 piece you positioned.',
-  );
+  await expect(
+    page
+      .locator('[role="status"]')
+      .filter({
+        hasText: 'Auto-placement placed 2 remaining pieces around 1 piece you positioned.',
+      })
+      .first(),
+  ).toContainText('Auto-placement placed 2 remaining pieces around 1 piece you positioned.');
 });
 
 test('mobile staged pieces keep touch drags from becoming page scrolls', async ({ page }) => {
@@ -386,10 +399,38 @@ test('zoomed wall canvas supports wheel zoom and touchpad-style panning', async 
 test('keeps responsive workspace panels contained and switches mobile measurements to cards', async ({
   page,
 }) => {
+  const advancedDrawerLayer = page.locator(
+    '.advanced-drawer-layer:not(.placement-settings-drawer-layer)',
+  );
+  const isAdvancedDrawerOpen = async () =>
+    advancedDrawerLayer.evaluate((element) => {
+      return element.classList.contains('is-open');
+    });
+
+  const closeAdvancedDrawer = async () => {
+    if (await isAdvancedDrawerOpen()) {
+      await advancedDrawerLayer.locator('.advanced-drawer-backdrop').evaluate((element) => {
+        (element as HTMLButtonElement).click();
+      });
+      await expect.poll(async () => isAdvancedDrawerOpen()).toBe(false);
+    }
+  };
+
   const expectStatusMessageWithinPanel = async () => {
+    if (!(await isAdvancedDrawerOpen())) {
+      const advancedButton = page.getByRole('button', { name: 'Advanced', exact: true });
+      await advancedButton.scrollIntoViewIfNeeded();
+      await advancedButton.evaluate((element) => {
+        (element as HTMLButtonElement).click();
+      });
+    }
     const statusTextBounds = await page.evaluate(() => {
-      const panel = document.querySelector('.right-panel-status');
-      const message = document.querySelector('.status-message');
+      const panel = document.querySelector(
+        '.advanced-drawer:not(.placement-settings-drawer) .status-panel',
+      );
+      const message = document.querySelector(
+        '.advanced-drawer:not(.placement-settings-drawer) .status-message',
+      );
       if (!panel || !message) {
         throw new Error('Could not find latest update panel content.');
       }
@@ -416,6 +457,48 @@ test('keeps responsive workspace panels contained and switches mobile measuremen
     );
   };
 
+  const expectAdvancedDrawerContained = async (viewportWidth: number, viewportHeight: number) => {
+    const advancedDrawer = page.locator('.advanced-drawer:not(.placement-settings-drawer)');
+    if (!(await isAdvancedDrawerOpen())) {
+      await page.locator('.editor-column').evaluate((element) => {
+        element.scrollTop = 0;
+      });
+      const advancedButton = page.getByRole('button', { name: 'Advanced', exact: true });
+      await advancedButton.scrollIntoViewIfNeeded();
+      await advancedButton.evaluate((element) => {
+        (element as HTMLButtonElement).click();
+      });
+    }
+    await expect(advancedDrawer).toContainText('Design files');
+    await page.getByRole('button', { name: 'Export PNG' }).scrollIntoViewIfNeeded();
+    await expect(page.getByRole('button', { name: 'Import JSON', exact: true })).toBeVisible();
+
+    const drawerBounds = await page.evaluate(() => {
+      const drawer = document.querySelector<HTMLElement>(
+        '.advanced-drawer:not(.placement-settings-drawer)',
+      );
+      if (!drawer) {
+        throw new Error('Could not find advanced drawer.');
+      }
+      const rect = drawer.getBoundingClientRect();
+      return {
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+      };
+    });
+    const tolerance = 1;
+
+    expect(drawerBounds.left).toBeGreaterThanOrEqual(0);
+    expect(drawerBounds.top).toBeGreaterThanOrEqual(0);
+    expect(drawerBounds.right).toBeLessThanOrEqual(viewportWidth + tolerance);
+    expect(drawerBounds.bottom).toBeLessThanOrEqual(viewportHeight + tolerance);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      viewportWidth,
+    );
+  };
+
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/');
   await page.evaluate(() => localStorage.clear());
@@ -424,7 +507,7 @@ test('keeps responsive workspace panels contained and switches mobile measuremen
 
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto('/');
-  const constrainedThreeColumnLayout = await page.evaluate(() => {
+  const twoColumnDesktopLayout = await page.evaluate(() => {
     const getBox = (selector: string) => {
       const element = document.querySelector<HTMLElement>(selector);
       if (!element) {
@@ -438,29 +521,51 @@ test('keeps responsive workspace panels contained and switches mobile measuremen
         top: rect.top,
       };
     };
+    const workspace = document.querySelector<HTMLElement>('.workspace');
+    if (!workspace) {
+      throw new Error('Could not find .workspace');
+    }
 
     return {
       canvasCard: getBox('.canvas-card'),
       editor: getBox('.editor-column'),
       stagingTray: getBox('.staging-tray'),
+      workspaceColumnCount: getComputedStyle(workspace)
+        .gridTemplateColumns.split(' ')
+        .filter(Boolean).length,
     };
   });
-  expect(constrainedThreeColumnLayout.stagingTray.bottom).toBeLessThanOrEqual(
-    constrainedThreeColumnLayout.canvasCard.bottom + 1,
+  expect(twoColumnDesktopLayout.workspaceColumnCount).toBe(2);
+  expect(twoColumnDesktopLayout.editor.clientHeight).toBeGreaterThan(0);
+  expect(twoColumnDesktopLayout.stagingTray.bottom).toBeLessThanOrEqual(
+    twoColumnDesktopLayout.canvasCard.bottom + 1,
   );
-  expect(constrainedThreeColumnLayout.canvasCard.scrollHeight).toBeLessThanOrEqual(
-    constrainedThreeColumnLayout.canvasCard.clientHeight + 1,
+  expect(twoColumnDesktopLayout.canvasCard.scrollHeight).toBeLessThanOrEqual(
+    twoColumnDesktopLayout.canvasCard.clientHeight + 1,
   );
-  expect(constrainedThreeColumnLayout.editor.scrollHeight).toBeGreaterThan(
-    constrainedThreeColumnLayout.editor.clientHeight,
+  expect(twoColumnDesktopLayout.editor.scrollHeight).toBeGreaterThan(
+    twoColumnDesktopLayout.editor.clientHeight,
   );
 
-  for (const width of [988, 986, 982]) {
-    await page.setViewportSize({ width, height: 900 });
-    await expectStatusMessageWithinPanel();
-  }
+  await page.setViewportSize({ width: 2200, height: 900 });
+  await page.goto('/');
+  const wideDesktopLayout = await page.evaluate(() => {
+    const workspace = document.querySelector<HTMLElement>('.workspace');
+    const editor = document.querySelector<HTMLElement>('.editor-column');
+    if (!workspace || !editor) {
+      throw new Error('Could not find wide desktop layout elements.');
+    }
+    return {
+      editorWidth: editor.getBoundingClientRect().width,
+      workspaceColumnCount: getComputedStyle(workspace)
+        .gridTemplateColumns.split(' ')
+        .filter(Boolean).length,
+    };
+  });
+  expect(wideDesktopLayout.workspaceColumnCount).toBe(2);
+  expect(wideDesktopLayout.editorWidth).toBeLessThanOrEqual(1441);
 
-  for (const width of [1024, 1100, 1199]) {
+  for (const width of [940, 1024, 1100, 1199]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/');
     await page.getByRole('button', { name: 'Auto-place pieces' }).click();
@@ -486,50 +591,70 @@ test('keeps responsive workspace panels contained and switches mobile measuremen
       return {
         canvas: getBox('.canvas-card'),
         measurements: getBox('.measurements-panel'),
-        rightPanel: getBox('.right-panel'),
-        autoPlacementPanel: getBox('.right-panel-auto'),
-        featuresPanel: getBox('.right-panel-features'),
-        statusPanel: getBox('.right-panel-status'),
-        exportPanel: getBox('.right-panel-export'),
         documentOverflowY: getComputedStyle(document.documentElement).overflowY,
-        workspaceCanScroll: workspace.scrollHeight > workspace.clientHeight,
+        editor: getBox('.editor-column'),
+        setup: getBox('.setup-panel'),
+        workspaceColumnCount: getComputedStyle(workspace)
+          .gridTemplateColumns.split(' ')
+          .filter(Boolean).length,
       };
     });
     const tolerance = 1;
 
+    expect(layout.workspaceColumnCount).toBe(2);
+    expect(layout.setup.top).toBeLessThanOrEqual(layout.editor.top + tolerance);
     expect(layout.canvas.bottom).toBeLessThanOrEqual(layout.measurements.top + tolerance);
-    expect(layout.measurements.bottom).toBeLessThanOrEqual(layout.rightPanel.top + tolerance);
-    expect(layout.autoPlacementPanel.bottom).toBeLessThan(layout.featuresPanel.bottom - 20);
-    expect(layout.statusPanel.top).toBeGreaterThanOrEqual(layout.autoPlacementPanel.bottom);
-    expect(layout.statusPanel.top).toBeLessThanOrEqual(layout.autoPlacementPanel.bottom + 15);
-    expect(layout.exportPanel.top).toBeGreaterThanOrEqual(layout.featuresPanel.bottom);
     expect(layout.documentOverflowY).toBe('hidden');
     await page.evaluate(() => window.scrollTo(0, 200));
     expect(await page.evaluate(() => window.scrollY)).toBe(0);
-    expect(layout.workspaceCanScroll).toBe(true);
   }
 
+  await page.setViewportSize({ width: 900, height: 900 });
+  await page.goto('/');
+  const smallDesktopLayout = await page.evaluate(() => {
+    const workspace = document.querySelector<HTMLElement>('.workspace');
+    const setup = document.querySelector<HTMLElement>('.setup-panel');
+    const editor = document.querySelector<HTMLElement>('.editor-column');
+    if (!workspace || !setup || !editor) {
+      throw new Error('Could not find small desktop layout elements.');
+    }
+    return {
+      editorTop: editor.getBoundingClientRect().top,
+      setupBottom: setup.getBoundingClientRect().bottom,
+      workspaceColumnCount: getComputedStyle(workspace)
+        .gridTemplateColumns.split(' ')
+        .filter(Boolean).length,
+    };
+  });
+  expect(smallDesktopLayout.workspaceColumnCount).toBe(1);
+  expect(smallDesktopLayout.editorTop).toBeGreaterThanOrEqual(smallDesktopLayout.setupBottom - 1);
+  await expectAdvancedDrawerContained(900, 900);
+
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.evaluate(() => localStorage.clear());
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      'gallery-designer-state-v1',
+      JSON.stringify({
+        unit: 'in',
+        themeMode: 'system',
+        applicationTheme: 'slate',
+        sections: [{ id: 'wall', name: 'Wall', widthIn: 96, heightIn: 84, xIn: 0, yIn: 0 }],
+        pieces: [{ id: 'piece-1', label: 'Piece 1', widthIn: 16, heightIn: 20 }],
+        placements: [{ pieceId: 'piece-1', sectionId: 'wall', xIn: 20, yIn: 20 }],
+      }),
+    );
+  });
   await page.goto('/');
   const editorBox = await page.locator('.editor-column').boundingBox();
   const setupBox = await page.locator('.setup-panel').boundingBox();
-  const rightPanelBox = await page.locator('.right-panel').boundingBox();
   expect(editorBox).not.toBeNull();
   expect(setupBox).not.toBeNull();
-  expect(rightPanelBox).not.toBeNull();
   expect(editorBox?.y).toBeLessThan(setupBox?.y ?? Number.POSITIVE_INFINITY);
   expect(setupBox?.height).toBeGreaterThan(0);
-  expect(rightPanelBox?.y).toBeGreaterThanOrEqual((setupBox?.y ?? 0) + (setupBox?.height ?? 0));
+  await expect(page.locator('.right-panel')).toHaveCount(0);
   await expect(page.locator('.measurements-table')).toHaveCSS('display', 'none');
-
-  const stagedPiece = page.getByRole('button', { name: 'Drag Piece 1 from staging' });
-  const canvas = page.getByRole('img', { name: 'Scaled gallery wall layout' });
-  const canvasBox = await canvas.boundingBox();
-  if (!canvasBox) {
-    throw new Error('Canvas was not visible enough to place a piece.');
-  }
-  await pointerDrag(page, stagedPiece, canvasBox.x + 120, canvasBox.y + 120);
+  await expectAdvancedDrawerContained(390, 844);
+  await closeAdvancedDrawer();
   await expect(page.locator('.measurement-cards')).toHaveCSS('display', 'grid');
 });
 
@@ -537,7 +662,7 @@ test('info tooltips stay inside a narrow viewport', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
 
-  for (const label of ['Snap to alignment information', 'Print/export layout information']) {
+  const expectTooltipInsideViewport = async (label: string) => {
     const button = page.getByRole('button', { name: label });
     await button.scrollIntoViewIfNeeded();
     await button.hover();
@@ -553,7 +678,15 @@ test('info tooltips stay inside a narrow viewport', async ({ page }) => {
 
     await page.mouse.move(0, 0);
     await expect(tooltip).toHaveCount(0);
-  }
+  };
+
+  const advancedButton = page.getByRole('button', { name: 'Advanced', exact: true });
+  await advancedButton.scrollIntoViewIfNeeded();
+  await advancedButton.evaluate((element) => {
+    (element as HTMLButtonElement).click();
+  });
+  await expectTooltipInsideViewport('Snap to alignment information');
+  await expectTooltipInsideViewport('Print/export layout information');
 });
 
 async function piecePositions(locators: import('@playwright/test').Locator[]) {

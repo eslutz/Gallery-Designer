@@ -41,6 +41,14 @@ describe('Gallery Designer app', () => {
     );
   });
 
+  async function openAdvancedDrawer(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: /^Advanced$/i }));
+  }
+
+  async function openPlacementSettingsDrawer(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: /^Placement settings$/i }));
+  }
+
   it('creates a multi-section wall, adds pieces, auto-places them, and shows export-ready measurements', async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -138,14 +146,13 @@ describe('Gallery Designer app', () => {
 
     expect(screen.getByRole('region', { name: /Art staging tray/i })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /Inspector/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('complementary', { name: /Details and export/i })).toContainElement(
-      screen.getByRole('heading', { name: /^Export$/i }),
+    await openAdvancedDrawer(user);
+    expect(screen.getByRole('dialog', { name: /Advanced/i })).toContainElement(
+      screen.getByRole('heading', { name: /Design files/i }),
     );
-    expect(screen.getByRole('complementary', { name: /Details and export/i })).toContainElement(
-      screen.getByRole('heading', { name: /Features/i }),
-    );
-    expect(screen.getByRole('complementary', { name: /Details and export/i })).toContainElement(
-      screen.getByRole('heading', { name: /Auto-placement settings/i }),
+    await openPlacementSettingsDrawer(user);
+    expect(screen.getByRole('dialog', { name: /Placement settings/i })).toContainElement(
+      screen.getByLabelText('Wall setup'),
     );
     expect(screen.queryByRole('button', { name: /Place on first wall/i })).not.toBeInTheDocument();
 
@@ -155,8 +162,10 @@ describe('Gallery Designer app', () => {
     expect(screen.getByRole('button', { name: /Drag Piece 2 from staging/i })).toBeInTheDocument();
   });
 
-  it('explains feature behavior without extra local persistence copy', () => {
+  it('explains feature behavior without extra local persistence copy', async () => {
+    const user = userEvent.setup();
     render(<App />);
+    await openAdvancedDrawer(user);
 
     expect(screen.queryByText(/saved locally in this browser/i)).not.toBeInTheDocument();
     expect(
@@ -170,8 +179,39 @@ describe('Gallery Designer app', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('explains context and viewing height for available wall sections', () => {
+  it('explains wall setup, context, and viewing height for available wall sections', () => {
     render(<App />);
+
+    expect(screen.getByRole('button', { name: /wall setup information/i })).toHaveAttribute(
+      'aria-describedby',
+    );
+    expect(screen.getByRole('button', { name: /context information/i })).toHaveAttribute(
+      'aria-describedby',
+    );
+    expect(screen.getByRole('button', { name: /viewing height information/i })).toHaveAttribute(
+      'aria-describedby',
+    );
+    const wallSetupButton = screen.getByRole('button', { name: /wall setup information/i });
+    const contextButton = screen.getByRole('button', { name: /context information/i });
+    const viewingHeightButton = screen.getByRole('button', {
+      name: /viewing height information/i,
+    });
+    expect(
+      document.getElementById(wallSetupButton.getAttribute('aria-describedby') ?? ''),
+    ).toHaveTextContent(/available wall sections uses the wall spans/i);
+    expect(
+      document.getElementById(contextButton.getAttribute('aria-describedby') ?? ''),
+    ).toHaveTextContent(/context sets placement priorities/i);
+    expect(
+      document.getElementById(viewingHeightButton.getAttribute('aria-describedby') ?? ''),
+    ).toHaveTextContent(/shifts the group vertically/i);
+  });
+
+  it('keeps context and viewing height tooltips in full-wall setup mode', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.selectOptions(screen.getByLabelText('Wall setup'), 'full-wall-with-features');
 
     expect(screen.getByRole('button', { name: /context information/i })).toHaveAttribute(
       'aria-describedby',
@@ -179,15 +219,22 @@ describe('Gallery Designer app', () => {
     expect(screen.getByRole('button', { name: /viewing height information/i })).toHaveAttribute(
       'aria-describedby',
     );
-    expect(screen.getAllByRole('tooltip')[0]).toHaveTextContent(
-      /context sets placement priorities/i,
-    );
-    expect(screen.getAllByRole('tooltip')[1]).toHaveTextContent(/shifts the group vertically/i);
+    const contextButton = screen.getByRole('button', { name: /context information/i });
+    const viewingHeightButton = screen.getByRole('button', {
+      name: /viewing height information/i,
+    });
+    expect(
+      document.getElementById(contextButton.getAttribute('aria-describedby') ?? ''),
+    ).toHaveTextContent(/context sets placement priorities/i);
+    expect(
+      document.getElementById(viewingHeightButton.getAttribute('aria-describedby') ?? ''),
+    ).toHaveTextContent(/shifts the group vertically/i);
   });
 
   it('shows and hides info tooltips from hover, focus, and Escape', async () => {
     const user = userEvent.setup();
     render(<App />);
+    await openAdvancedDrawer(user);
 
     const button = screen.getByRole('button', { name: 'Snap to alignment information' });
     const tooltip = document.getElementById(button.getAttribute('aria-describedby') ?? '');
@@ -208,11 +255,107 @@ describe('Gallery Designer app', () => {
     await waitFor(() => expect(tooltip).not.toHaveClass('info-tooltip-open'));
   });
 
+  it('shows action tooltips for section and art row icon buttons', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await openPlacementSettingsDrawer(user);
+    await user.selectOptions(screen.getByLabelText('Wall setup'), 'full-wall-with-features');
+    await user.click(screen.getByRole('button', { name: /Add furniture or feature/i }));
+
+    const removeSection = screen.getByRole('button', { name: 'Remove Section 1' });
+    const duplicatePiece = screen.getByRole('button', { name: 'Duplicate Piece 1' });
+    const artPanel = screen.getByLabelText('Art piece settings');
+    const removePiece = within(artPanel).getByRole('button', { name: 'Remove Piece 1' });
+    const removeFeature = screen.getByRole('button', { name: 'Remove Feature 1' });
+    const stagedRemovePiece = screen.getByRole('button', { name: 'Remove Piece 1 from staging' });
+    const stagedRemoveFeature = screen.getByRole('button', {
+      name: 'Remove Sofa 1 from staging',
+    });
+
+    const removeSectionTooltip = document.getElementById(
+      removeSection.getAttribute('aria-describedby') ?? '',
+    );
+    const duplicatePieceTooltip = document.getElementById(
+      duplicatePiece.getAttribute('aria-describedby') ?? '',
+    );
+    const removePieceTooltip = document.getElementById(
+      removePiece.getAttribute('aria-describedby') ?? '',
+    );
+    const removeFeatureTooltip = document.getElementById(
+      removeFeature.getAttribute('aria-describedby') ?? '',
+    );
+    const stagedRemovePieceTooltip = document.getElementById(
+      stagedRemovePiece.getAttribute('aria-describedby') ?? '',
+    );
+    const stagedRemoveFeatureTooltip = document.getElementById(
+      stagedRemoveFeature.getAttribute('aria-describedby') ?? '',
+    );
+
+    expect(removeSectionTooltip).toHaveTextContent('Remove wall section');
+    expect(duplicatePieceTooltip).toHaveTextContent('Duplicate artwork');
+    expect(removePieceTooltip).toHaveTextContent('Remove artwork');
+    expect(removeFeatureTooltip).toHaveTextContent('Remove sofa');
+    expect(stagedRemovePieceTooltip).toHaveTextContent('Remove artwork');
+    expect(stagedRemoveFeatureTooltip).toHaveTextContent('Remove sofa');
+
+    await user.hover(removeSection);
+    await waitFor(() => expect(removeSectionTooltip).toHaveClass('info-tooltip-open'));
+
+    await user.unhover(removeSection);
+    await waitFor(() => expect(removeSectionTooltip).not.toHaveClass('info-tooltip-open'));
+
+    await user.hover(stagedRemovePiece);
+    await waitFor(() => expect(stagedRemovePieceTooltip).toHaveClass('info-tooltip-open'));
+
+    stagedRemovePiece.getBoundingClientRect = vi.fn(
+      () =>
+        ({
+          left: 360,
+          top: 160,
+          width: 24,
+          height: 24,
+          right: 384,
+          bottom: 184,
+          x: 360,
+          y: 160,
+          toJSON: vi.fn(),
+        }) as DOMRect,
+    );
+    stagedRemovePieceTooltip!.getBoundingClientRect = vi.fn(
+      () =>
+        ({
+          left: 0,
+          top: 0,
+          width: 92,
+          height: 38,
+          right: 92,
+          bottom: 38,
+          x: 0,
+          y: 0,
+          toJSON: vi.fn(),
+        }) as DOMRect,
+    );
+    Object.defineProperty(stagedRemovePieceTooltip!, 'scrollWidth', {
+      configurable: true,
+      value: 148,
+    });
+
+    await user.unhover(stagedRemovePiece);
+    await waitFor(() => expect(stagedRemovePieceTooltip).not.toHaveClass('info-tooltip-open'));
+    await user.hover(stagedRemovePiece);
+
+    await waitFor(() =>
+      expect(Number.parseFloat(stagedRemovePieceTooltip!.style.maxWidth)).toBe(148),
+    );
+  });
+
   it('positions info tooltips inside a narrow viewport', async () => {
     const user = userEvent.setup();
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 844 });
     render(<App />);
+    await openAdvancedDrawer(user);
 
     const button = screen.getByRole('button', { name: 'Snap to alignment information' });
     const tooltip = document.getElementById(button.getAttribute('aria-describedby') ?? '');
@@ -279,11 +422,102 @@ describe('Gallery Designer app', () => {
     await user.click(screen.getByRole('button', { name: /Add furniture or feature/i }));
 
     expect(screen.queryByLabelText('Feature 1 left edge (in)')).not.toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: /Drag Wall feature 1 from staging/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Drag Sofa 1 from staging/i })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'File cabinet' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Lamp' })).toBeInTheDocument();
+  });
+
+  it('uses reasonable dimensions and clearance defaults for selected furniture types', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await openPlacementSettingsDrawer(user);
+    await user.selectOptions(screen.getByLabelText('Wall setup'), 'full-wall-with-features');
+    await user.click(screen.getByRole('button', { name: /Add furniture or feature/i }));
+
+    expect(screen.getByLabelText('Feature 1 width (in)')).toHaveValue('84');
+    expect(screen.getByLabelText('Feature 1 height (in)')).toHaveValue('30');
+    expect(screen.getByLabelText('Feature 1 clearance (in)')).toHaveValue('8');
+
+    await user.selectOptions(screen.getByLabelText('Feature 1 type'), 'lamp');
+
+    expect(screen.getByLabelText('Feature 1 width (in)')).toHaveValue('14');
+    expect(screen.getByLabelText('Feature 1 height (in)')).toHaveValue('60');
+    expect(screen.getByLabelText('Feature 1 clearance (in)')).toHaveValue('3');
+
+    await user.selectOptions(screen.getByLabelText('Feature 1 type'), 'bookcase');
+
+    expect(screen.getByLabelText('Feature 1 width (in)')).toHaveValue('30');
+    expect(screen.getByLabelText('Feature 1 height (in)')).toHaveValue('72');
+    expect(screen.getByLabelText('Feature 1 clearance (in)')).toHaveValue('4');
+  });
+
+  it('names furniture defaults by type and reserves wall feature names for custom features', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await openPlacementSettingsDrawer(user);
+    const placementDrawer = screen.getByRole('dialog', { name: /Placement settings/i });
+    await user.selectOptions(
+      within(placementDrawer).getByLabelText('Wall setup'),
+      'full-wall-with-features',
+    );
+
+    await user.click(
+      within(placementDrawer).getByRole('button', { name: /Add furniture or feature/i }),
+    );
+    expect(within(placementDrawer).getByDisplayValue('Sofa 1')).toBeVisible();
+
+    await user.click(
+      within(placementDrawer).getByRole('button', { name: /Add furniture or feature/i }),
+    );
+    expect(within(placementDrawer).getByDisplayValue('Sofa 2')).toBeVisible();
+
+    await user.selectOptions(within(placementDrawer).getByLabelText('Feature 2 type'), 'desk');
+    expect(within(placementDrawer).getByDisplayValue('Desk 1')).toBeVisible();
+
+    await user.click(
+      within(placementDrawer).getByRole('button', { name: /Add furniture or feature/i }),
+    );
+    expect(within(placementDrawer).getByDisplayValue('Sofa 2')).toBeVisible();
+
+    await user.selectOptions(within(placementDrawer).getByLabelText('Feature 3 type'), 'custom');
+    expect(within(placementDrawer).getByDisplayValue('Wall feature 1')).toBeVisible();
+  });
+
+  it('collapses unselected furniture details like wall sections and art pieces', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await openPlacementSettingsDrawer(user);
+    const placementDrawer = screen.getByRole('dialog', { name: /Placement settings/i });
+    await user.selectOptions(
+      within(placementDrawer).getByLabelText('Wall setup'),
+      'full-wall-with-features',
+    );
+    await user.click(
+      within(placementDrawer).getByRole('button', { name: /Add furniture or feature/i }),
+    );
+    await user.click(
+      within(placementDrawer).getByRole('button', { name: /Add furniture or feature/i }),
+    );
+
+    const collapsedName = within(placementDrawer).getByText('Sofa 1', {
+      selector: '.row-name-readonly',
+    });
+    expect(collapsedName.closest('article')).toHaveClass('collapsed');
+    expect(within(placementDrawer).getByDisplayValue('Sofa 2').closest('article')).toHaveClass(
+      'expanded',
+    );
+
+    await user.click(collapsedName);
+
+    expect(within(placementDrawer).getByDisplayValue('Sofa 1')).toBeVisible();
+    expect(
+      within(placementDrawer)
+        .getByText('Sofa 2', { selector: '.row-name-readonly' })
+        .closest('article'),
+    ).toHaveClass('collapsed');
   });
 
   it('moves furniture and features from staging to the wall and back to staging', async () => {
@@ -296,14 +530,14 @@ describe('Gallery Designer app', () => {
     mockCanvasProjection(canvas);
     mockPointerTarget(canvas);
 
-    const stagedFeature = screen.getByRole('button', { name: /Drag Wall feature 1 from staging/i });
+    const stagedFeature = screen.getByRole('button', { name: /Drag Sofa 1 from staging/i });
     act(() => {
       fireEvent.pointerDown(stagedFeature, { pointerId: 1, clientX: 50, clientY: 50 });
       window.dispatchEvent(new MouseEvent('pointermove', { clientX: 60, clientY: 60 }));
       window.dispatchEvent(new MouseEvent('pointerup', { clientX: 60, clientY: 60 }));
     });
 
-    const placedFeature = screen.getByRole('button', { name: /Move Wall feature 1/i });
+    const placedFeature = screen.getByRole('button', { name: /^Move Sofa 1$/i });
     expect(placedFeature).toBeInTheDocument();
 
     const stagingTray = screen.getByRole('region', { name: /Art staging tray/i });
@@ -321,9 +555,7 @@ describe('Gallery Designer app', () => {
     });
 
     await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: /Drag Wall feature 1 from staging/i }),
-      ).toBeInTheDocument(),
+      expect(screen.getByRole('button', { name: /Drag Sofa 1 from staging/i })).toBeInTheDocument(),
     );
   });
 
@@ -375,7 +607,7 @@ describe('Gallery Designer app', () => {
     localStorage.setItem(
       'gallery-designer-state-v1',
       JSON.stringify({
-        sections: [{ id: 'main', name: 'Main', widthIn: 96, heightIn: 84, cornerAfter: 'none' }],
+        sections: [{ id: 'main', name: 'Main', widthIn: 96, heightIn: 84 }],
         pieces: [
           { id: 'outside', label: 'Outside', widthIn: 16, heightIn: 20 },
           { id: 'remaining', label: 'Remaining', widthIn: 12, heightIn: 12 },
@@ -401,7 +633,7 @@ describe('Gallery Designer app', () => {
     localStorage.setItem(
       'gallery-designer-state-v1',
       JSON.stringify({
-        sections: [{ id: 'small', name: 'Small', widthIn: 40, heightIn: 30, cornerAfter: 'none' }],
+        sections: [{ id: 'small', name: 'Small', widthIn: 40, heightIn: 30 }],
         pieces: [
           { id: 'fixed', label: 'Fixed', widthIn: 12, heightIn: 12 },
           { id: 'two', label: 'Two', widthIn: 13, heightIn: 13 },
@@ -449,12 +681,8 @@ describe('Gallery Designer app', () => {
     const status = screen.getByRole('status');
     expect(status).toHaveTextContent(/2 in spacing/i);
     expect(status).toHaveTextContent(/5 in wall margin/i);
-    expect(within(status).getByText(/Row:/i).closest('li')).toHaveTextContent(/wider/i);
-    expect(
-      within(status)
-        .getByText(/Packed:/i)
-        .closest('li'),
-    ).toHaveTextContent(/could not place every piece/i);
+    expect(status).toHaveTextContent(/row:.*wider/i);
+    expect(status).toHaveTextContent(/packed:.*could not place every piece/i);
   });
 
   it('does not render manual wall section position fields', () => {
@@ -503,6 +731,21 @@ describe('Gallery Designer app', () => {
     expect(landscapePreview).toHaveStyle({ width: '120px', height: '40px' });
     expect(within(portrait).getByText('Piece 1')).toHaveClass('staged-piece-name');
     expect(within(portrait).getByText('10 in x 20 in')).toHaveClass('staged-piece-size');
+  });
+
+  it('caps very tall staged art previews without changing their ratio', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.clear(screen.getByLabelText('Piece 1 width'));
+    await user.type(screen.getByLabelText('Piece 1 width'), '16');
+    await user.clear(screen.getByLabelText('Piece 1 height'));
+    await user.type(screen.getByLabelText('Piece 1 height'), '20000');
+
+    const stagedPiece = screen.getByRole('button', { name: /Drag Piece 1 from staging/i });
+    const preview = within(stagedPiece).getByTestId('staged-piece-preview');
+
+    expect(preview).toHaveStyle({ width: '0.0768px', height: '96px' });
   });
 
   it('uses the rendered wall-scale pointer preview for staged and wall pieces', () => {
@@ -633,7 +876,6 @@ describe('Gallery Designer app', () => {
             name: 'Section 1',
             widthIn: 100,
             heightIn: 80,
-            cornerAfter: 'none',
             xIn: 0,
             yIn: 0,
           },
@@ -817,7 +1059,6 @@ describe('Gallery Designer app', () => {
             name: 'Section 1',
             widthIn: 79,
             heightIn: 60,
-            cornerAfter: 'none',
             xIn: 0,
             yIn: 0,
           },
@@ -826,7 +1067,6 @@ describe('Gallery Designer app', () => {
             name: 'Section 2',
             widthIn: 59,
             heightIn: 36,
-            cornerAfter: 'none',
             xIn: 79,
             yIn: 0,
           },
@@ -878,7 +1118,6 @@ describe('Gallery Designer app', () => {
             name: 'Section 1',
             widthIn: 80,
             heightIn: 60,
-            cornerAfter: 'none',
             xIn: 0,
             yIn: 0,
           },
@@ -887,7 +1126,6 @@ describe('Gallery Designer app', () => {
             name: 'Section 2',
             widthIn: 80,
             heightIn: 60,
-            cornerAfter: 'none',
             xIn: 200,
             yIn: 0,
           },
@@ -943,7 +1181,6 @@ describe('Gallery Designer app', () => {
             name: 'Section 1',
             widthIn: 100,
             heightIn: 80,
-            cornerAfter: 'none',
             xIn: 0,
             yIn: 0,
           },
@@ -952,7 +1189,6 @@ describe('Gallery Designer app', () => {
             name: 'Section 2',
             widthIn: 50,
             heightIn: 80,
-            cornerAfter: 'none',
             xIn: 300,
             yIn: 0,
           },
@@ -1014,7 +1250,6 @@ describe('Gallery Designer app', () => {
             name: 'Section 1',
             widthIn: 100,
             heightIn: 80,
-            cornerAfter: 'none',
             xIn: 0,
             yIn: 0,
           },
@@ -1253,6 +1488,20 @@ describe('Gallery Designer app', () => {
     expect(screen.getByText(/Piece 1 has not been placed/i)).toBeInTheDocument();
   });
 
+  it('removes a staged piece from its tray delete action', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(screen.getByRole('button', { name: /Drag Piece 1 from staging/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Remove Piece 1 from staging' }));
+
+    expect(
+      screen.queryByRole('button', { name: /Drag Piece 1 from staging/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Piece 1')).not.toBeInTheDocument();
+  });
+
   it('lets users undo clearing placed art', async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -1306,6 +1555,46 @@ describe('Gallery Designer app', () => {
     confirm.mockRestore();
   });
 
+  it('renders collapsed art piece names as read-only until the row is expanded', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    const artPanel = screen.getByLabelText('Art piece settings');
+    const collapsedName = within(artPanel).getByText('Piece 1', {
+      selector: '.row-name-readonly',
+    });
+
+    expect(screen.queryByLabelText('Piece 1 label')).not.toBeInTheDocument();
+    expect(collapsedName).toHaveClass('row-name-readonly');
+    expect(screen.getByLabelText('Piece 2 label')).toBeInTheDocument();
+
+    fireEvent.click(collapsedName.closest('article')!);
+
+    expect(screen.getByLabelText('Piece 1 label')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Piece 2 label')).not.toBeInTheDocument();
+  });
+
+  it('renders collapsed wall section names as read-only until the row is expanded', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /Add wall section/i }));
+    const sectionPanel = screen.getByLabelText('Wall section settings');
+    const collapsedName = within(sectionPanel).getByText('Section 1', {
+      selector: '.row-name-readonly',
+    });
+
+    expect(screen.queryByDisplayValue('Section 1')).not.toBeInTheDocument();
+    expect(collapsedName).toHaveClass('row-name-readonly');
+    expect(screen.getByDisplayValue('Section 2')).toBeInTheDocument();
+
+    fireEvent.click(collapsedName.closest('article')!);
+
+    expect(screen.getByDisplayValue('Section 1')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Section 2')).not.toBeInTheDocument();
+  });
+
   it('shows furniture and feature clearing only in full-wall mode', async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -1354,8 +1643,9 @@ describe('Gallery Designer app', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const detailsPanel = screen.getByRole('complementary', { name: /Details and export/i });
-    expect(within(detailsPanel).getByRole('heading', { name: /Features/i })).toBeInTheDocument();
+    await openAdvancedDrawer(user);
+    const advancedDrawer = screen.getByRole('dialog', { name: /Advanced/i });
+    expect(within(advancedDrawer).getByRole('heading', { name: /Features/i })).toBeInTheDocument();
     expect(
       within(screen.getByRole('complementary', { name: /Setup controls/i })).queryByRole(
         'heading',
@@ -1420,7 +1710,7 @@ describe('Gallery Designer app', () => {
 
     expect(screen.getByLabelText('Grid size (in)')).toHaveValue('2.5');
 
-    await user.selectOptions(screen.getByLabelText('Units'), 'cm');
+    await user.selectOptions(screen.getByLabelText('Grid size (in) unit'), 'cm');
     expect(screen.getByLabelText('Grid size (cm)')).toBeInTheDocument();
     expect(screen.getByLabelText('Alignment tolerance (cm)')).toBeInTheDocument();
     expect(screen.getByLabelText('Wall edge buffer gap (cm)')).toHaveValue('5.1');
@@ -1454,24 +1744,17 @@ describe('Gallery Designer app', () => {
     expect(screen.queryByText(/from top of Section 1/i)).not.toBeInTheDocument();
   });
 
-  it('collapses and expands the Auto-placement settings and Features panels', async () => {
+  it('opens placement settings from a right-side drawer and keeps Features collapsible', async () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const autoPlacementToggle = screen.getByRole('button', { name: /Auto-placement settings/i });
-    expect(autoPlacementToggle).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByLabelText('Wall setup')).toBeInTheDocument();
+    await openPlacementSettingsDrawer(user);
+    const placementDrawer = screen.getByRole('dialog', { name: /Placement settings/i });
+    expect(placementDrawer).toContainElement(screen.getByLabelText('Layout'));
+    expect(placementDrawer).toContainElement(screen.getByLabelText('Wall setup'));
+    expect(placementDrawer).toHaveClass('placement-settings-drawer');
 
-    await user.click(autoPlacementToggle);
-
-    expect(autoPlacementToggle).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByLabelText('Wall setup')).not.toBeVisible();
-
-    await user.click(autoPlacementToggle);
-
-    expect(autoPlacementToggle).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByLabelText('Wall setup')).toBeVisible();
-
+    await openAdvancedDrawer(user);
     const featureToggle = screen.getByRole('button', { name: /Features/i });
     expect(featureToggle).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByLabelText('Snap to grid')).toBeInTheDocument();
@@ -1490,10 +1773,11 @@ describe('Gallery Designer app', () => {
   it('uses collapsible panels for setup, export, and measurements', async () => {
     const user = userEvent.setup();
     render(<App />);
+    await openAdvancedDrawer(user);
 
-    const wallSectionsToggle = screen.getByRole('button', { name: /Wall sections \(1\)/i });
-    const artPiecesToggle = screen.getByRole('button', { name: /Art pieces \(1\)/i });
-    const exportToggle = screen.getByRole('button', { name: /^Export$/i });
+    const wallSectionsToggle = screen.getByRole('button', { name: /Wall sections\s+1/i });
+    const artPiecesToggle = screen.getByRole('button', { name: /Art pieces\s+1/i });
+    const exportToggle = screen.getByRole('button', { name: /^Design files$/i });
     const measurementsToggle = screen.getByRole('button', {
       name: /^Installation measurements$/i,
     });
@@ -1536,7 +1820,8 @@ describe('Gallery Designer app', () => {
   it('gives repeated setup controls contextual accessible names', () => {
     render(<App />);
 
-    expect(screen.getByLabelText('Section 1 corner after')).toBeInTheDocument();
+    expect(screen.getByLabelText('Section 1 width')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Section 1 corner after')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Hooks for Piece 1')).toBeInTheDocument();
   });
 
@@ -1621,7 +1906,6 @@ describe('Gallery Designer app', () => {
             name: 'Wall',
             widthIn: 96,
             heightIn: 84,
-            cornerAfter: 'none',
             xIn: 0,
             yIn: 0,
           },
@@ -1689,7 +1973,6 @@ describe('Gallery Designer app', () => {
             name: 'Wall',
             widthIn: 96,
             heightIn: 84,
-            cornerAfter: 'none',
             xIn: 0,
             yIn: 0,
           },
@@ -1755,7 +2038,6 @@ describe('Gallery Designer app', () => {
             name: 'Wall',
             widthIn: 96,
             heightIn: 84,
-            cornerAfter: 'none',
             xIn: 0,
             yIn: 0,
           },
@@ -1822,7 +2104,6 @@ describe('Gallery Designer app', () => {
             name: 'Wall',
             widthIn: 96,
             heightIn: 84,
-            cornerAfter: 'none',
             xIn: 0,
             yIn: 0,
           },
@@ -1891,7 +2172,6 @@ describe('Gallery Designer app', () => {
             name: 'Wall',
             widthIn: 96,
             heightIn: 84,
-            cornerAfter: 'none',
             xIn: 0,
             yIn: 0,
           },
@@ -1938,16 +2218,34 @@ describe('Gallery Designer app', () => {
     vi.useRealTimers();
   });
 
-  it('allows selected art pieces to be deselected', () => {
+  it('keeps panel art selection singular on plain click and allows modifier-based multi-select', async () => {
+    const user = userEvent.setup();
     render(<App />);
 
-    const pieceRow = screen.getByLabelText('Piece 1 label').closest('article');
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    const artPanel = screen.getByLabelText('Art piece settings');
+    const firstPieceRow = within(artPanel)
+      .getByText('Piece 1', { selector: '.row-name-readonly' })
+      .closest('article');
+    const secondPieceRow = screen.getByLabelText('Piece 2 label').closest('article');
 
-    expect(pieceRow).toHaveClass('selected');
+    expect(firstPieceRow).not.toHaveClass('selected');
+    expect(secondPieceRow).toHaveClass('selected');
 
-    fireEvent.click(pieceRow!);
+    fireEvent.click(firstPieceRow!);
 
-    expect(pieceRow).not.toHaveClass('selected');
+    expect(firstPieceRow).toHaveClass('selected');
+    expect(secondPieceRow).not.toHaveClass('selected');
+
+    fireEvent.click(secondPieceRow!, { shiftKey: true });
+
+    expect(firstPieceRow).toHaveClass('selected');
+    expect(secondPieceRow).toHaveClass('selected');
+
+    fireEvent.click(firstPieceRow!, { metaKey: true });
+
+    expect(firstPieceRow).not.toHaveClass('selected');
+    expect(secondPieceRow).toHaveClass('selected');
   });
 
   it('toggles placed art into a multi-selection with Shift, Command, or Control click', async () => {
@@ -2149,7 +2447,6 @@ describe('Gallery Designer app', () => {
             name: 'Wall',
             widthIn: 96,
             heightIn: 84,
-            cornerAfter: 'none',
             xIn: 0,
             yIn: 0,
           },
@@ -2313,7 +2610,7 @@ describe('Gallery Designer app', () => {
 
     fireEvent.click(pieceRow!);
 
-    expect(pieceRow).not.toHaveClass('selected');
+    expect(pieceRow).toHaveClass('selected');
     expect(sectionRow).toHaveClass('selected');
   });
 
@@ -2344,6 +2641,10 @@ describe('Gallery Designer app', () => {
 
     expect(pieceRow).not.toHaveClass('selected');
     expect(sectionRow).not.toHaveClass('selected');
+    expect(screen.queryByLabelText('Piece 1 label')).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Section 1')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Piece 1 name')).toHaveClass('row-name-readonly');
+    expect(screen.getByLabelText('Section 1 name')).toHaveClass('row-name-readonly');
   });
 
   it('keeps a floating preview visible while dragging a wall piece toward the tray', async () => {
@@ -2437,22 +2738,37 @@ describe('Gallery Designer app', () => {
     expect(previewLines).toEqual(['The', 'Walking', 'Dead']);
   });
 
-  it('moves workspace actions above the canvas and moves export readiness into the export panel', () => {
+  it('keeps core actions visible while moving advanced settings into the drawer', async () => {
+    const user = userEvent.setup();
     render(<App />);
 
     const editorControls = screen.getByRole('toolbar', { name: /Editor controls/i });
     const canvasCard = document.querySelector('.canvas-card');
     expect(canvasCard).toBeInTheDocument();
-    expect(editorControls).toContainElement(screen.getByLabelText('Units'));
-    expect(editorControls).toContainElement(screen.getByLabelText('Appearance'));
-    expect(editorControls).toContainElement(screen.getByLabelText('Theme'));
-    expect(editorControls).toContainElement(
-      screen.getByRole('button', { name: /^Auto-place pieces$/i }),
-    );
     expect(editorControls).toContainElement(screen.getByRole('button', { name: /Clear/i }));
-    expect(screen.getByRole('group', { name: /Placement controls/i })).toContainElement(
+    expect(editorControls).toContainElement(
+      screen.getByRole('button', { name: /^Placement settings$/i }),
+    );
+    expect(editorControls).toContainElement(screen.getByRole('button', { name: /^Advanced$/i }));
+    const stagingTray = screen.getByRole('region', { name: /Art staging tray/i });
+    const stagingHeader = stagingTray.querySelector('.staging-header');
+    expect(stagingHeader).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /Art staging tray/i })).toContainElement(
       screen.getByRole('button', { name: /^Auto-place pieces$/i }),
     );
+    expect(stagingHeader).toContainElement(
+      screen.getByRole('button', { name: /^Auto-place pieces$/i }),
+    );
+    expect(stagingHeader).toContainElement(screen.getByRole('button', { name: /^Shuffle$/i }));
+    expect(stagingTray).not.toContainElement(screen.getByLabelText('Layout'));
+    await openPlacementSettingsDrawer(user);
+    expect(screen.getByRole('dialog', { name: /Placement settings/i })).toContainElement(
+      screen.getByLabelText('Layout'),
+    );
+    expect(screen.getByLabelText('Section 1 width unit')).toHaveValue('in');
+    expect(screen.getByLabelText('Piece 1 width unit')).toHaveValue('in');
+    expect(screen.getByLabelText('Appearance')).toBeInTheDocument();
+    expect(screen.getByLabelText('Theme')).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: /View controls/i })).not.toBeInTheDocument();
     expect(screen.getByRole('group', { name: /Wall zoom controls/i })).toContainElement(
       screen.getByRole('button', { name: /Zoom out/i }),
@@ -2464,31 +2780,10 @@ describe('Gallery Designer app', () => {
       screen.getByRole('button', { name: /Zoom in/i }),
     );
     expect(canvasCard).toContainElement(screen.getByRole('group', { name: /Wall zoom controls/i }));
-    const rightPanel = screen.getByRole('complementary', { name: /Details and export/i });
-    const statusPanel = within(rightPanel).getByRole('status').closest('.status-panel');
-    const primaryColumn = rightPanel.querySelector('.right-panel-column-primary');
-    const secondaryColumn = rightPanel.querySelector('.right-panel-column-secondary');
-    expect(statusPanel).toBeInTheDocument();
-    expect(primaryColumn).toBeInTheDocument();
-    expect(secondaryColumn).toBeInTheDocument();
-    expect(
-      within(primaryColumn as Element).getByRole('heading', { name: /Auto-placement settings/i }),
-    ).toBeInTheDocument();
-    expect(primaryColumn).not.toContainElement(statusPanel);
-    expect(
-      within(secondaryColumn as Element).getByRole('heading', { name: /Features/i }),
-    ).toBeInTheDocument();
-    expect(
-      within(secondaryColumn as Element).getByRole('heading', { name: /^Export$/i }),
-    ).toBeInTheDocument();
-    expect(secondaryColumn).toContainElement(statusPanel);
-    expect(secondaryColumn?.lastElementChild).toBe(statusPanel);
-    expect(screen.getByRole('group', { name: /Appearance controls/i })).toContainElement(
-      screen.getByLabelText('Theme'),
-    );
     expect(screen.getByRole('status')).toHaveTextContent(/Enter wall and art dimensions/i);
-    const exportPanel = screen.getByRole('complementary', { name: /Details and export/i });
-    const exportTitle = within(exportPanel).getByRole('heading', { name: /^Export$/i });
+    await openAdvancedDrawer(user);
+    const exportPanel = screen.getByRole('dialog', { name: /Advanced/i });
+    const exportTitle = within(exportPanel).getByRole('heading', { name: /^Design files$/i });
     expect(exportTitle.closest('.panel-title')).toBeInTheDocument();
     expect(within(exportPanel).queryByText(/Ready to export/i)).not.toBeInTheDocument();
     expect(within(exportPanel).queryByText(/Needs attention/i)).not.toBeInTheDocument();

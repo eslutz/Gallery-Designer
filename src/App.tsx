@@ -1,5 +1,6 @@
 import {
   ChevronDown,
+  Copy,
   Download,
   FileImage,
   FileJson,
@@ -17,8 +18,20 @@ import {
   ZoomIn,
   ZoomOut,
   Wand2,
+  X,
 } from 'lucide-react';
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { autoPlacePieces, type AutoPlacementDiagnostics } from './lib/autoPlace';
 import {
@@ -48,7 +61,11 @@ import {
   applyPlacementGroupFeaturesWithMetadata,
   type AlignmentGuide,
 } from './lib/snapping';
-import { calculateTooltipPosition, type TooltipPosition } from './lib/tooltipPosition';
+import {
+  avoidTooltipCollisions,
+  calculateTooltipPosition,
+  type TooltipPosition,
+} from './lib/tooltipPosition';
 import {
   displaySizeValue,
   displayValue,
@@ -88,6 +105,7 @@ import type {
 
 const STORAGE_KEY = 'gallery-designer-state-v1';
 const STAGING_SCALE_PX_PER_IN = 4;
+const MAX_STAGED_ART_PREVIEW_HEIGHT_PX = 96;
 const DRAG_PREVIEW_SCALE_PX_PER_IN = 3;
 const SUPPRESS_TEXT_SELECTION_CLASS = 'suppress-text-selection';
 const DEFAULT_WALL_PADDING_IN = 14;
@@ -224,7 +242,6 @@ const defaultState: GalleryState = {
       name: 'Section 1',
       widthIn: 96,
       heightIn: 84,
-      cornerAfter: 'none',
       xIn: 0,
       yIn: 0,
     },
@@ -270,6 +287,11 @@ export default function App() {
   });
   const [undoState, setUndoState] = useState<GalleryState | null>(null);
   const [clearMenuOpen, setClearMenuOpen] = useState(false);
+  const [advancedDrawerOpen, setAdvancedDrawerOpen] = useState(false);
+  const [settingsDrawerOpen, setSettingsDrawerOpen] = useState(false);
+  const [expandedSectionId, setExpandedSectionId] = useState(defaultState.sections[0]?.id ?? '');
+  const [expandedPieceId, setExpandedPieceId] = useState(defaultState.pieces[0]?.id ?? '');
+  const [autoPlacementVariantIndex, setAutoPlacementVariantIndex] = useState(0);
   const [cursorInteraction, setCursorInteraction] = useState<CursorInteraction>('idle');
   const [wallZoom, setWallZoom] = useState<WallZoomState>(() =>
     getDefaultWallZoomState(getWallCanvasBaseViewBox(defaultState.sections)),
@@ -638,6 +660,7 @@ export default function App() {
 
   function selectPiece(pieceId: string) {
     setSelectedFeatureId('');
+    setExpandedPieceId(pieceId);
     setState((current) => ({ ...current, selectedPieceIds: [pieceId] }));
   }
 
@@ -645,13 +668,23 @@ export default function App() {
     setSelectedFeatureId('');
     setState((current) => {
       const selected = current.selectedPieceIds.includes(pieceId);
+      const nextSelectedPieceIds = selected
+        ? current.selectedPieceIds.filter((candidate) => candidate !== pieceId)
+        : [...current.selectedPieceIds, pieceId];
+      setExpandedPieceId(nextSelectedPieceIds.at(-1) ?? '');
       return {
         ...current,
-        selectedPieceIds: selected
-          ? current.selectedPieceIds.filter((candidate) => candidate !== pieceId)
-          : [...current.selectedPieceIds, pieceId],
+        selectedPieceIds: nextSelectedPieceIds,
       };
     });
+  }
+
+  function handlePieceRowSelection(pieceId: string, options?: { additive?: boolean }) {
+    if (options?.additive) {
+      togglePieceSelection(pieceId);
+      return;
+    }
+    selectPiece(pieceId);
   }
 
   function selectFeature(featureId: string) {
@@ -667,16 +700,23 @@ export default function App() {
   function selectSection(sectionId: string) {
     setSelectedFeatureId('');
     setSelectedSectionId(sectionId);
+    setExpandedSectionId(sectionId);
   }
 
   function toggleSectionSelection(sectionId: string) {
     setSelectedFeatureId('');
-    setSelectedSectionId((current) => (current === sectionId ? '' : sectionId));
+    setSelectedSectionId((current) => {
+      const next = current === sectionId ? '' : sectionId;
+      setExpandedSectionId(next);
+      return next;
+    });
   }
 
   function clearSelection() {
     setSelectedSectionId('');
     setSelectedFeatureId('');
+    setExpandedSectionId('');
+    setExpandedPieceId('');
     setState((current) => ({ ...current, selectedPieceIds: [] }));
   }
 
@@ -699,6 +739,11 @@ export default function App() {
 
   function recordUndoSnapshot(snapshot = latestStateRef.current) {
     setUndoState(snapshot);
+  }
+
+  function updateUnit(unit: Unit) {
+    recordUndoSnapshot();
+    setState((current) => ({ ...current, unit }));
   }
 
   function beginFieldEdit() {
@@ -745,16 +790,18 @@ export default function App() {
       const index = current.sections.length + 1;
       const normalizedSections = normalizeWallSections(current.sections);
       const previousSection = normalizedSections.at(-1);
+      const sectionId = `section-${index}`;
+      setExpandedSectionId(sectionId);
+      setSelectedSectionId(sectionId);
       return {
         ...current,
         sections: [
           ...normalizedSections,
           {
-            id: `section-${index}`,
+            id: sectionId,
             name: `Section ${index}`,
             widthIn: previousSection?.widthIn ?? 96,
             heightIn: previousSection?.heightIn ?? 84,
-            cornerAfter: 'none',
             xIn: previousSection ? (previousSection.xIn ?? 0) + previousSection.widthIn : 0,
             yIn: previousSection?.yIn ?? 0,
           },
@@ -801,10 +848,35 @@ export default function App() {
         widthIn: 16,
         heightIn: 20,
       };
+      setExpandedPieceId(piece.id);
       return {
         ...current,
         pieces: [...current.pieces, piece],
         selectedPieceIds: [piece.id],
+      };
+    });
+  }
+
+  function duplicatePiece(pieceId: string) {
+    recordUndoSnapshot();
+    setSelectedFeatureId('');
+    setState((current) => {
+      const source = current.pieces.find((piece) => piece.id === pieceId);
+      if (!source) {
+        return current;
+      }
+      const duplicate = {
+        ...source,
+        id: `piece-${Date.now()}-${current.pieces.length + 1}`,
+        label: `${source.label} copy`,
+        hookSpec: source.hookSpec ? { ...source.hookSpec } : undefined,
+      };
+      setExpandedPieceId(duplicate.id);
+      return {
+        ...current,
+        pieces: [...current.pieces, duplicate],
+        selectedPieceIds: [duplicate.id],
+        message: `Duplicated ${source.label}.`,
       };
     });
   }
@@ -1478,10 +1550,7 @@ export default function App() {
     }
   }
 
-  function handleStagedPiecePointerDown(
-    event: React.PointerEvent<HTMLButtonElement>,
-    pieceId: string,
-  ) {
+  function handleStagedPiecePointerDown(event: React.PointerEvent<HTMLElement>, pieceId: string) {
     const piece = state.pieces.find((candidate) => candidate.id === pieceId);
     if (!piece) {
       return;
@@ -1522,7 +1591,7 @@ export default function App() {
   }
 
   function handleStagedFeaturePointerDown(
-    event: React.PointerEvent<HTMLButtonElement>,
+    event: React.PointerEvent<HTMLElement>,
     featureId: string,
   ) {
     const feature = state.autoPlacementSettings.wallFeatures.find(
@@ -1598,10 +1667,11 @@ export default function App() {
     startSuppressingTextSelection();
   }
 
-  function handleAutoPlace() {
+  function runAutoPlacement(variantIndex: number, mode: 'place' | 'shuffle') {
     const result = autoPlacePieces(state.sections, state.pieces, {
       settings: state.autoPlacementSettings,
       existingPlacements: state.placements,
+      variantIndex,
       features: {
         ...state.features,
         wallEdgeBufferGapIn: state.features.wallEdgeBuffer ? state.features.wallEdgeBufferGapIn : 0,
@@ -1617,6 +1687,8 @@ export default function App() {
     }
 
     setAutoPlacementFailure(null);
+    const resolvedVariantIndex = result.variantCount > 0 ? variantIndex % result.variantCount : 0;
+    setAutoPlacementVariantIndex(resolvedVariantIndex);
     if (result.newPlacementCount === 0) {
       setState((current) => ({
         ...current,
@@ -1638,8 +1710,18 @@ export default function App() {
       message:
         result.preservedPlacementCount > 0
           ? `Auto-placement placed ${formatCount(result.newPlacementCount, 'remaining piece')} around ${formatCount(result.preservedPlacementCount, 'piece')} you positioned. Existing pieces were not moved.`
-          : (result.explanation ?? `Auto-placement created a ${result.layoutKind} layout.`),
+          : mode === 'shuffle'
+            ? `Shuffled to layout ${resolvedVariantIndex + 1} of ${result.variantCount}.`
+            : (result.explanation ?? `Auto-placement created a ${result.layoutKind} layout.`),
     }));
+  }
+
+  function handleAutoPlace() {
+    runAutoPlacement(0, 'place');
+  }
+
+  function handleShuffleAutoPlace() {
+    runAutoPlacement(autoPlacementVariantIndex + 1, 'shuffle');
   }
 
   function undoLastChange() {
@@ -2753,7 +2835,8 @@ export default function App() {
         <aside className="setup-panel" aria-label="Setup controls">
           <CollapsiblePanel
             icon={<Ruler size={18} />}
-            title={`Wall sections (${state.sections.length})`}
+            title="Wall sections"
+            badge={state.sections.length}
             ariaLabel="Wall section settings"
             className="setup-utility-panel wall-sections-panel"
             contentClassName="wall-sections-panel-content"
@@ -2763,33 +2846,56 @@ export default function App() {
                 <article
                   className={`setup-row section-row ${
                     section.id === selectedSectionId ? 'selected' : ''
-                  }`}
+                  } ${expandedSectionId === section.id ? 'expanded' : 'collapsed'}`}
                   key={section.id}
-                  onClick={() => toggleSectionSelection(section.id)}
+                  onClick={(event) => {
+                    if (
+                      event.target instanceof HTMLElement &&
+                      event.target.closest('input, select, button')
+                    ) {
+                      return;
+                    }
+                    toggleSectionSelection(section.id);
+                  }}
                 >
                   <div className="row-heading">
-                    <input
-                      aria-label={`Section ${index + 1} name`}
-                      value={section.name}
-                      onFocus={beginFieldEdit}
-                      onBlur={finishFieldEdit}
-                      onChange={(event) => updateSection(section.id, { name: event.target.value })}
-                    />
-                    <button
-                      type="button"
-                      className="icon-button"
-                      aria-label={`Remove Section ${index + 1}`}
+                    {expandedSectionId === section.id ? (
+                      <input
+                        aria-label={`Section ${index + 1} name`}
+                        value={section.name}
+                        onFocus={() => {
+                          beginFieldEdit();
+                          selectSection(section.id);
+                        }}
+                        onBlur={finishFieldEdit}
+                        onChange={(event) =>
+                          updateSection(section.id, { name: event.target.value })
+                        }
+                      />
+                    ) : (
+                      <div className="row-name-readonly" aria-label={`Section ${index + 1} name`}>
+                        {section.name}
+                      </div>
+                    )}
+                    <TooltipIconButton
+                      ariaLabel={`Remove Section ${index + 1}`}
+                      tooltip="Remove wall section"
                       onClick={(event) => {
                         event.stopPropagation();
                         removeSection(section.id);
                       }}
                     >
                       <Trash2 size={16} />
-                    </button>
+                    </TooltipIconButton>
                   </div>
+                  <p className="row-summary">
+                    {formatMeasurement(section.widthIn, state.unit)} x{' '}
+                    {formatMeasurement(section.heightIn, state.unit)}
+                  </p>
                   <div className="field-grid">
                     <NumberField
                       label={`Section ${index + 1} width`}
+                      displayLabel="Width"
                       valueIn={section.widthIn}
                       unit={state.unit}
                       precision="size"
@@ -2798,12 +2904,14 @@ export default function App() {
                           ? `${section.name} needs a positive width.`
                           : undefined
                       }
+                      onUnitChange={updateUnit}
                       onEditStart={beginFieldEdit}
                       onEditEnd={finishFieldEdit}
                       onChange={(widthIn) => updateSection(section.id, { widthIn })}
                     />
                     <NumberField
                       label={`Section ${index + 1} height`}
+                      displayLabel="Height"
                       valueIn={section.heightIn}
                       unit={state.unit}
                       precision="size"
@@ -2812,28 +2920,12 @@ export default function App() {
                           ? `${section.name} needs a positive height.`
                           : undefined
                       }
+                      onUnitChange={updateUnit}
                       onEditStart={beginFieldEdit}
                       onEditEnd={finishFieldEdit}
                       onChange={(heightIn) => updateSection(section.id, { heightIn })}
                     />
                   </div>
-                  <label className="field">
-                    Corner after
-                    <select
-                      aria-label={`Section ${index + 1} corner after`}
-                      value={section.cornerAfter}
-                      onChange={(event) => {
-                        recordUndoSnapshot();
-                        updateSection(section.id, {
-                          cornerAfter: event.target.value as WallSection['cornerAfter'],
-                        });
-                      }}
-                    >
-                      <option value="none">None / end</option>
-                      <option value="left">Turns left</option>
-                      <option value="right">Turns right</option>
-                    </select>
-                  </label>
                 </article>
               ))}
             </div>
@@ -2845,7 +2937,8 @@ export default function App() {
 
           <CollapsiblePanel
             icon={<Move size={18} />}
-            title={`Art pieces (${state.pieces.length})`}
+            title="Art pieces"
+            badge={state.pieces.length}
             ariaLabel="Art piece settings"
             className="setup-utility-panel art-pieces-panel"
             contentClassName="art-pieces-panel-content"
@@ -2855,7 +2948,7 @@ export default function App() {
                 <article
                   className={`setup-row piece-row ${
                     state.selectedPieceIds.includes(piece.id) ? 'selected' : ''
-                  }`}
+                  } ${expandedPieceId === piece.id ? 'expanded' : 'collapsed'}`}
                   key={piece.id}
                   onClick={(event) => {
                     if (
@@ -2864,35 +2957,59 @@ export default function App() {
                     ) {
                       return;
                     }
-                    togglePieceSelection(piece.id);
+                    handlePieceRowSelection(piece.id, {
+                      additive: event.shiftKey || event.metaKey || event.ctrlKey,
+                    });
                   }}
                 >
                   <div className="row-heading">
-                    <input
-                      aria-label={`Piece ${index + 1} label`}
-                      value={piece.label}
-                      onFocus={() => {
-                        beginFieldEdit();
-                        selectPiece(piece.id);
-                      }}
-                      onBlur={finishFieldEdit}
-                      onChange={(event) => updatePiece(piece.id, { label: event.target.value })}
-                    />
-                    <button
-                      type="button"
-                      className="icon-button"
-                      aria-label={`Remove Piece ${index + 1}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        removePiece(piece.id);
-                      }}
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    {expandedPieceId === piece.id ? (
+                      <input
+                        aria-label={`Piece ${index + 1} label`}
+                        value={piece.label}
+                        onFocus={() => {
+                          beginFieldEdit();
+                          selectPiece(piece.id);
+                        }}
+                        onBlur={finishFieldEdit}
+                        onChange={(event) => updatePiece(piece.id, { label: event.target.value })}
+                      />
+                    ) : (
+                      <div className="row-name-readonly" aria-label={`Piece ${index + 1} name`}>
+                        {piece.label}
+                      </div>
+                    )}
+                    <span className="row-actions">
+                      <TooltipIconButton
+                        ariaLabel={`Duplicate Piece ${index + 1}`}
+                        tooltip="Duplicate artwork"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          duplicatePiece(piece.id);
+                        }}
+                      >
+                        <Copy size={16} />
+                      </TooltipIconButton>
+                      <TooltipIconButton
+                        ariaLabel={`Remove Piece ${index + 1}`}
+                        tooltip="Remove artwork"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          removePiece(piece.id);
+                        }}
+                      >
+                        <Trash2 size={16} />
+                      </TooltipIconButton>
+                    </span>
                   </div>
+                  <p className="row-summary">
+                    {formatMeasurement(piece.widthIn, state.unit)} x{' '}
+                    {formatMeasurement(piece.heightIn, state.unit)}
+                  </p>
                   <div className="field-grid">
                     <NumberField
                       label={`Piece ${index + 1} width`}
+                      displayLabel="Width"
                       valueIn={piece.widthIn}
                       unit={state.unit}
                       precision="size"
@@ -2901,12 +3018,14 @@ export default function App() {
                           ? `${piece.label} needs a positive width.`
                           : undefined
                       }
+                      onUnitChange={updateUnit}
                       onEditStart={beginFieldEdit}
                       onEditEnd={finishFieldEdit}
                       onChange={(widthIn) => updatePiece(piece.id, { widthIn })}
                     />
                     <NumberField
                       label={`Piece ${index + 1} height`}
+                      displayLabel="Height"
                       valueIn={piece.heightIn}
                       unit={state.unit}
                       precision="size"
@@ -2915,6 +3034,7 @@ export default function App() {
                           ? `${piece.label} needs a positive height.`
                           : undefined
                       }
+                      onUnitChange={updateUnit}
                       onEditStart={beginFieldEdit}
                       onEditEnd={finishFieldEdit}
                       onChange={(heightIn) => updatePiece(piece.id, { heightIn })}
@@ -2923,6 +3043,7 @@ export default function App() {
                   <HookControls
                     piece={piece}
                     unit={state.unit}
+                    onUnitChange={updateUnit}
                     onChange={(hookSpec) => updatePiece(piece.id, { hookSpec })}
                     onEditStart={beginFieldEdit}
                     onEditEnd={finishFieldEdit}
@@ -2941,23 +3062,6 @@ export default function App() {
         <section className="editor-column">
           <div className="editor-toolbar" role="toolbar" aria-label="Editor controls">
             <div className="toolbar-group" role="group" aria-label="Placement controls">
-              <label className="field compact">
-                Units
-                <select
-                  value={state.unit}
-                  onChange={(event) => {
-                    recordUndoSnapshot();
-                    setState((current) => ({ ...current, unit: event.target.value as Unit }));
-                  }}
-                >
-                  <option value="in">Inches</option>
-                  <option value="cm">Centimeters</option>
-                </select>
-              </label>
-              <button type="button" className="primary" onClick={handleAutoPlace}>
-                <Wand2 size={18} />
-                Auto-place pieces
-              </button>
               <div className="clear-menu" ref={clearMenuRef}>
                 <button
                   type="button"
@@ -3023,47 +3127,25 @@ export default function App() {
                 Undo last change
               </button>
             </div>
-            <div
-              className="toolbar-group appearance-controls"
-              role="group"
-              aria-label="Appearance controls"
-            >
-              <label className="field compact">
-                Appearance
-                <select
-                  value={state.themeMode}
-                  onChange={(event) => {
-                    recordUndoSnapshot();
-                    setState((current) => ({
-                      ...current,
-                      themeMode: event.target.value as ThemeMode,
-                    }));
-                  }}
-                >
-                  <option value="system">System</option>
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                </select>
-              </label>
-              <label className="field compact">
-                Theme
-                <select
-                  value={state.applicationTheme}
-                  onChange={(event) => {
-                    recordUndoSnapshot();
-                    setState((current) => ({
-                      ...current,
-                      applicationTheme: resolveApplicationTheme(event.target.value),
-                    }));
-                  }}
-                >
-                  {applicationThemeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <div className="drawer-button-group">
+              <button
+                type="button"
+                className="secondary"
+                aria-expanded={settingsDrawerOpen}
+                onClick={() => setSettingsDrawerOpen(true)}
+              >
+                <SlidersHorizontal size={18} />
+                Placement settings
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                aria-expanded={advancedDrawerOpen}
+                onClick={() => setAdvancedDrawerOpen(true)}
+              >
+                <SlidersHorizontal size={18} />
+                Advanced
+              </button>
             </div>
           </div>
           <div className="canvas-card" ref={wallDisplayRef}>
@@ -3147,81 +3229,90 @@ export default function App() {
               selectedPieceId={activeSelectedPieceId}
               selectedFeatureId={selectedFeatureId}
               unit={state.unit}
+              onAutoPlace={handleAutoPlace}
+              onShuffle={handleShuffleAutoPlace}
               onSelect={togglePieceSelection}
               onFeatureSelect={toggleFeatureSelection}
               onPointerDown={handleStagedPiecePointerDown}
               onFeaturePointerDown={handleStagedFeaturePointerDown}
+              onRemovePiece={removePiece}
+              onRemoveFeature={(featureId) =>
+                updateAutoPlacementSettings({
+                  ...state.autoPlacementSettings,
+                  wallFeatures: state.autoPlacementSettings.wallFeatures.filter(
+                    (feature) => feature.id !== featureId,
+                  ),
+                })
+              }
             />
           </div>
 
           <MeasurementsTable instructions={measurements} />
         </section>
-
-        <aside className="right-panel" aria-label="Details and export">
-          <div className="right-panel-column right-panel-column-primary">
-            <CollapsiblePanel
-              icon={<Wand2 size={18} />}
-              title="Auto-placement settings"
-              ariaLabel="Auto-placement settings"
-              className="right-panel-auto"
-            >
-              <AutoPlacementControls
-                settings={state.autoPlacementSettings}
-                unit={state.unit}
-                onChange={updateAutoPlacementSettings}
-                onEditStart={beginFieldEdit}
-                onEditEnd={finishFieldEdit}
-              />
-            </CollapsiblePanel>
-          </div>
-          <div className="right-panel-column right-panel-column-secondary">
-            <CollapsiblePanel
-              icon={<SlidersHorizontal size={18} />}
-              title="Features"
-              ariaLabel="Feature settings"
-              className="right-panel-features"
-            >
-              <FeatureControls
-                features={state.features}
-                unit={state.unit}
-                onChange={updateFeatures}
-                onEditStart={beginFieldEdit}
-                onEditEnd={finishFieldEdit}
-              />
-            </CollapsiblePanel>
-            <ExportPanel
-              ready={readyToExport}
-              issues={allIssues}
-              exporting={exporting}
-              onExportPng={exportPng}
-              onExportPdf={exportPdf}
-              onExportJson={exportJson}
-              onImportClick={() => importInputRef.current?.click()}
-              className="right-panel-export"
-            />
-            <section className="status-panel right-panel-status" aria-label="Latest update">
-              <p className="status-panel-label">Latest update</p>
-              <div className="status-content" role="status" aria-live="polite">
-                <p className="status-message">{state.message}</p>
-                {autoPlacementFailure?.message === state.message ? (
-                  <AutoPlacementFailureDetails
-                    diagnostics={autoPlacementFailure.diagnostics}
-                    unit={state.unit}
-                  />
-                ) : null}
-              </div>
-            </section>
-          </div>
-          <input
-            ref={importInputRef}
-            className="visually-hidden"
-            type="file"
-            accept="application/json,.json"
-            aria-label="Import JSON design file"
-            onChange={importJson}
-          />
-        </aside>
       </section>
+      <input
+        ref={importInputRef}
+        className="visually-hidden"
+        type="file"
+        accept="application/json,.json"
+        aria-label="Import JSON design file"
+        onChange={importJson}
+      />
+      <div className="visually-hidden" role="status" aria-live="polite">
+        {state.message}
+        {autoPlacementFailure?.message === state.message
+          ? ` Tried ${autoPlacementFailure.diagnostics.attempts.length} layout strategies with ${formatMeasurement(
+              autoPlacementFailure.diagnostics.resolvedGapIn,
+              state.unit,
+            )} spacing and a ${formatMeasurement(
+              autoPlacementFailure.diagnostics.resolvedOuterMarginIn,
+              state.unit,
+            )} wall margin. ${autoPlacementFailure.diagnostics.attempts
+              .map((attempt) => `${attempt.family}: ${attempt.reason}`)
+              .join(' ')}`
+          : ''}
+      </div>
+      <AdvancedDrawer
+        open={advancedDrawerOpen}
+        themeMode={state.themeMode}
+        applicationTheme={state.applicationTheme}
+        features={state.features}
+        unit={state.unit}
+        message={state.message}
+        autoPlacementFailure={autoPlacementFailure}
+        readyToExport={readyToExport}
+        exportIssues={allIssues}
+        exporting={exporting}
+        onClose={() => setAdvancedDrawerOpen(false)}
+        onThemeModeChange={(themeMode) => {
+          recordUndoSnapshot();
+          setState((current) => ({ ...current, themeMode }));
+        }}
+        onApplicationThemeChange={(applicationTheme) => {
+          recordUndoSnapshot();
+          setState((current) => ({ ...current, applicationTheme }));
+        }}
+        onFeaturesChange={updateFeatures}
+        onExportPng={exportPng}
+        onExportPdf={exportPdf}
+        onExportJson={exportJson}
+        onImportClick={() => importInputRef.current?.click()}
+        onUnitChange={updateUnit}
+        onEditStart={beginFieldEdit}
+        onEditEnd={finishFieldEdit}
+      />
+      <PlacementSettingsDrawer
+        open={settingsDrawerOpen}
+        settings={state.autoPlacementSettings}
+        selectedFeatureId={selectedFeatureId}
+        unit={state.unit}
+        onClose={() => setSettingsDrawerOpen(false)}
+        onSettingsChange={updateAutoPlacementSettings}
+        onFeatureSelect={selectFeature}
+        onUnitChange={updateUnit}
+        onEditStart={beginFieldEdit}
+        onEditEnd={finishFieldEdit}
+      />
       <WallDragPreviewOverlay
         preview={wallDragPreview}
         artPieceBufferEnabled={state.features.artPieceBuffer}
@@ -3669,6 +3760,7 @@ function getUnplacedPieceIssues(pieces: ArtPiece[], placements: Placement[]): st
 function CollapsiblePanel({
   icon,
   title,
+  badge,
   ariaLabel,
   defaultExpanded = true,
   className = '',
@@ -3677,6 +3769,7 @@ function CollapsiblePanel({
 }: {
   icon: React.ReactNode;
   title: string;
+  badge?: string | number;
   ariaLabel: string;
   defaultExpanded?: boolean;
   className?: string;
@@ -3701,6 +3794,7 @@ function CollapsiblePanel({
         <span className="panel-title">
           {icon}
           <h2>{title}</h2>
+          {badge !== undefined ? <span className="count-badge">{badge}</span> : null}
         </span>
         <ChevronDown
           size={16}
@@ -3720,29 +3814,246 @@ function CollapsiblePanel({
   );
 }
 
+function AdvancedDrawer({
+  open,
+  themeMode,
+  applicationTheme,
+  features,
+  unit,
+  message,
+  autoPlacementFailure,
+  readyToExport,
+  exportIssues,
+  exporting,
+  onClose,
+  onThemeModeChange,
+  onApplicationThemeChange,
+  onFeaturesChange,
+  onExportPng,
+  onExportPdf,
+  onExportJson,
+  onImportClick,
+  onUnitChange,
+  onEditStart,
+  onEditEnd,
+}: {
+  open: boolean;
+  themeMode: ThemeMode;
+  applicationTheme: ApplicationTheme;
+  features: EditorFeatures;
+  unit: Unit;
+  message: string;
+  autoPlacementFailure: { message: string; diagnostics: AutoPlacementDiagnostics } | null;
+  readyToExport: boolean;
+  exportIssues: string[];
+  exporting: 'png' | 'pdf' | null;
+  onClose: () => void;
+  onThemeModeChange: (themeMode: ThemeMode) => void;
+  onApplicationThemeChange: (applicationTheme: ApplicationTheme) => void;
+  onFeaturesChange: (patch: Partial<EditorFeatures>, options?: UndoableChangeOptions) => void;
+  onExportPng: () => void;
+  onExportPdf: () => void;
+  onExportJson: () => void;
+  onImportClick: () => void;
+  onUnitChange: (unit: Unit) => void;
+  onEditStart: () => void;
+  onEditEnd: () => void;
+}) {
+  return (
+    <div className={`advanced-drawer-layer${open ? ' is-open' : ''}`}>
+      <button
+        type="button"
+        className="advanced-drawer-backdrop"
+        aria-label="Close advanced settings"
+        onClick={onClose}
+      />
+      <aside
+        className="advanced-drawer"
+        role={open ? 'dialog' : undefined}
+        aria-modal={open ? 'true' : undefined}
+        aria-label="Advanced"
+      >
+        <div className="advanced-drawer-header">
+          <div className="panel-title">
+            <SlidersHorizontal size={18} />
+            <h2>Advanced</h2>
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Close Advanced"
+            onClick={onClose}
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <section className="utility-panel feature-panel" aria-label="Appearance controls">
+          <div className="panel-title">
+            <h2>Appearance</h2>
+          </div>
+          <label className="field">
+            Appearance
+            <select
+              value={themeMode}
+              onChange={(event) => onThemeModeChange(event.target.value as ThemeMode)}
+            >
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </label>
+          <label className="field">
+            Theme
+            <select
+              value={applicationTheme}
+              onChange={(event) =>
+                onApplicationThemeChange(resolveApplicationTheme(event.target.value))
+              }
+            >
+              {applicationThemeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </section>
+        <CollapsiblePanel
+          icon={<SlidersHorizontal size={18} />}
+          title="Features"
+          ariaLabel="Feature settings"
+        >
+          <FeatureControls
+            features={features}
+            unit={unit}
+            onUnitChange={onUnitChange}
+            onChange={onFeaturesChange}
+            onEditStart={onEditStart}
+            onEditEnd={onEditEnd}
+          />
+        </CollapsiblePanel>
+        <section className="status-panel" aria-label="Latest update">
+          <p className="status-panel-label">Latest update</p>
+          <div className="status-content" role={open ? 'status' : undefined} aria-live="polite">
+            <p className="status-message">{message}</p>
+            {autoPlacementFailure?.message === message ? (
+              <AutoPlacementFailureDetails
+                diagnostics={autoPlacementFailure.diagnostics}
+                unit={unit}
+              />
+            ) : null}
+          </div>
+        </section>
+        <ExportPanel
+          ready={readyToExport}
+          issues={exportIssues}
+          exporting={exporting}
+          onExportPng={onExportPng}
+          onExportPdf={onExportPdf}
+          onExportJson={onExportJson}
+          onImportClick={onImportClick}
+        />
+      </aside>
+    </div>
+  );
+}
+
+function PlacementSettingsDrawer({
+  open,
+  settings,
+  selectedFeatureId,
+  unit,
+  onClose,
+  onSettingsChange,
+  onFeatureSelect,
+  onUnitChange,
+  onEditStart,
+  onEditEnd,
+}: {
+  open: boolean;
+  settings: AutoPlacementSettings;
+  selectedFeatureId: string;
+  unit: Unit;
+  onClose: () => void;
+  onSettingsChange: (settings: AutoPlacementSettings, options?: UndoableChangeOptions) => void;
+  onFeatureSelect: (featureId: string) => void;
+  onUnitChange: (unit: Unit) => void;
+  onEditStart: () => void;
+  onEditEnd: () => void;
+}) {
+  return (
+    <div
+      className={`advanced-drawer-layer placement-settings-drawer-layer${open ? ' is-open' : ''}`}
+    >
+      <button
+        type="button"
+        className="advanced-drawer-backdrop"
+        aria-label="Close placement settings"
+        onClick={onClose}
+      />
+      <aside
+        className="advanced-drawer placement-settings-drawer"
+        role={open ? 'dialog' : undefined}
+        aria-modal={open ? 'true' : undefined}
+        aria-label="Placement settings"
+      >
+        <div className="advanced-drawer-header">
+          <div className="panel-title">
+            <SlidersHorizontal size={18} />
+            <h2>Placement settings</h2>
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Close placement settings"
+            onClick={onClose}
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <AutoPlacementControls
+          settings={settings}
+          selectedFeatureId={selectedFeatureId}
+          unit={unit}
+          onUnitChange={onUnitChange}
+          onChange={onSettingsChange}
+          onFeatureSelect={onFeatureSelect}
+          onEditStart={onEditStart}
+          onEditEnd={onEditEnd}
+        />
+      </aside>
+    </div>
+  );
+}
+
 function NumberField({
   label,
+  displayLabel,
   info,
   valueIn,
   unit,
   precision = 'position',
   disabled = false,
   error,
+  onUnitChange,
   onChange,
   onEditStart,
   onEditEnd,
 }: {
   label: string;
+  displayLabel?: string;
   info?: string;
   valueIn: number;
   unit: Unit;
   precision?: 'position' | 'size';
   disabled?: boolean;
   error?: string;
+  onUnitChange?: (unit: Unit) => void;
   onChange: (valueIn: number) => void;
   onEditStart?: () => void;
   onEditEnd?: () => void;
 }) {
+  const visibleLabel = displayLabel ?? label;
   const display =
     precision === 'size' ? displaySizeValue(valueIn, unit) : displayValue(valueIn, unit);
   const round = precision === 'size' ? roundToSizePrecision : roundToPrecision;
@@ -3758,32 +4069,45 @@ function NumberField({
   }, [display, focused]);
 
   const input = (
-    <input
-      id={inputId}
-      aria-label={label}
-      aria-invalid={error ? 'true' : undefined}
-      aria-describedby={error ? errorId : undefined}
-      disabled={disabled}
-      inputMode="decimal"
-      value={draft}
-      onFocus={() => {
-        onEditStart?.();
-        setFocused(true);
-      }}
-      onBlur={() => {
-        setFocused(false);
-        setDraft(display);
-        onEditEnd?.();
-      }}
-      onChange={(event) => {
-        const next = event.target.value;
-        setDraft(next);
-        if (next === '' || next === '-' || next.endsWith('.')) {
-          return;
-        }
-        onChange(round(toInches(parseMeasurement(next), unit)));
-      }}
-    />
+    <span className="number-input-with-unit">
+      <input
+        id={inputId}
+        aria-label={label}
+        aria-invalid={error ? 'true' : undefined}
+        aria-describedby={error ? errorId : undefined}
+        disabled={disabled}
+        inputMode="decimal"
+        value={draft}
+        onFocus={() => {
+          onEditStart?.();
+          setFocused(true);
+        }}
+        onBlur={() => {
+          setFocused(false);
+          setDraft(display);
+          onEditEnd?.();
+        }}
+        onChange={(event) => {
+          const next = event.target.value;
+          setDraft(next);
+          if (next === '' || next === '-' || next.endsWith('.')) {
+            return;
+          }
+          onChange(round(toInches(parseMeasurement(next), unit)));
+        }}
+      />
+      {onUnitChange ? (
+        <select
+          className="inline-unit-select"
+          aria-label={`${label} unit`}
+          value={unit}
+          onChange={(event) => onUnitChange(event.target.value as Unit)}
+        >
+          <option value="in">in</option>
+          <option value="cm">cm</option>
+        </select>
+      ) : null}
+    </span>
   );
   const errorMessage = error ? (
     <span id={errorId} className="field-error" role="alert">
@@ -3793,13 +4117,13 @@ function NumberField({
 
   return info ? (
     <div className="field">
-      <FieldLabelWithInfo htmlFor={inputId} label={label} info={info} />
+      <FieldLabelWithInfo htmlFor={inputId} label={visibleLabel} info={info} />
       {input}
       {errorMessage}
     </div>
   ) : (
     <label className="field">
-      {label}
+      {visibleLabel}
       {input}
       {errorMessage}
     </label>
@@ -3809,12 +4133,14 @@ function NumberField({
 function FeatureControls({
   features,
   unit,
+  onUnitChange,
   onChange,
   onEditStart,
   onEditEnd,
 }: {
   features: EditorFeatures;
   unit: Unit;
+  onUnitChange: (unit: Unit) => void;
   onChange: (patch: Partial<EditorFeatures>, options?: UndoableChangeOptions) => void;
   onEditStart: () => void;
   onEditEnd: () => void;
@@ -3831,9 +4157,11 @@ function FeatureControls({
       />
       <NumberField
         label={`Grid size (${unitLabel})`}
+        displayLabel="Grid size"
         valueIn={features.gridSizeIn}
         unit={unit}
         precision="size"
+        onUnitChange={onUnitChange}
         onEditStart={onEditStart}
         onEditEnd={onEditEnd}
         onChange={(gridSizeIn) =>
@@ -3855,9 +4183,11 @@ function FeatureControls({
       />
       <NumberField
         label={`Alignment tolerance (${unitLabel})`}
+        displayLabel="Alignment tolerance"
         valueIn={features.alignmentToleranceIn}
         unit={unit}
         precision="size"
+        onUnitChange={onUnitChange}
         onEditStart={onEditStart}
         onEditEnd={onEditEnd}
         onChange={(alignmentToleranceIn) =>
@@ -3875,10 +4205,12 @@ function FeatureControls({
       />
       <NumberField
         label={`Wall edge buffer gap (${unitLabel})`}
+        displayLabel="Wall edge buffer gap"
         valueIn={features.wallEdgeBufferGapIn}
         unit={unit}
         precision="size"
         disabled={!features.wallEdgeBuffer}
+        onUnitChange={onUnitChange}
         onEditStart={onEditStart}
         onEditEnd={onEditEnd}
         onChange={(wallEdgeBufferGapIn) =>
@@ -3896,10 +4228,12 @@ function FeatureControls({
       />
       <NumberField
         label={`Art piece buffer gap (${unitLabel})`}
+        displayLabel="Art piece buffer gap"
         valueIn={features.artPieceBufferGapIn}
         unit={unit}
         precision="size"
         disabled={!features.artPieceBuffer}
+        onUnitChange={onUnitChange}
         onEditStart={onEditStart}
         onEditEnd={onEditEnd}
         onChange={(artPieceBufferGapIn) =>
@@ -3971,7 +4305,7 @@ function InfoTooltipButton({ label, info }: { label: string; info: string }) {
     }
 
     const triggerRect = button.getBoundingClientRect();
-    const tooltipRect = tooltip.getBoundingClientRect();
+    const tooltipSize = getTooltipElementSize(tooltip);
     const visualViewport = window.visualViewport;
     const viewport = {
       width: visualViewport?.width ?? window.innerWidth,
@@ -3987,12 +4321,11 @@ function InfoTooltipButton({ label, info }: { label: string; info: string }) {
         height: triggerRect.height,
       },
       {
-        width: tooltipRect.width || 240,
-        height: tooltipRect.height || 0,
+        width: tooltipSize.width || 240,
+        height: tooltipSize.height || 0,
       },
       viewport,
     );
-
     setPosition({
       ...nextPosition,
       left: nextPosition.left + viewportOffsetLeft,
@@ -4071,6 +4404,156 @@ function InfoTooltipButton({ label, info }: { label: string; info: string }) {
   );
 }
 
+function TooltipIconButton({
+  ariaLabel,
+  tooltip,
+  children,
+  onClick,
+  className,
+  wrapperClassName,
+  onPointerDown,
+}: {
+  ariaLabel: string;
+  tooltip: string;
+  children: ReactNode;
+  onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  className?: string;
+  wrapperClassName?: string;
+  onPointerDown?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+}) {
+  const tooltipId = useId();
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const tooltipRef = useRef<HTMLSpanElement | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [position, setPosition] = useState<TooltipPosition>(() =>
+    calculateTooltipPosition(
+      { left: 0, top: 0, width: 0, height: 0 },
+      { width: 180, height: 0 },
+      { width: 1024, height: 768 },
+    ),
+  );
+
+  const updatePosition = useCallback(() => {
+    const button = buttonRef.current;
+    const tooltipElement = tooltipRef.current;
+
+    if (!button || !tooltipElement || typeof window === 'undefined') {
+      return;
+    }
+
+    const triggerRect = button.getBoundingClientRect();
+    const tooltipSize = getTooltipElementSize(tooltipElement);
+    const visualViewport = window.visualViewport;
+    const viewport = {
+      width: visualViewport?.width ?? window.innerWidth,
+      height: visualViewport?.height ?? window.innerHeight,
+    };
+    const viewportOffsetLeft = visualViewport?.offsetLeft ?? 0;
+    const viewportOffsetTop = visualViewport?.offsetTop ?? 0;
+    const nextPosition = calculateTooltipPosition(
+      {
+        left: triggerRect.left - viewportOffsetLeft,
+        top: triggerRect.top - viewportOffsetTop,
+        width: triggerRect.width,
+        height: triggerRect.height,
+      },
+      {
+        width: tooltipSize.width || 180,
+        height: tooltipSize.height || 0,
+      },
+      viewport,
+    );
+    const resolvedPosition = wrapperClassName?.includes('staged-remove-anchor')
+      ? avoidTooltipCollisions(
+          nextPosition,
+          tooltipSize,
+          getStagedPreviewObstacles(button, viewportOffsetLeft, viewportOffsetTop),
+          viewport,
+        )
+      : nextPosition;
+
+    setPosition({
+      ...resolvedPosition,
+      left: resolvedPosition.left + viewportOffsetLeft,
+      top: resolvedPosition.top + viewportOffsetTop,
+    });
+  }, [wrapperClassName]);
+
+  useLayoutEffect(() => {
+    if (isOpen) {
+      updatePosition();
+    }
+  }, [isOpen, tooltip, updatePosition]);
+
+  useEffect(() => {
+    if (!isOpen || typeof window === 'undefined') {
+      return;
+    }
+
+    const visualViewport = window.visualViewport;
+
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    visualViewport?.addEventListener('resize', updatePosition);
+    visualViewport?.addEventListener('scroll', updatePosition);
+
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+      visualViewport?.removeEventListener('resize', updatePosition);
+      visualViewport?.removeEventListener('scroll', updatePosition);
+    };
+  }, [isOpen, tooltip, updatePosition]);
+
+  return (
+    <span
+      className={
+        wrapperClassName ? `action-tooltip-anchor ${wrapperClassName}` : 'action-tooltip-anchor'
+      }
+      onMouseEnter={() => setIsOpen(true)}
+      onMouseLeave={() => setIsOpen(false)}
+      onFocus={() => setIsOpen(true)}
+      onBlur={() => setIsOpen(false)}
+    >
+      <button
+        ref={buttonRef}
+        type="button"
+        className={className ? `icon-button ${className}` : 'icon-button'}
+        aria-label={ariaLabel}
+        aria-describedby={tooltipId}
+        onPointerDown={onPointerDown}
+        onClick={onClick}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            setIsOpen(false);
+            event.currentTarget.blur();
+          }
+        }}
+      >
+        {children}
+      </button>
+      {createPortal(
+        <span
+          ref={tooltipRef}
+          className={`info-tooltip action-tooltip${isOpen ? ' info-tooltip-open' : ''}`}
+          data-placement={position.placement}
+          id={tooltipId}
+          role="tooltip"
+          style={{
+            left: position.left,
+            top: position.top,
+            maxWidth: position.maxWidth,
+            maxHeight: position.maxHeight,
+          }}
+        >
+          {tooltip}
+        </span>,
+        document.body,
+      )}
+    </span>
+  );
+}
+
 function FieldLabelWithInfo({
   htmlFor,
   label,
@@ -4097,16 +4580,107 @@ function HeadingWithInfo({ label, info }: { label: string; info: string }) {
   );
 }
 
+function getTooltipElementSize(element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+
+  return {
+    width: Math.max(rect.width, element.scrollWidth),
+    height: Math.max(rect.height, element.scrollHeight),
+  };
+}
+
+function getStagedPreviewObstacles(
+  button: HTMLButtonElement,
+  viewportOffsetLeft: number,
+  viewportOffsetTop: number,
+) {
+  const ownPreviewShell = button.closest('.staged-piece-preview-shell');
+
+  return Array.from(document.querySelectorAll<HTMLElement>('.staged-piece-preview'))
+    .filter((preview) => !ownPreviewShell?.contains(preview))
+    .map((preview) => {
+      const rect = preview.getBoundingClientRect();
+
+      return {
+        left: rect.left - viewportOffsetLeft,
+        top: rect.top - viewportOffsetTop,
+        width: rect.width,
+        height: rect.height,
+      };
+    })
+    .filter((rect) => rect.width > 0 && rect.height > 0);
+}
+
+const WALL_FEATURE_NAME_BASES: Record<WallFeatureType, string> = {
+  sofa: 'Sofa',
+  bed: 'Bed',
+  console: 'Console',
+  desk: 'Desk',
+  'file-cabinet': 'File cabinet',
+  lamp: 'Lamp',
+  bookcase: 'Bookcase',
+  fireplace: 'Fireplace',
+  tv: 'TV',
+  window: 'Window',
+  door: 'Door',
+  custom: 'Wall feature',
+};
+
+const WALL_FEATURE_DEFAULT_NAME_PATTERNS = Object.values(WALL_FEATURE_NAME_BASES).map(
+  (baseName) => new RegExp(`^${escapeRegExp(baseName)} \\d+$`),
+);
+
+function getNextWallFeatureName(
+  type: WallFeatureType,
+  features: WallFeature[],
+  excludedFeatureId?: string,
+) {
+  const baseName = WALL_FEATURE_NAME_BASES[type];
+  const pattern = new RegExp(`^${escapeRegExp(baseName)} (\\d+)$`);
+  const maxIndex = features.reduce((currentMax, feature) => {
+    if (feature.id === excludedFeatureId) {
+      return currentMax;
+    }
+    const match = pattern.exec(feature.name);
+    if (!match) {
+      return currentMax;
+    }
+    return Math.max(currentMax, Number(match[1]));
+  }, 0);
+
+  return `${baseName} ${maxIndex + 1}`;
+}
+
+function isDefaultWallFeatureName(name: string) {
+  return WALL_FEATURE_DEFAULT_NAME_PATTERNS.some((pattern) => pattern.test(name));
+}
+
+function getWallFeatureRemoveTooltip(type: WallFeatureType) {
+  const label = WALL_FEATURE_NAME_BASES[type];
+  const tooltipLabel = label === 'TV' ? label : label.toLowerCase();
+  return `Remove ${tooltipLabel}`;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function AutoPlacementControls({
   settings,
+  selectedFeatureId,
   unit,
+  onUnitChange,
   onChange,
+  onFeatureSelect,
   onEditStart,
   onEditEnd,
 }: {
   settings: AutoPlacementSettings;
+  selectedFeatureId: string;
   unit: Unit;
+  onUnitChange: (unit: Unit) => void;
   onChange: (settings: AutoPlacementSettings, options?: UndoableChangeOptions) => void;
+  onFeatureSelect: (featureId: string) => void;
   onEditStart: () => void;
   onEditEnd: () => void;
 }) {
@@ -4128,18 +4702,21 @@ function AutoPlacementControls({
 
   function addFeature() {
     const index = settings.wallFeatures.length + 1;
+    const featureId = `feature-${Date.now()}-${index}`;
+    const type: WallFeatureType = 'sofa';
+    const defaults = getWallFeatureDefaults(type);
+    onFeatureSelect(featureId);
     onChange({
       ...settings,
       wallFeatures: [
         ...settings.wallFeatures,
         {
-          id: `feature-${Date.now()}-${index}`,
-          type: 'sofa',
-          name: `Wall feature ${index}`,
+          id: featureId,
+          type,
+          name: getNextWallFeatureName(type, settings.wallFeatures),
           xIn: 0,
           yIn: 0,
-          widthIn: 84,
-          heightIn: 30,
+          ...defaults,
           placed: false,
         },
       ],
@@ -4147,6 +4724,9 @@ function AutoPlacementControls({
   }
 
   function removeFeature(featureId: string) {
+    if (selectedFeatureId === featureId) {
+      onFeatureSelect('');
+    }
     onChange({
       ...settings,
       wallFeatures: settings.wallFeatures.filter((feature) => feature.id !== featureId),
@@ -4155,21 +4735,6 @@ function AutoPlacementControls({
 
   return (
     <>
-      <label className="field">
-        Wall setup
-        <select
-          value={settings.wallSetupMode}
-          onChange={(event) =>
-            onChange({
-              ...settings,
-              wallSetupMode: event.target.value as AutoPlacementSettings['wallSetupMode'],
-            })
-          }
-        >
-          <option value="available-sections">Available wall sections</option>
-          <option value="full-wall-with-features">Full wall + furniture and features</option>
-        </select>
-      </label>
       <label className="field">
         Layout
         <select
@@ -4190,13 +4755,29 @@ function AutoPlacementControls({
       </label>
       <div className="field">
         <FieldLabelWithInfo
+          htmlFor="auto-placement-wall-setup"
+          label="Wall setup"
+          info="Available wall sections uses the wall spans you can actually hang art on. Full wall + furniture and features starts from one continuous wall, then keeps art clear of placed sofas, consoles, doors, windows, and other features."
+        />
+        <select
+          id="auto-placement-wall-setup"
+          value={settings.wallSetupMode}
+          onChange={(event) =>
+            onChange({
+              ...settings,
+              wallSetupMode: event.target.value as AutoPlacementSettings['wallSetupMode'],
+            })
+          }
+        >
+          <option value="available-sections">Available wall sections</option>
+          <option value="full-wall-with-features">Full wall + furniture and features</option>
+        </select>
+      </div>
+      <div className="field">
+        <FieldLabelWithInfo
           htmlFor="auto-placement-context"
           label="Context"
-          info={
-            settings.wallSetupMode === 'available-sections'
-              ? 'Context sets placement priorities around your available wall sections. Choose a hallway for quick pass-by viewing, or a blank wall for a more relaxed display.'
-              : undefined
-          }
+          info="Context sets placement priorities around your wall. Choose a hallway for quick pass-by viewing, or a blank wall for a more relaxed display."
         />
         <select
           id="auto-placement-context"
@@ -4219,11 +4800,7 @@ function AutoPlacementControls({
           <FieldLabelWithInfo
             htmlFor="auto-placement-viewing-height"
             label="Viewing height"
-            info={
-              settings.wallSetupMode === 'available-sections'
-                ? 'Viewing height shifts the group vertically toward the height where people will usually see it. It does not change the dimensions of your wall sections.'
-                : undefined
-            }
+            info="Viewing height shifts the group vertically toward the height where people will usually see it. It does not change your wall dimensions."
           />
           <select
             id="auto-placement-viewing-height"
@@ -4248,96 +4825,148 @@ function AutoPlacementControls({
           <div className="panel-title compact">
             <h3>Furniture & Wall Features</h3>
           </div>
-          {settings.wallFeatures.map((feature, index) => (
-            <article className="setup-row" key={feature.id}>
-              <div className="row-heading">
-                <input
-                  aria-label={`Feature ${index + 1} name`}
-                  value={feature.name}
-                  onFocus={onEditStart}
-                  onBlur={onEditEnd}
-                  onChange={(event) =>
-                    updateFeature(feature.id, { name: event.target.value }, { undoable: false })
+          {settings.wallFeatures.map((feature, index) => {
+            const selected = selectedFeatureId === feature.id;
+
+            return (
+              <article
+                className={`setup-row feature-row ${selected ? 'selected expanded' : 'collapsed'}`}
+                key={feature.id}
+                onClick={(event) => {
+                  if (
+                    event.target instanceof HTMLElement &&
+                    event.target.closest('input, select, button')
+                  ) {
+                    return;
+                  }
+                  onFeatureSelect(feature.id);
+                }}
+              >
+                <div className="row-heading">
+                  {selected ? (
+                    <input
+                      aria-label={`Feature ${index + 1} name`}
+                      value={feature.name}
+                      onFocus={() => {
+                        onEditStart();
+                        onFeatureSelect(feature.id);
+                      }}
+                      onBlur={onEditEnd}
+                      onChange={(event) =>
+                        updateFeature(feature.id, { name: event.target.value }, { undoable: false })
+                      }
+                    />
+                  ) : (
+                    <div className="row-name-readonly" aria-label={`Feature ${index + 1} name`}>
+                      {feature.name}
+                    </div>
+                  )}
+                  <TooltipIconButton
+                    ariaLabel={`Remove Feature ${index + 1}`}
+                    tooltip={getWallFeatureRemoveTooltip(feature.type)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      removeFeature(feature.id);
+                    }}
+                  >
+                    <Trash2 size={16} />
+                  </TooltipIconButton>
+                </div>
+                <p className="row-summary">
+                  {formatMeasurement(feature.widthIn, unit)} x{' '}
+                  {formatMeasurement(feature.heightIn, unit)}
+                </p>
+                <label className="field">
+                  Type
+                  <select
+                    aria-label={`Feature ${index + 1} type`}
+                    value={feature.type}
+                    onFocus={() => onFeatureSelect(feature.id)}
+                    onChange={(event) => {
+                      const type = event.target.value as WallFeatureType;
+                      const shouldRename = isDefaultWallFeatureName(feature.name);
+                      updateFeature(feature.id, {
+                        type,
+                        name: shouldRename
+                          ? getNextWallFeatureName(type, settings.wallFeatures, feature.id)
+                          : feature.name,
+                        ...getWallFeatureDefaults(type),
+                      });
+                    }}
+                  >
+                    <option value="sofa">Sofa</option>
+                    <option value="bed">Bed</option>
+                    <option value="console">Console</option>
+                    <option value="desk">Desk</option>
+                    <option value="file-cabinet">File cabinet</option>
+                    <option value="lamp">Lamp</option>
+                    <option value="bookcase">Bookcase</option>
+                    <option value="fireplace">Fireplace</option>
+                    <option value="tv">TV</option>
+                    <option value="window">Window</option>
+                    <option value="door">Door</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </label>
+                <NumberField
+                  label={`Feature ${index + 1} width (${unit})`}
+                  displayLabel="Width"
+                  valueIn={feature.widthIn}
+                  unit={unit}
+                  precision="size"
+                  onUnitChange={onUnitChange}
+                  onEditStart={onEditStart}
+                  onEditEnd={onEditEnd}
+                  onChange={(widthIn) =>
+                    updateFeature(
+                      feature.id,
+                      { widthIn: Math.max(1, widthIn) },
+                      { undoable: false },
+                    )
                   }
                 />
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={`Remove Feature ${index + 1}`}
-                  onClick={() => removeFeature(feature.id)}
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-              <label className="field">
-                {`Feature ${index + 1} type`}
-                <select
-                  value={feature.type}
-                  onChange={(event) =>
-                    updateFeature(feature.id, {
-                      type: event.target.value as WallFeatureType,
-                    })
+                <NumberField
+                  label={`Feature ${index + 1} height (${unit})`}
+                  displayLabel="Height"
+                  valueIn={feature.heightIn}
+                  unit={unit}
+                  precision="size"
+                  onUnitChange={onUnitChange}
+                  onEditStart={onEditStart}
+                  onEditEnd={onEditEnd}
+                  onChange={(heightIn) =>
+                    updateFeature(
+                      feature.id,
+                      { heightIn: Math.max(0, heightIn) },
+                      { undoable: false },
+                    )
                   }
-                >
-                  <option value="sofa">Sofa</option>
-                  <option value="bed">Bed</option>
-                  <option value="console">Console</option>
-                  <option value="desk">Desk</option>
-                  <option value="file-cabinet">File cabinet</option>
-                  <option value="lamp">Lamp</option>
-                  <option value="bookcase">Bookcase</option>
-                  <option value="fireplace">Fireplace</option>
-                  <option value="tv">TV</option>
-                  <option value="window">Window</option>
-                  <option value="door">Door</option>
-                  <option value="custom">Custom</option>
-                </select>
-              </label>
-              <NumberField
-                label={`Feature ${index + 1} width (${unit})`}
-                valueIn={feature.widthIn}
-                unit={unit}
-                precision="size"
-                onEditStart={onEditStart}
-                onEditEnd={onEditEnd}
-                onChange={(widthIn) =>
-                  updateFeature(feature.id, { widthIn: Math.max(1, widthIn) }, { undoable: false })
-                }
-              />
-              <NumberField
-                label={`Feature ${index + 1} height (${unit})`}
-                valueIn={feature.heightIn}
-                unit={unit}
-                precision="size"
-                onEditStart={onEditStart}
-                onEditEnd={onEditEnd}
-                onChange={(heightIn) =>
-                  updateFeature(
-                    feature.id,
-                    { heightIn: Math.max(0, heightIn) },
-                    { undoable: false },
-                  )
-                }
-              />
-              <NumberField
-                label={`Feature ${index + 1} clearance (${unit})`}
-                valueIn={feature.clearanceOverrideIn ?? 6}
-                unit={unit}
-                precision="size"
-                onEditStart={onEditStart}
-                onEditEnd={onEditEnd}
-                onChange={(clearanceOverrideIn) =>
-                  updateFeature(
-                    feature.id,
-                    {
-                      clearanceOverrideIn: Math.max(0, clearanceOverrideIn),
-                    },
-                    { undoable: false },
-                  )
-                }
-              />
-            </article>
-          ))}
+                />
+                <NumberField
+                  label={`Feature ${index + 1} clearance (${unit})`}
+                  displayLabel="Clearance"
+                  valueIn={
+                    feature.clearanceOverrideIn ??
+                    getWallFeatureDefaults(feature.type).clearanceOverrideIn
+                  }
+                  unit={unit}
+                  precision="size"
+                  onUnitChange={onUnitChange}
+                  onEditStart={onEditStart}
+                  onEditEnd={onEditEnd}
+                  onChange={(clearanceOverrideIn) =>
+                    updateFeature(
+                      feature.id,
+                      {
+                        clearanceOverrideIn: Math.max(0, clearanceOverrideIn),
+                      },
+                      { undoable: false },
+                    )
+                  }
+                />
+              </article>
+            );
+          })}
           <button type="button" className="secondary full-width" onClick={addFeature}>
             <Plus size={16} />
             Add furniture or feature
@@ -4351,6 +4980,7 @@ function AutoPlacementControls({
 function HookControls({
   piece,
   unit,
+  onUnitChange,
   onChange,
   onEditStart,
   onEditEnd,
@@ -4358,6 +4988,7 @@ function HookControls({
 }: {
   piece: ArtPiece;
   unit: Unit;
+  onUnitChange: (unit: Unit) => void;
   onChange: (hookSpec: HookSpec | undefined) => void;
   onEditStart?: () => void;
   onEditEnd?: () => void;
@@ -4399,16 +5030,20 @@ function HookControls({
         <div className="field-grid">
           <NumberField
             label={`${piece.label} hook down from top`}
+            displayLabel="Hook down from top"
             valueIn={piece.hookSpec.topOffsetIn}
             unit={unit}
+            onUnitChange={onUnitChange}
             onEditStart={onEditStart}
             onEditEnd={onEditEnd}
             onChange={(topOffsetIn) => onChange({ ...piece.hookSpec!, topOffsetIn } as HookSpec)}
           />
           <NumberField
             label={`${piece.label} hook from left side`}
+            displayLabel="Hook from left side"
             valueIn={piece.hookSpec.leftOffsetIn}
             unit={unit}
+            onUnitChange={onUnitChange}
             onEditStart={onEditStart}
             onEditEnd={onEditEnd}
             onChange={(leftOffsetIn) => onChange({ ...piece.hookSpec!, leftOffsetIn } as HookSpec)}
@@ -4419,8 +5054,10 @@ function HookControls({
         <div className="field-grid">
           <NumberField
             label={`${piece.label} left hook from left side`}
+            displayLabel="Left hook from left side"
             valueIn={piece.hookSpec.leftSideOffsetIn}
             unit={unit}
+            onUnitChange={onUnitChange}
             onEditStart={onEditStart}
             onEditEnd={onEditEnd}
             onChange={(leftSideOffsetIn) =>
@@ -4429,8 +5066,10 @@ function HookControls({
           />
           <NumberField
             label={`${piece.label} right hook from right side`}
+            displayLabel="Right hook from right side"
             valueIn={piece.hookSpec.rightSideOffsetIn}
             unit={unit}
+            onUnitChange={onUnitChange}
             onEditStart={onEditStart}
             onEditEnd={onEditEnd}
             onChange={(rightSideOffsetIn) =>
@@ -4450,10 +5089,14 @@ function StagingTray({
   selectedPieceId,
   selectedFeatureId,
   unit,
+  onAutoPlace,
+  onShuffle,
   onSelect,
   onFeatureSelect,
   onPointerDown,
   onFeaturePointerDown,
+  onRemovePiece,
+  onRemoveFeature,
 }: {
   pieces: ArtPiece[];
   placements: Placement[];
@@ -4461,10 +5104,14 @@ function StagingTray({
   selectedPieceId: string;
   selectedFeatureId: string;
   unit: Unit;
+  onAutoPlace: () => void;
+  onShuffle: () => void;
   onSelect: (pieceId: string) => void;
   onFeatureSelect: (featureId: string) => void;
-  onPointerDown: (event: React.PointerEvent<HTMLButtonElement>, pieceId: string) => void;
-  onFeaturePointerDown: (event: React.PointerEvent<HTMLButtonElement>, featureId: string) => void;
+  onPointerDown: (event: React.PointerEvent<HTMLElement>, pieceId: string) => void;
+  onFeaturePointerDown: (event: React.PointerEvent<HTMLElement>, featureId: string) => void;
+  onRemovePiece: (pieceId: string) => void;
+  onRemoveFeature: (featureId: string) => void;
 }) {
   const stagedPieces = pieces.filter(
     (piece) => !placements.some((placement) => placement.pieceId === piece.id),
@@ -4482,64 +5129,83 @@ function StagingTray({
         <p className="muted">
           Drag unused art, furniture, and features onto the wall, or drag placed items back here.
         </p>
+        <div className="staging-actions">
+          <button type="button" className="primary" onClick={onAutoPlace}>
+            <Wand2 size={18} />
+            Auto-place pieces
+          </button>
+          <button type="button" className="secondary" onClick={onShuffle}>
+            <RotateCcw size={18} />
+            Shuffle
+          </button>
+        </div>
       </div>
       {hasStagedItems ? (
         <div className="staged-piece-list">
           {stagedPieces.map((piece) => (
-            <button
-              type="button"
+            <StagedArtPiece
               key={piece.id}
-              className={`staged-piece ${piece.id === selectedPieceId ? 'selected' : ''}`}
-              aria-label={`Drag ${piece.label} from staging`}
-              onClick={() => onSelect(piece.id)}
-              onPointerDown={(event) => onPointerDown(event, piece.id)}
-            >
-              <span
-                className="staged-piece-preview"
-                data-testid="staged-piece-preview"
-                style={{
-                  width: `${piece.widthIn * STAGING_SCALE_PX_PER_IN}px`,
-                  height: `${piece.heightIn * STAGING_SCALE_PX_PER_IN}px`,
-                }}
-                aria-hidden="true"
-              />
-              <span className="staged-piece-caption">
-                <span className="staged-piece-name">{piece.label}</span>
-                <small className="staged-piece-size">
-                  {formatMeasurement(piece.widthIn, unit)} x{' '}
-                  {formatMeasurement(piece.heightIn, unit)}
-                </small>
-              </span>
-            </button>
+              piece={piece}
+              selected={piece.id === selectedPieceId}
+              unit={unit}
+              onSelect={onSelect}
+              onPointerDown={onPointerDown}
+              onRemovePiece={onRemovePiece}
+            />
           ))}
           {stagedFeatures.map((feature) => (
-            <button
-              type="button"
-              key={feature.id}
-              className={`staged-piece staged-feature ${
-                feature.id === selectedFeatureId ? 'selected' : ''
-              }`}
-              aria-label={`Drag ${feature.name} from staging`}
-              onClick={() => onFeatureSelect(feature.id)}
-              onPointerDown={(event) => onFeaturePointerDown(event, feature.id)}
-            >
-              <span
-                className="staged-piece-preview staged-feature-preview"
-                data-testid="staged-feature-preview"
-                style={{
-                  width: `${feature.widthIn * STAGING_SCALE_PX_PER_IN}px`,
-                  height: `${feature.heightIn * STAGING_SCALE_PX_PER_IN}px`,
+            <div key={feature.id} className="staged-item-shell">
+              <div
+                className={`staged-piece staged-feature ${
+                  feature.id === selectedFeatureId ? 'selected' : ''
+                }`}
+                role="button"
+                tabIndex={0}
+                aria-label={`Drag ${feature.name} from staging`}
+                onClick={() => onFeatureSelect(feature.id)}
+                onPointerDown={(event) => onFeaturePointerDown(event, feature.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onFeatureSelect(feature.id);
+                  }
                 }}
-                aria-hidden="true"
-              />
-              <span className="staged-piece-caption">
-                <span className="staged-piece-name">{feature.name}</span>
-                <small className="staged-piece-size">
-                  {formatMeasurement(feature.widthIn, unit)} x{' '}
-                  {formatMeasurement(feature.heightIn, unit)}
-                </small>
-              </span>
-            </button>
+              >
+                <span className="staged-piece-preview-shell">
+                  <TooltipIconButton
+                    ariaLabel={`Remove ${feature.name} from staging`}
+                    tooltip={getWallFeatureRemoveTooltip(feature.type)}
+                    className="remove-control-button staged-remove-button"
+                    wrapperClassName="staged-remove-anchor"
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                    }}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRemoveFeature(feature.id);
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </TooltipIconButton>
+                  <span
+                    className="staged-piece-preview staged-feature-preview"
+                    data-testid="staged-feature-preview"
+                    style={{
+                      width: `${feature.widthIn * STAGING_SCALE_PX_PER_IN}px`,
+                      height: `${feature.heightIn * STAGING_SCALE_PX_PER_IN}px`,
+                    }}
+                    aria-hidden="true"
+                  />
+                </span>
+                <span className="staged-piece-caption">
+                  <span className="staged-piece-name">{feature.name}</span>
+                  <small className="staged-piece-size">
+                    {formatMeasurement(feature.widthIn, unit)} x{' '}
+                    {formatMeasurement(feature.heightIn, unit)}
+                  </small>
+                </span>
+              </div>
+            </div>
           ))}
         </div>
       ) : (
@@ -4547,6 +5213,101 @@ function StagingTray({
       )}
     </section>
   );
+}
+
+function StagedArtPiece({
+  piece,
+  selected,
+  unit,
+  onSelect,
+  onPointerDown,
+  onRemovePiece,
+}: {
+  piece: ArtPiece;
+  selected: boolean;
+  unit: Unit;
+  onSelect: (pieceId: string) => void;
+  onPointerDown: (event: React.PointerEvent<HTMLElement>, pieceId: string) => void;
+  onRemovePiece: (pieceId: string) => void;
+}) {
+  const previewSize = getStagedArtPreviewSize(piece);
+
+  return (
+    <div className="staged-item-shell">
+      <div
+        className={`staged-piece ${selected ? 'selected' : ''}`}
+        role="button"
+        tabIndex={0}
+        aria-label={`Drag ${piece.label} from staging`}
+        onClick={() => onSelect(piece.id)}
+        onPointerDown={(event) => onPointerDown(event, piece.id)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onSelect(piece.id);
+          }
+        }}
+      >
+        <span className="staged-piece-preview-shell">
+          <TooltipIconButton
+            ariaLabel={`Remove ${piece.label} from staging`}
+            tooltip="Remove artwork"
+            className="remove-control-button staged-remove-button"
+            wrapperClassName="staged-remove-anchor"
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRemovePiece(piece.id);
+            }}
+          >
+            <Trash2 size={14} />
+          </TooltipIconButton>
+          <span
+            className="staged-piece-preview"
+            data-testid="staged-piece-preview"
+            style={{
+              width: `${previewSize.widthPx}px`,
+              height: `${previewSize.heightPx}px`,
+            }}
+            aria-hidden="true"
+          />
+        </span>
+        <span className="staged-piece-caption">
+          <span className="staged-piece-name">{piece.label}</span>
+          <small className="staged-piece-size">
+            {formatMeasurement(piece.widthIn, unit)} x {formatMeasurement(piece.heightIn, unit)}
+          </small>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function getStagedArtPreviewSize(piece: ArtPiece) {
+  const rawWidthPx = piece.widthIn * STAGING_SCALE_PX_PER_IN;
+  const rawHeightPx = piece.heightIn * STAGING_SCALE_PX_PER_IN;
+
+  if (
+    !Number.isFinite(rawWidthPx) ||
+    !Number.isFinite(rawHeightPx) ||
+    rawWidthPx <= 0 ||
+    rawHeightPx <= 0
+  ) {
+    return { widthPx: 0, heightPx: 0 };
+  }
+
+  const scale = Math.min(1, MAX_STAGED_ART_PREVIEW_HEIGHT_PX / rawHeightPx);
+
+  return {
+    widthPx: roundPixelValue(rawWidthPx * scale),
+    heightPx: roundPixelValue(rawHeightPx * scale),
+  };
+}
+
+function roundPixelValue(value: number) {
+  return Math.round(value * 10_000) / 10_000;
 }
 
 function WallCanvas({
@@ -4631,6 +5392,7 @@ function WallCanvas({
         id: feature.id,
         feature,
         label: feature.name,
+        type: feature.type,
         left: feature.xIn,
         top: featureTop,
         clearanceTop,
@@ -5103,8 +5865,8 @@ function ExportPanel({
   return (
     <CollapsiblePanel
       icon={<Download size={18} />}
-      title="Export"
-      ariaLabel="Export settings"
+      title="Design files"
+      ariaLabel="Design file settings"
       className={className}
     >
       <div className="export-section">
@@ -5399,9 +6161,6 @@ function isPersistedGalleryState(value: unknown): value is Partial<GalleryState>
         typeof section.name === 'string' &&
         isFiniteNumber(section.widthIn) &&
         isFiniteNumber(section.heightIn) &&
-        (section.cornerAfter === 'none' ||
-          section.cornerAfter === 'left' ||
-          section.cornerAfter === 'right') &&
         (section.xIn === undefined || isFiniteNumber(section.xIn)) &&
         (section.yIn === undefined || isFiniteNumber(section.yIn)),
     )

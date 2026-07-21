@@ -53,7 +53,7 @@ describe('application typography', () => {
     expect(stylesheet).toMatch(/\.wall-exterior-edge\s*{[^}]*pointer-events:\s*none;/s);
   });
 
-  it('keeps staging content intact in constrained three-column workspaces', () => {
+  it('keeps staging content intact in constrained two-column workspaces', () => {
     expect(stylesheet).toMatch(/\.canvas-card\s*{[^}]*flex:\s*0 0 auto;/s);
     expect(stylesheet).toMatch(
       /\.staging-header\s+\.panel-title\s*{[^}]*flex:\s*0 0 auto;[^}]*white-space:\s*nowrap;/s,
@@ -132,23 +132,23 @@ describe('application typography', () => {
     const collapsiblePanelRule = stylesheet.match(/\.collapsible-panel\s*{[^}]*}/s)?.[0] ?? '';
     const editorColumnRule = stylesheet.match(/\.editor-column\s*{[^}]*}/s)?.[0] ?? '';
     const measurementsPanelRule = stylesheet.match(/\.measurements-panel\s*{[^}]*}/s)?.[0] ?? '';
-    const rightPanelRule = stylesheet.match(/\.right-panel\s*{[^}]*}/s)?.[0] ?? '';
+    const advancedDrawerRule = stylesheet.match(/\.advanced-drawer\s*{[^}]*}/s)?.[0] ?? '';
     const setupPanelRule = stylesheet.match(/\.setup-panel\s*{[^}]*}/s)?.[0] ?? '';
     const responsiveEditorColumnRule =
       stylesheet
-        .match(/@media\s*\(max-width:\s*1200px\)\s*{[\s\S]*?\.editor-column\s*{[^}]*}/)?.[0]
+        .match(/@media\s*\(max-width:\s*920px\)\s*{[\s\S]*?\.editor-column\s*{[^}]*}/)?.[0]
         .match(/\.editor-column\s*{[^}]*}/s)?.[0] ?? '';
     const responsiveSetupPanelRule =
       stylesheet
-        .match(/@media\s*\(max-width:\s*1200px\)\s*{[\s\S]*?\.setup-panel\s*{[^}]*}/)?.[0]
+        .match(/@media\s*\(max-width:\s*920px\)\s*{[\s\S]*?\.setup-panel\s*{[^}]*}/)?.[0]
         .match(/\.setup-panel\s*{[^}]*}/s)?.[0] ?? '';
     const responsiveSetupUtilityRule =
       stylesheet
-        .match(/@media\s*\(max-width:\s*1200px\)\s*{[\s\S]*?\.setup-utility-panel\s*{[^}]*}/)?.[0]
+        .match(/@media\s*\(max-width:\s*920px\)\s*{[\s\S]*?\.setup-utility-panel\s*{[^}]*}/)?.[0]
         .match(/\.setup-utility-panel\s*{[^}]*}/s)?.[0] ?? '';
     const responsiveArtPiecesPanelRule =
       stylesheet
-        .match(/@media\s*\(max-width:\s*1200px\)\s*{[\s\S]*?\.art-pieces-panel\s*{[^}]*}/)?.[0]
+        .match(/@media\s*\(max-width:\s*920px\)\s*{[\s\S]*?\.art-pieces-panel\s*{[^}]*}/)?.[0]
         .match(/\.art-pieces-panel\s*{[^}]*}/s)?.[0] ?? '';
     const mobileWorkspaceRule =
       stylesheet
@@ -159,7 +159,7 @@ describe('application typography', () => {
       /\.app-shell\s*{[^}]*position:\s*fixed;[^}]*inset:\s*0;[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);[^}]*overflow:\s*hidden;/s,
     );
     expect(stylesheet).toMatch(
-      /\.workspace\s*{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\);[^}]*align-items:\s*stretch;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/s,
+      /\.workspace\s*{[^}]*grid-template-columns:\s*minmax\(280px,\s*340px\)\s*minmax\(560px,\s*1440px\);[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\);[^}]*align-items:\s*stretch;[^}]*justify-content:\s*center;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/s,
     );
     expect(stylesheet).toMatch(/\.workspace\s*{[^}]*scroll-padding-bottom:\s*20px;/s);
     expect(stylesheet).toMatch(
@@ -183,12 +183,11 @@ describe('application typography', () => {
     expect(editorColumnRule).toContain('overflow: auto;');
     expect(editorColumnRule).toContain('overscroll-behavior: contain;');
     expect(measurementsPanelRule).toContain('flex: 0 0 auto;');
-    expect(rightPanelRule).toContain('position: sticky;');
-    expect(rightPanelRule).toContain('align-self: stretch;');
-    expect(rightPanelRule).toContain('min-height: 0;');
-    expect(rightPanelRule).toContain('overflow: auto;');
-    expect(rightPanelRule).toContain('overscroll-behavior: contain;');
-    expect(rightPanelRule).toContain('padding-bottom: 20px;');
+    expect(stylesheet).not.toMatch(/\.right-panel\s*{/);
+    expect(advancedDrawerRule).toContain('height: 100dvh;');
+    expect(advancedDrawerRule).toContain('max-height: 100dvh;');
+    expect(advancedDrawerRule).toContain('overflow: auto;');
+    expect(advancedDrawerRule).toContain('overscroll-behavior: contain;');
     expect(setupPanelRule).toContain('position: sticky;');
     expect(setupPanelRule).toContain('overflow: auto;');
     expect(setupPanelRule).toContain('overscroll-behavior: contain;');
@@ -207,13 +206,8 @@ describe('application typography', () => {
       /@media\s*\(max-width:\s*680px\)\s*{[\s\S]*?\.editor-column\s*{[^}]*order:\s*-1;/,
     );
     expect(responsiveEditorColumnRule).toContain('flex: 0 0 auto;');
-    expect(
-      stylesheet
-        .match(/@media\s*\(max-width:\s*1200px\)\s*{[\s\S]*?\.right-panel\s*{[^}]*}/)?.[0]
-        .match(/\.right-panel\s*{[^}]*}/s)?.[0] ?? '',
-    ).toContain('flex: 0 0 auto;');
     expect(stylesheet).toMatch(
-      /@media\s*\(max-width:\s*1200px\)\s*{[\s\S]*?\.workspace\s*{[^}]*overflow:\s*auto;[\s\S]*?\.right-panel\s*{[^}]*position:\s*static;[^}]*overflow:\s*visible;/,
+      /@media\s*\(max-width:\s*920px\)\s*{[\s\S]*?\.workspace\s*{[^}]*grid-template-columns:\s*1fr;[^}]*overflow:\s*auto;/,
     );
     expect(stylesheet).toMatch(/\.icon-button\s*{[^}]*width:\s*44px;[^}]*min-height:\s*44px;/s);
   });
