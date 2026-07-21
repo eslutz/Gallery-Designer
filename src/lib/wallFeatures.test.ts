@@ -79,13 +79,12 @@ describe('wall feature rules', () => {
 
   it('moves only placed furniture that belongs to the moved section', () => {
     const sectionsBefore: WallSection[] = [
-      { id: 'left', name: 'Left', widthIn: 80, heightIn: 60, cornerAfter: 'none', xIn: 0, yIn: 0 },
+      { id: 'left', name: 'Left', widthIn: 80, heightIn: 60, xIn: 0, yIn: 0 },
       {
         id: 'right',
         name: 'Right',
         widthIn: 80,
         heightIn: 60,
-        cornerAfter: 'none',
         xIn: 80,
         yIn: 0,
       },

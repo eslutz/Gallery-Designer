@@ -22,81 +22,122 @@ export interface ResolvedWallFeatureRule {
 }
 
 interface WallFeatureRuleDefaults {
+  widthIn: number;
+  heightIn: number;
   clearanceIn: number;
   preferredAnchor: WallFeatureAnchor;
   targetGroupWidthRatio?: ResolvedWallFeatureRule['targetGroupWidthRatio'];
   preferredFamilies: ResolvedWallFeatureRule['preferredFamilies'];
 }
 
+interface WallFeatureDefaults {
+  widthIn: number;
+  heightIn: number;
+  clearanceOverrideIn: number;
+}
+
 const DEFAULT_FEATURE_CLEARANCE_IN = 6;
 
 const FEATURE_RULES: Record<WallFeatureType, WallFeatureRuleDefaults> = {
   sofa: {
+    widthIn: 84,
+    heightIn: 30,
     clearanceIn: 8,
     preferredAnchor: 'center',
     targetGroupWidthRatio: { min: 0.6, ideal: 2 / 3, max: 0.75 },
     preferredFamilies: ['row', 'grid'],
   },
   bed: {
+    widthIn: 60,
+    heightIn: 48,
     clearanceIn: 8,
     preferredAnchor: 'center',
     targetGroupWidthRatio: { min: 0.6, ideal: 0.7, max: 0.8 },
     preferredFamilies: ['row', 'grid'],
   },
   console: {
+    widthIn: 60,
+    heightIn: 32,
     clearanceIn: 8,
     preferredAnchor: 'center',
     targetGroupWidthRatio: { min: 0.6, ideal: 2 / 3, max: 0.75 },
     preferredFamilies: ['row', 'grid'],
   },
   desk: {
+    widthIn: 48,
+    heightIn: 30,
     clearanceIn: 10,
     preferredAnchor: 'usable-span',
     targetGroupWidthRatio: { min: 0.45, ideal: 0.6, max: 0.75 },
     preferredFamilies: ['row', 'salon'],
   },
   'file-cabinet': {
+    widthIn: 18,
+    heightIn: 28,
     clearanceIn: 4,
     preferredAnchor: 'none',
     preferredFamilies: [],
   },
   lamp: {
+    widthIn: 14,
+    heightIn: 60,
     clearanceIn: 3,
     preferredAnchor: 'none',
     preferredFamilies: [],
   },
   bookcase: {
+    widthIn: 30,
+    heightIn: 72,
     clearanceIn: 4,
     preferredAnchor: 'none',
     preferredFamilies: [],
   },
   fireplace: {
+    widthIn: 48,
+    heightIn: 42,
     clearanceIn: 12,
     preferredAnchor: 'center',
     targetGroupWidthRatio: { min: 0.55, ideal: 0.65, max: 0.8 },
     preferredFamilies: ['row', 'grid'],
   },
   tv: {
+    widthIn: 55,
+    heightIn: 32,
     clearanceIn: 6,
     preferredAnchor: 'none',
     preferredFamilies: [],
   },
   window: {
+    widthIn: 36,
+    heightIn: 48,
     clearanceIn: 4,
     preferredAnchor: 'none',
     preferredFamilies: [],
   },
   door: {
+    widthIn: 32,
+    heightIn: 80,
     clearanceIn: 4,
     preferredAnchor: 'none',
     preferredFamilies: [],
   },
   custom: {
+    widthIn: 36,
+    heightIn: 36,
     clearanceIn: DEFAULT_FEATURE_CLEARANCE_IN,
     preferredAnchor: 'none',
     preferredFamilies: [],
   },
 };
+
+export function getWallFeatureDefaults(type: WallFeatureType): WallFeatureDefaults {
+  const defaults = FEATURE_RULES[type] ?? FEATURE_RULES.custom;
+  return {
+    widthIn: defaults.widthIn,
+    heightIn: defaults.heightIn,
+    clearanceOverrideIn: defaults.clearanceIn,
+  };
+}
 
 export function resolveWallFeatureRule(feature: WallFeature): ResolvedWallFeatureRule {
   const defaults = FEATURE_RULES[feature.type] ?? FEATURE_RULES.custom;
