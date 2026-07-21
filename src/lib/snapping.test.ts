@@ -10,7 +10,7 @@ import {
 import type { ArtPiece, EditorFeatures, Placement, WallFeature, WallSection } from '../types';
 
 const sections: WallSection[] = [
-  { id: 'wall', name: 'Wall', widthIn: 96, heightIn: 84, cornerAfter: 'none', xIn: 0, yIn: 0 },
+  { id: 'wall', name: 'Wall', widthIn: 96, heightIn: 84, xIn: 0, yIn: 0 },
 ];
 
 const pieces: ArtPiece[] = [

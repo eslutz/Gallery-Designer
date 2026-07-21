@@ -10,8 +10,8 @@ import {
 import type { ArtPiece, Placement, WallSection } from '../types';
 
 const sections: WallSection[] = [
-  { id: 'a', name: 'Left wall', widthIn: 96, heightIn: 84, cornerAfter: 'right' },
-  { id: 'b', name: 'Return wall', widthIn: 72, heightIn: 84, cornerAfter: 'none' },
+  { id: 'a', name: 'Left wall', widthIn: 96, heightIn: 84 },
+  { id: 'b', name: 'Return wall', widthIn: 72, heightIn: 84 },
 ];
 
 const pieces: ArtPiece[] = [
@@ -87,7 +87,6 @@ describe('placement constraints', () => {
         name: 'Left wall',
         widthIn: 96,
         heightIn: 84,
-        cornerAfter: 'none',
         xIn: 0,
         yIn: 0,
       },
@@ -96,7 +95,6 @@ describe('placement constraints', () => {
         name: 'Right wall',
         widthIn: 96,
         heightIn: 84,
-        cornerAfter: 'none',
         xIn: 96,
         yIn: 0,
       },
@@ -120,7 +118,6 @@ describe('placement constraints', () => {
         name: 'Left',
         widthIn: 80,
         heightIn: 60,
-        cornerAfter: 'none',
         xIn: 0,
         yIn: 0,
       },
@@ -129,7 +126,6 @@ describe('placement constraints', () => {
         name: 'Right',
         widthIn: 80,
         heightIn: 60,
-        cornerAfter: 'none',
         xIn: 80,
         yIn: 0,
       },

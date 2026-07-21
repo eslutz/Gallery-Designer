@@ -2,9 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildMeasurementInstructions } from './measurements';
 import type { ArtPiece, Placement, WallSection } from '../types';
 
-const sections: WallSection[] = [
-  { id: 'main', name: 'Main wall', widthIn: 120, heightIn: 96, cornerAfter: 'left' },
-];
+const sections: WallSection[] = [{ id: 'main', name: 'Main wall', widthIn: 120, heightIn: 96 }];
 
 const pieces: ArtPiece[] = [
   { id: 'upper', label: 'Upper left', widthIn: 20, heightIn: 16 },
@@ -37,13 +35,12 @@ describe('measurement instructions', () => {
 
   it('can report absolute placement coordinates from the continuous wall origin', () => {
     const multiSectionWall: WallSection[] = [
-      { id: 'main', name: 'Main wall', widthIn: 120, heightIn: 96, cornerAfter: 'none' },
+      { id: 'main', name: 'Main wall', widthIn: 120, heightIn: 96 },
       {
         id: 'return',
         name: 'Return wall',
         widthIn: 48,
         heightIn: 72,
-        cornerAfter: 'none',
         xIn: 120,
         yIn: 24,
       },

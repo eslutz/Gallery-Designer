@@ -4,14 +4,11 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 
 export type ApplicationTheme = 'evergreen' | 'coastal-blue' | 'aubergine' | 'terracotta' | 'slate';
 
-export type CornerDirection = 'none' | 'left' | 'right';
-
 export interface WallSection {
   id: string;
   name: string;
   widthIn: number;
   heightIn: number;
-  cornerAfter: CornerDirection;
   xIn?: number;
   yIn?: number;
 }

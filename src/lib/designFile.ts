@@ -120,8 +120,6 @@ function parseSection(value: unknown): WallSection {
     name: stringValue(value.name, 'Wall section'),
     widthIn: positiveNumber(value.widthIn, 'wall section width'),
     heightIn: positiveNumber(value.heightIn, 'wall section height'),
-    cornerAfter:
-      value.cornerAfter === 'left' || value.cornerAfter === 'right' ? value.cornerAfter : 'none',
     xIn: finiteNumber(value.xIn, 0),
     yIn: finiteNumber(value.yIn, 0),
   };

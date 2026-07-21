@@ -18,7 +18,6 @@ const sections: WallSection[] = [
     name: 'Main wall',
     widthIn: 96,
     heightIn: 84,
-    cornerAfter: 'right',
     xIn: 0,
     yIn: 0,
   },
@@ -27,7 +26,6 @@ const sections: WallSection[] = [
     name: 'Return wall',
     widthIn: 72,
     heightIn: 84,
-    cornerAfter: 'none',
     xIn: 96,
     yIn: 0,
   },
@@ -48,8 +46,8 @@ const baseFeatures: EditorFeatures = {
 describe('wall section geometry', () => {
   it('preserves unfolded defaults for sections without explicit coordinates', () => {
     const layout = getWallLayout([
-      { id: 'a', name: 'A', widthIn: 20, heightIn: 30, cornerAfter: 'right' },
-      { id: 'b', name: 'B', widthIn: 10, heightIn: 30, cornerAfter: 'none' },
+      { id: 'a', name: 'A', widthIn: 20, heightIn: 30 },
+      { id: 'b', name: 'B', widthIn: 10, heightIn: 30 },
     ]);
 
     expect(layout.map(({ offsetXIn, offsetYIn }) => ({ offsetXIn, offsetYIn }))).toEqual([
@@ -116,7 +114,6 @@ describe('wall section geometry', () => {
             name: 'Solo',
             widthIn: 40,
             heightIn: 30,
-            cornerAfter: 'none',
             xIn: 0,
             yIn: 0,
           },
@@ -130,13 +127,12 @@ describe('wall section geometry', () => {
 
   it('snaps wall section proposals into alignment with other wall sections only', () => {
     const alignedSections: WallSection[] = [
-      { id: 'left', name: 'Left', widthIn: 60, heightIn: 40, cornerAfter: 'none', xIn: 0, yIn: 0 },
+      { id: 'left', name: 'Left', widthIn: 60, heightIn: 40, xIn: 0, yIn: 0 },
       {
         id: 'moving',
         name: 'Moving',
         widthIn: 24,
         heightIn: 20,
-        cornerAfter: 'none',
         xIn: 60,
         yIn: 0,
       },
@@ -165,13 +161,12 @@ describe('wall section geometry', () => {
 
   it('builds a joined inset contour that mirrors a stepped wall shape', () => {
     const steppedWall: WallSection[] = [
-      { id: 'left', name: 'Left', widthIn: 40, heightIn: 80, cornerAfter: 'none', xIn: 0, yIn: 0 },
+      { id: 'left', name: 'Left', widthIn: 40, heightIn: 80, xIn: 0, yIn: 0 },
       {
         id: 'right',
         name: 'Right',
         widthIn: 60,
         heightIn: 40,
-        cornerAfter: 'none',
         xIn: 40,
         yIn: 40,
       },
