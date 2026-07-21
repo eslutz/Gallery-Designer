@@ -3,9 +3,7 @@ import { autoPlacePieces } from './autoPlace';
 import { getAutoPlacementIssues } from './placement';
 import type { ArtPiece, AutoPlacementSettings, Placement, WallSection } from '../types';
 
-const wall: WallSection[] = [
-  { id: 'main', name: 'Main wall', widthIn: 120, heightIn: 96, cornerAfter: 'none' },
-];
+const wall: WallSection[] = [{ id: 'main', name: 'Main wall', widthIn: 120, heightIn: 96 }];
 
 describe('automatic placement', () => {
   const blankSettings: AutoPlacementSettings = {
@@ -144,13 +142,12 @@ describe('automatic placement', () => {
 
   it('keeps a mixed salon composition inside the connected wall union with quarter-inch precision', () => {
     const sections: WallSection[] = [
-      { id: 'left', name: 'Left', widthIn: 60, heightIn: 84, cornerAfter: 'none', xIn: 0, yIn: 0 },
+      { id: 'left', name: 'Left', widthIn: 60, heightIn: 84, xIn: 0, yIn: 0 },
       {
         id: 'right',
         name: 'Right',
         widthIn: 60,
         heightIn: 84,
-        cornerAfter: 'none',
         xIn: 60,
         yIn: 0,
       },
@@ -173,7 +170,7 @@ describe('automatic placement', () => {
 
   it('reports an honest failure when a requested family cannot fit', () => {
     const result = autoPlacePieces(
-      [{ id: 'tiny', name: 'Tiny', widthIn: 20, heightIn: 20, cornerAfter: 'none' }],
+      [{ id: 'tiny', name: 'Tiny', widthIn: 20, heightIn: 20 }],
       [{ id: 'one', label: 'One', widthIn: 12, heightIn: 12 }],
       { settings: { ...blankSettings, layoutPreference: 'row' } },
     );
@@ -200,6 +197,35 @@ describe('automatic placement', () => {
     expect(getAutoPlacementIssues(wall, pieces, result.placements)).toEqual([]);
   });
 
+  it('cycles deterministically through placement variants', () => {
+    const pieces: ArtPiece[] = Array.from({ length: 4 }, (_, index) => ({
+      id: `p${index + 1}`,
+      label: `Piece ${index + 1}`,
+      widthIn: 12,
+      heightIn: 12,
+    }));
+
+    const first = autoPlacePieces(wall, pieces, { settings: blankSettings, variantIndex: 0 });
+
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.variantCount).toBeGreaterThan(1);
+
+    const second = autoPlacePieces(wall, pieces, { settings: blankSettings, variantIndex: 1 });
+    const cycled = autoPlacePieces(wall, pieces, {
+      settings: blankSettings,
+      variantIndex: first.variantCount,
+    });
+
+    expect(second.ok).toBe(true);
+    expect(cycled.ok).toBe(true);
+    if (!second.ok || !cycled.ok) return;
+    expect(second.variantCount).toBe(first.variantCount);
+    expect(second.placements).not.toEqual(first.placements);
+    expect(cycled.placements).toEqual(first.placements);
+    expect(getAutoPlacementIssues(wall, pieces, second.placements)).toEqual([]);
+  });
+
   it('uses salon packing for mixed sizes without overlap', () => {
     const pieces: ArtPiece[] = [
       { id: 'large', label: 'Large', widthIn: 28, heightIn: 20 },
@@ -222,7 +248,6 @@ describe('automatic placement', () => {
         name: 'Section 1',
         widthIn: 79,
         heightIn: 60,
-        cornerAfter: 'none',
         xIn: 0,
         yIn: -23.875,
       },
@@ -231,7 +256,6 @@ describe('automatic placement', () => {
         name: 'Section 2',
         widthIn: 59,
         heightIn: 36,
-        cornerAfter: 'none',
         xIn: 79,
         yIn: -23.875,
       },
@@ -274,7 +298,7 @@ describe('automatic placement', () => {
 
   it('returns actionable diagnostics when no layout family can fit', () => {
     const result = autoPlacePieces(
-      [{ id: 'small', name: 'Small', widthIn: 40, heightIn: 30, cornerAfter: 'none' }],
+      [{ id: 'small', name: 'Small', widthIn: 40, heightIn: 30 }],
       [
         { id: 'one', label: 'One', widthIn: 12, heightIn: 12 },
         { id: 'two', label: 'Two', widthIn: 13, heightIn: 12 },
@@ -302,7 +326,7 @@ describe('automatic placement', () => {
 
   it('returns an explicit error when the wall cannot fit the pieces', () => {
     const result = autoPlacePieces(
-      [{ id: 'tiny', name: 'Tiny', widthIn: 10, heightIn: 10, cornerAfter: 'none' }],
+      [{ id: 'tiny', name: 'Tiny', widthIn: 10, heightIn: 10 }],
       [{ id: 'huge', label: 'Huge', widthIn: 20, heightIn: 20 }],
       { settings: blankSettings },
     );
@@ -315,13 +339,12 @@ describe('automatic placement', () => {
 
   it('distributes pieces across connected wall sections and preserves a wall-edge buffer', () => {
     const multiSectionWall: WallSection[] = [
-      { id: 'left', name: 'Left', widthIn: 80, heightIn: 80, cornerAfter: 'none', xIn: 0, yIn: 0 },
+      { id: 'left', name: 'Left', widthIn: 80, heightIn: 80, xIn: 0, yIn: 0 },
       {
         id: 'right',
         name: 'Right',
         widthIn: 80,
         heightIn: 80,
-        cornerAfter: 'none',
         xIn: 80,
         yIn: 0,
       },
@@ -423,9 +446,7 @@ describe('automatic placement', () => {
   });
 
   it('reports preserved and remaining counts when partial placement cannot fit', () => {
-    const smallWall: WallSection[] = [
-      { id: 'small', name: 'Small', widthIn: 40, heightIn: 30, cornerAfter: 'none' },
-    ];
+    const smallWall: WallSection[] = [{ id: 'small', name: 'Small', widthIn: 40, heightIn: 30 }];
     const pieces: ArtPiece[] = [
       { id: 'fixed', label: 'Fixed', widthIn: 12, heightIn: 12 },
       { id: 'two', label: 'Two', widthIn: 13, heightIn: 13 },

@@ -47,6 +47,7 @@ export interface AutoPlacementOptions {
   features?: EditorFeatures;
   existingPlacements?: Placement[];
   maxCandidatesPerFamily?: number;
+  variantIndex?: number;
 }
 
 export type AutoPlacementResult =
@@ -56,6 +57,7 @@ export type AutoPlacementResult =
       placements: Placement[];
       preservedPlacementCount: number;
       newPlacementCount: number;
+      variantCount: number;
       resolvedGapIn?: number;
       resolvedOuterMarginIn?: number;
       explanation?: string;
@@ -191,6 +193,7 @@ export function autoPlacePieces(
       placements: [],
       preservedPlacementCount: 0,
       newPlacementCount: 0,
+      variantCount: 1,
       resolvedGapIn: resolveGap(options.settings, options.features),
       resolvedOuterMarginIn: resolveOuterMargin(options.settings, options.features),
       explanation: 'No art pieces need placement.',
@@ -236,6 +239,7 @@ export function autoPlacePieces(
       placements: existingPlacements,
       preservedPlacementCount: existingPlacements.length,
       newPlacementCount: 0,
+      variantCount: 1,
       resolvedGapIn: settings.gapIn,
       resolvedOuterMarginIn: settings.outerMarginIn,
       explanation: 'All art pieces are already placed. Auto-placement made no changes.',
@@ -283,8 +287,10 @@ export function autoPlacePieces(
       bounds,
     ),
   }));
-  const candidates = familyResults.flatMap((result) => result.candidates);
-  const best = candidates.sort((a, b) => a.score - b.score)[0];
+  const candidates = familyResults
+    .flatMap((result) => result.candidates)
+    .sort((a, b) => a.score - b.score);
+  const best = candidates[resolveVariantIndex(options.variantIndex, candidates.length)];
 
   if (!best) {
     const requested =
@@ -322,10 +328,18 @@ export function autoPlacePieces(
     placements,
     preservedPlacementCount: existingPlacements.length,
     newPlacementCount: remainingPieces.length,
+    variantCount: candidates.length,
     resolvedGapIn: settings.gapIn,
     resolvedOuterMarginIn: settings.outerMarginIn,
     explanation: describePlacement(best.family, settings),
   };
+}
+
+function resolveVariantIndex(variantIndex: number | undefined, variantCount: number): number {
+  if (variantCount <= 1 || variantIndex === undefined || !Number.isFinite(variantIndex)) {
+    return 0;
+  }
+  return Math.abs(Math.trunc(variantIndex)) % variantCount;
 }
 
 function resolveSettings(options: AutoPlacementOptions): ResolvedSettings {
