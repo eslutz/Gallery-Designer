@@ -57,6 +57,39 @@ export function calculateTooltipPosition(
   };
 }
 
+export function avoidTooltipCollisions(
+  position: TooltipPosition,
+  tooltipSize: Pick<TooltipRect, 'width' | 'height'>,
+  obstacles: TooltipRect[],
+  viewport: TooltipViewport,
+  options: Pick<TooltipPositionOptions, 'gap' | 'padding'> = {},
+): TooltipPosition {
+  const gap = options.gap ?? 8;
+  const padding = options.padding ?? 8;
+  const width = Math.min(tooltipSize.width, position.maxWidth);
+  const height = Math.min(tooltipSize.height, position.maxHeight);
+  let left = position.left;
+
+  for (const obstacle of obstacles) {
+    const overlapsHorizontally =
+      left < obstacle.left + obstacle.width && left + width > obstacle.left;
+    const overlapsVertically =
+      position.top < obstacle.top + obstacle.height && position.top + height > obstacle.top;
+
+    if (!overlapsHorizontally || !overlapsVertically) {
+      continue;
+    }
+
+    const obstacleIsToTheRight = obstacle.left + obstacle.width / 2 >= left + width / 2;
+    const requestedLeft = obstacleIsToTheRight
+      ? obstacle.left - gap - width
+      : obstacle.left + obstacle.width + gap;
+    left = clamp(requestedLeft, padding, viewport.width - padding - width);
+  }
+
+  return { ...position, left };
+}
+
 function clamp(value: number, min: number, max: number): number {
   if (max < min) {
     return min;

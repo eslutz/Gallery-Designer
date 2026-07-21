@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateTooltipPosition } from './tooltipPosition';
+import { avoidTooltipCollisions, calculateTooltipPosition } from './tooltipPosition';
 
 describe('tooltip positioning', () => {
   it('clamps tooltips near the right viewport edge', () => {
@@ -58,5 +58,23 @@ describe('tooltip positioning', () => {
     expect(position.maxHeight).toBe(104);
     expect(position.top).toBeGreaterThanOrEqual(8);
     expect(position.top + position.maxHeight).toBeLessThanOrEqual(112);
+  });
+
+  it('moves a tooltip away from an adjacent staged preview', () => {
+    const position = avoidTooltipCollisions(
+      {
+        left: 449,
+        top: 201,
+        maxWidth: 206,
+        maxHeight: 38,
+        placement: 'bottom',
+      },
+      { width: 206, height: 38 },
+      [{ left: 607, top: 160, width: 672, height: 240 }],
+      { width: 1340, height: 550 },
+    );
+
+    expect(position.left).toBe(393);
+    expect(position.left + 206).toBeLessThan(607);
   });
 });
