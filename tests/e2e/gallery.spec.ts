@@ -149,6 +149,90 @@ test('immediately picks up a piece placed from the staging tray without selectin
   expect(await page.evaluate(() => window.getSelection()?.toString() ?? '')).toBe('');
 });
 
+test('places and returns staged furniture through the shared SVG display paths', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Auto-placement options', exact: true }).click();
+  await page.getByLabel('Wall setup', { exact: true }).selectOption('full-wall-with-features');
+  await page.getByRole('button', { name: /Add furniture or feature/i }).click();
+  await page
+    .getByRole('dialog', { name: 'Auto-placement settings' })
+    .getByLabel('Close auto-placement settings')
+    .click();
+
+  const stagedFeature = page.getByRole('button', { name: 'Drag Sofa 1 from staging' });
+  await expect(stagedFeature.locator('[data-render-profile="tray"]')).toBeVisible();
+
+  const canvas = page.getByRole('img', { name: 'Scaled gallery wall layout' });
+  const canvasBox = await canvas.boundingBox();
+  if (!canvasBox) {
+    throw new Error('Canvas was not visible enough to place the staged furniture.');
+  }
+  await pointerDrag(page, stagedFeature, canvasBox.x + 260, canvasBox.y + 280);
+
+  const wallFeature = page.getByRole('button', { name: 'Move Sofa 1', exact: true });
+  await expect(wallFeature).toBeVisible();
+  await expect(page.locator('.wall-feature[data-render-profile="wall"]')).toHaveCount(1);
+
+  const tray = page.getByRole('region', { name: 'Art staging tray' });
+  const trayBox = await tray.boundingBox();
+  if (!trayBox) {
+    throw new Error('Staging tray was not visible enough to return the furniture.');
+  }
+  await pointerDrag(
+    page,
+    wallFeature,
+    trayBox.x + trayBox.width / 2,
+    trayBox.y + trayBox.height / 2,
+  );
+
+  await expect(stagedFeature).toBeVisible();
+  await stagedFeature.hover();
+  await page.getByRole('button', { name: 'Remove Sofa 1 from staging' }).click();
+  await expect(stagedFeature).toHaveCount(0);
+});
+
+test('keeps the wall corner action visible and clickable after leaving the artwork', async ({
+  page,
+}) => {
+  await page.goto('/');
+
+  const stagedPiece = page.getByRole('button', { name: 'Drag Piece 1 from staging' });
+  const canvas = page.getByRole('img', { name: 'Scaled gallery wall layout' });
+  const canvasBox = await canvas.boundingBox();
+  if (!canvasBox) {
+    throw new Error('Canvas was not visible enough to place the staged artwork.');
+  }
+  await pointerDrag(page, stagedPiece, canvasBox.x + 220, canvasBox.y + 180);
+
+  const wallPiece = page.getByRole('button', { name: 'Move Piece 1', exact: true });
+  const removeButton = page.getByRole('button', { name: 'Return Piece 1 to staging', exact: true });
+  const wallPieceBox = await wallPiece.boundingBox();
+  const removeButtonBox = await removeButton.boundingBox();
+  if (!wallPieceBox || !removeButtonBox) {
+    throw new Error('Placed artwork or its wall remove control was not visible enough to measure.');
+  }
+  expect(
+    Math.abs(removeButtonBox.x + removeButtonBox.width / 2 - (wallPieceBox.x + wallPieceBox.width)),
+  ).toBeLessThanOrEqual(2);
+  expect(
+    Math.abs(removeButtonBox.y + removeButtonBox.height / 2 - wallPieceBox.y),
+  ).toBeLessThanOrEqual(2);
+  await wallPiece.hover();
+  await expect(removeButton).toBeVisible();
+
+  await removeButton.hover();
+  await expect(removeButton).toBeVisible();
+  await wallPiece.hover();
+  await removeButton.hover();
+  await expect(removeButton).toBeVisible();
+  await removeButton.click();
+
+  await expect(page.getByRole('button', { name: 'Drag Piece 1 from staging' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Move Piece 1', exact: true })).toHaveCount(0);
+});
+
 test('shows an alignment guide while pointer dragging into a center snap', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem(

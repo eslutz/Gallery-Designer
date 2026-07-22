@@ -47,7 +47,7 @@ describe('Gallery Designer app', () => {
   }
 
   async function openPlacementSettingsDrawer(user: ReturnType<typeof userEvent.setup>) {
-    await user.click(screen.getByRole('button', { name: /^Placement settings$/i }));
+    await user.click(screen.getByRole('button', { name: /^Auto-placement options$/i }));
   }
 
   function mockNavigatorLocale(languages: readonly string[], language: string) {
@@ -223,7 +223,7 @@ describe('Gallery Designer app', () => {
       screen.getByRole('heading', { name: /Design files/i }),
     );
     await openPlacementSettingsDrawer(user);
-    expect(screen.getByRole('dialog', { name: /Placement settings/i })).toContainElement(
+    expect(screen.getByRole('dialog', { name: /Auto-placement settings/i })).toContainElement(
       screen.getByLabelText('Wall setup'),
     );
     expect(screen.queryByRole('button', { name: /Place on first wall/i })).not.toBeInTheDocument();
@@ -529,7 +529,7 @@ describe('Gallery Designer app', () => {
     render(<App />);
 
     await openPlacementSettingsDrawer(user);
-    const placementDrawer = screen.getByRole('dialog', { name: /Placement settings/i });
+    const placementDrawer = screen.getByRole('dialog', { name: /Auto-placement settings/i });
     await user.selectOptions(
       within(placementDrawer).getByLabelText('Wall setup'),
       'full-wall-with-features',
@@ -562,7 +562,7 @@ describe('Gallery Designer app', () => {
     render(<App />);
 
     await openPlacementSettingsDrawer(user);
-    const placementDrawer = screen.getByRole('dialog', { name: /Placement settings/i });
+    const placementDrawer = screen.getByRole('dialog', { name: /Auto-placement settings/i });
     await user.selectOptions(
       within(placementDrawer).getByLabelText('Wall setup'),
       'full-wall-with-features',
@@ -629,6 +629,84 @@ describe('Gallery Designer app', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /Drag Sofa 1 from staging/i })).toBeInTheDocument(),
     );
+  });
+
+  it('removes a placed wall feature with the wall corner action', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.selectOptions(screen.getByLabelText('Wall setup'), 'full-wall-with-features');
+    await user.click(screen.getByRole('button', { name: /Add furniture or feature/i }));
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    mockCanvasProjection(canvas);
+    mockPointerTarget(canvas);
+
+    const stagedFeature = screen.getByRole('button', { name: /Drag Sofa 1 from staging/i });
+    act(() => {
+      fireEvent.pointerDown(stagedFeature, { pointerId: 1, clientX: 50, clientY: 50 });
+      window.dispatchEvent(new MouseEvent('pointermove', { clientX: 60, clientY: 60 }));
+      window.dispatchEvent(new MouseEvent('pointerup', { clientX: 60, clientY: 60 }));
+    });
+
+    expect(screen.getByRole('button', { name: /^Move Sofa 1$/i })).toBeInTheDocument();
+
+    const removeFeatureButton = screen.getByRole('button', { name: 'Return Sofa 1 to staging' });
+    const removeFeatureTooltip = document.getElementById(
+      removeFeatureButton.getAttribute('aria-describedby') ?? '',
+    );
+
+    expect(removeFeatureTooltip).toHaveTextContent('Return to staging');
+
+    await user.click(removeFeatureButton);
+
+    expect(screen.queryByRole('button', { name: /^Move Sofa 1$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Drag Sofa 1 from staging/i })).toBeInTheDocument();
+  });
+
+  it('uses the shared remove-control contract when returning artwork from the wall', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const stagedRemoveButton = screen.getByRole('button', { name: 'Remove Piece 1 from staging' });
+    expect(stagedRemoveButton).toHaveClass('remove-control-button', 'staged-remove-button');
+
+    placeStagedPieceOnWall();
+
+    const wallRemoveButton = screen.getByRole('button', { name: 'Return Piece 1 to staging' });
+    const wallRemoveTooltip = document.getElementById(
+      wallRemoveButton.getAttribute('aria-describedby') ?? '',
+    );
+    expect(wallRemoveButton).toHaveClass('remove-control-button', 'wall-piece-remove-button');
+    expect(wallRemoveTooltip).toHaveTextContent('Return to staging');
+
+    await user.click(wallRemoveButton);
+
+    expect(screen.queryByRole('button', { name: /^Move Piece 1$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Drag Piece 1 from staging' })).toBeInTheDocument();
+  });
+
+  it('centers the wall remove control on the artwork top-right corner and keeps it visible across the control', () => {
+    render(<App />);
+    placeStagedPieceOnWall();
+
+    const wallPiece = screen.getByRole('button', { name: /^Move Piece 1$/i });
+    const removeButton = screen.getByRole('button', { name: 'Return Piece 1 to staging' });
+    const removeAnchor = removeButton.closest('.wall-piece-remove-control');
+
+    expect(removeAnchor).toBeInTheDocument();
+    expect(Number(removeAnchor?.getAttribute('data-world-x'))).toBeCloseTo(
+      Number(wallPiece.getAttribute('x')) + Number(wallPiece.getAttribute('width')),
+    );
+    expect(Number(removeAnchor?.getAttribute('data-world-y'))).toBeCloseTo(
+      Number(wallPiece.getAttribute('y')),
+    );
+
+    fireEvent.pointerEnter(wallPiece);
+    expect(removeAnchor).toHaveClass('is-visible');
+    fireEvent.pointerLeave(wallPiece);
+    expect(removeAnchor).toHaveClass('is-visible');
+    fireEvent.pointerEnter(removeAnchor!);
+    expect(removeAnchor).toHaveClass('is-visible');
   });
 
   it('keeps manually placed art fixed while auto-placing the remaining pieces and supports undo', async () => {
@@ -1821,7 +1899,7 @@ describe('Gallery Designer app', () => {
     render(<App />);
 
     await openPlacementSettingsDrawer(user);
-    const placementDrawer = screen.getByRole('dialog', { name: /Placement settings/i });
+    const placementDrawer = screen.getByRole('dialog', { name: /Auto-placement settings/i });
     expect(placementDrawer).toContainElement(screen.getByLabelText('Layout'));
     expect(placementDrawer).toContainElement(screen.getByLabelText('Wall setup'));
     expect(placementDrawer).toHaveClass('placement-settings-drawer');
@@ -2818,9 +2896,6 @@ describe('Gallery Designer app', () => {
     const canvasCard = document.querySelector('.canvas-card');
     expect(canvasCard).toBeInTheDocument();
     expect(editorControls).toContainElement(screen.getByRole('button', { name: /Clear/i }));
-    expect(editorControls).toContainElement(
-      screen.getByRole('button', { name: /^Placement settings$/i }),
-    );
     expect(editorControls).toContainElement(screen.getByRole('button', { name: /^Advanced$/i }));
     const stagingTray = screen.getByRole('region', { name: /Art staging tray/i });
     const stagingHeader = stagingTray.querySelector('.staging-header');
@@ -2831,11 +2906,28 @@ describe('Gallery Designer app', () => {
     expect(stagingHeader).toContainElement(
       screen.getByRole('button', { name: /^Auto-place pieces$/i }),
     );
-    expect(stagingHeader).toContainElement(screen.getByRole('button', { name: /^Shuffle$/i }));
+    const shuffleButton = screen.getByRole('button', { name: /^Shuffle$/i });
+    expect(stagingHeader).toContainElement(shuffleButton);
+    const shuffleTooltip = document.getElementById(
+      shuffleButton.getAttribute('aria-describedby') ?? '',
+    );
+    expect(shuffleTooltip).toHaveTextContent('Shuffle layout');
+    expect(shuffleTooltip).not.toHaveClass('shuffle-action-tooltip');
+    expect(stagingHeader).toContainElement(
+      screen.getByRole('button', { name: /^Auto-placement options$/i }),
+    );
     expect(stagingTray).not.toContainElement(screen.getByLabelText('Layout'));
     await openPlacementSettingsDrawer(user);
-    expect(screen.getByRole('dialog', { name: /Placement settings/i })).toContainElement(
-      screen.getByLabelText('Layout'),
+    const placementDrawer = screen.getByRole('dialog', { name: /Auto-placement settings/i });
+    const layoutSelect = within(placementDrawer).getByLabelText('Layout');
+    const layoutInfoButton = within(placementDrawer).getByRole('button', {
+      name: 'Layout information',
+    });
+    expect(placementDrawer).toContainElement(layoutSelect);
+    expect(
+      document.getElementById(layoutInfoButton.getAttribute('aria-describedby') ?? ''),
+    ).toHaveTextContent(
+      'Layout chooses the auto-placement pattern. Auto picks a pattern from your art sizes; Grid, Row, Stack, and Salon force that layout style.',
     );
     expect(screen.getByLabelText('Section 1 width unit')).toHaveValue('in');
     expect(screen.getByLabelText('Piece 1 width unit')).toHaveValue('in');

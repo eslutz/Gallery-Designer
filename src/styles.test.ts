@@ -63,9 +63,55 @@ describe('application typography', () => {
     );
   });
 
+  it('keeps short action tooltip labels on one line', () => {
+    const actionTooltipRule = stylesheet.match(/\.action-tooltip\s*{[^}]*}/s)?.[0] ?? '';
+
+    expect(actionTooltipRule).toContain('white-space: nowrap;');
+    expect(actionTooltipRule).toContain('overflow-wrap: normal;');
+    expect(stylesheet).not.toMatch(/\.shuffle-action-tooltip\s*{/);
+  });
+
+  it('shares the fixed circular remove-control treatment between staging and wall items', () => {
+    const removeControlRule = stylesheet.match(/\.remove-control-button\s*{[^}]*}/s)?.[0] ?? '';
+    const wallRemoveControlRule =
+      stylesheet.match(/\.wall-piece-remove-button\s*{[^}]*}/s)?.[0] ?? '';
+
+    expect(removeControlRule).toContain('width: 24px;');
+    expect(removeControlRule).toContain('height: 24px;');
+    expect(removeControlRule).toContain('border-radius: 999px;');
+    expect(removeControlRule).toContain('box-shadow: var(--soft-shadow);');
+    expect(stylesheet).toMatch(
+      /:root\[data-theme='dark'\]\s+\.remove-control-button\.icon-button\s*{[^}]*background:\s*var\(--piece-fill\);[^}]*color:\s*var\(--piece-label-inside\);/s,
+    );
+    expect(stylesheet).toMatch(
+      /:root\[data-theme='dark'\]\s+\.remove-control-button\.icon-button:hover:not\(:disabled\),\s*:root\[data-theme='dark'\]\s+\.remove-control-button\.icon-button:focus-visible,\s*:root\[data-theme='dark'\]\s+\.remove-control-button\.icon-button:active:not\(:disabled\)\s*{[^}]*background:\s*var\(--wall-edge\);[^}]*color:\s*var\(--primary-text\);/s,
+    );
+    expect(wallRemoveControlRule).toContain('flex: 0 0 24px;');
+    expect(stylesheet).toMatch(
+      /\.wall-piece-remove-control\s*{[^}]*position:\s*absolute;[^}]*transform:\s*translate\(-50%,\s*-50%\);/s,
+    );
+  });
+
+  it('keeps a wall remove control interactive while its owning wall item is hovered', () => {
+    expect(stylesheet).toMatch(/\.wall-piece-remove-control\.is-visible,\s*/s);
+  });
+
   it('lets collapsed utility panels override their grid display rule', () => {
     expect(stylesheet).toMatch(/\.collapsible-panel-content\s*{[^}]*display:\s*grid;/s);
     expect(stylesheet).toMatch(/\.collapsible-panel-content\[hidden\]\s*{[^}]*display:\s*none;/s);
+  });
+
+  it('gives drawer close buttons visible hover and click feedback', () => {
+    const closeButtonRule =
+      stylesheet.match(/\.advanced-drawer-header\s+\.icon-button\s*{[^}]*}/s)?.[0] ?? '';
+
+    expect(closeButtonRule).toContain('transition:');
+    expect(stylesheet).toMatch(
+      /\.advanced-drawer-header\s+\.icon-button:hover:not\(:disabled\),\s*\.advanced-drawer-header\s+\.icon-button:focus-visible\s*{[^}]*background:\s*var\(--secondary-background\);[^}]*border-color:\s*var\(--focus-color\);[^}]*box-shadow:\s*0 0 0 3px var\(--focus-ring\);/s,
+    );
+    expect(stylesheet).toMatch(
+      /\.advanced-drawer-header\s+\.icon-button:active:not\(:disabled\)\s*{[^}]*transform:\s*translateY\(1px\) scale\(0\.96\);[^}]*box-shadow:\s*0 0 0 2px var\(--focus-ring\);/s,
+    );
   });
 
   it('defines the application theme selectors and matching art-piece colors', () => {
@@ -121,6 +167,13 @@ describe('application typography', () => {
     );
     expect(stylesheet).toMatch(/\.secondary\s*{[^}]*color:\s*var\(--secondary-text\)/s);
     expect(stylesheet).toMatch(/\.staged-piece\s*{[^}]*color:\s*var\(--text-primary\)/s);
+  });
+
+  it('lets shared SVG item geometry control staging thumbnails', () => {
+    expect(stylesheet).toMatch(/\.staged-piece-preview\s*{[^}]*overflow:\s*visible;/s);
+    expect(stylesheet).toMatch(
+      /\.renderable-item--tray\s+\.wall-feature-block\s*{[^}]*stroke-dasharray:\s*2 1;/s,
+    );
   });
 
   it('provides reduced-motion and forced-colors fallbacks', () => {
@@ -184,10 +237,13 @@ describe('application typography', () => {
     expect(editorColumnRule).toContain('overscroll-behavior: contain;');
     expect(measurementsPanelRule).toContain('flex: 0 0 auto;');
     expect(stylesheet).not.toMatch(/\.right-panel\s*{/);
+    expect(advancedDrawerRule).toContain('inset: 0 0 0 auto;');
     expect(advancedDrawerRule).toContain('height: 100dvh;');
     expect(advancedDrawerRule).toContain('max-height: 100dvh;');
     expect(advancedDrawerRule).toContain('overflow: auto;');
     expect(advancedDrawerRule).toContain('overscroll-behavior: contain;');
+    expect(advancedDrawerRule).toContain('border-left: 1px solid var(--panel-border);');
+    expect(advancedDrawerRule).toContain('transform: translateX(calc(100% + 8px));');
     expect(setupPanelRule).toContain('position: sticky;');
     expect(setupPanelRule).toContain('overflow: auto;');
     expect(setupPanelRule).toContain('overscroll-behavior: contain;');

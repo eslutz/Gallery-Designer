@@ -12,6 +12,7 @@ import {
   Plus,
   RotateCcw,
   Ruler,
+  Settings,
   SlidersHorizontal,
   Trash2,
   Upload,
@@ -33,6 +34,8 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { RenderableItem } from './components/RenderableItem';
+import { fitArtworkLabel } from './lib/artworkLabel';
 import { autoPlacePieces, type AutoPlacementDiagnostics } from './lib/autoPlace';
 import {
   applicationThemeOptions,
@@ -89,7 +92,11 @@ import {
   normalizeWallSections,
   validateWallSections,
 } from './lib/wall';
-import { movePlacedFeaturesWithWallSection, resolveWallFeatureRule } from './lib/wallFeatures';
+import {
+  getWallFeatureDefaults,
+  movePlacedFeaturesWithWallSection,
+  resolveWallFeatureRule,
+} from './lib/wallFeatures';
 import type {
   ArtPiece,
   AutoPlacementLayoutPreference,
@@ -188,6 +195,8 @@ interface WallDragPreview {
   widthPx: number;
   heightPx: number;
   itemCount: number;
+  artwork?: ArtPiece;
+  feature?: WallFeature;
   pieces?: DragPreviewPiece[];
 }
 
@@ -196,6 +205,16 @@ interface DragPreviewPiece {
   label: string;
   widthIn: number;
   heightIn: number;
+  hookSpec?: HookSpec;
+  xIn: number;
+  yIn: number;
+}
+
+interface WallRemoveControl {
+  id: string;
+  itemId: string;
+  itemKind: 'artwork' | 'feature';
+  label: string;
   xIn: number;
   yIn: number;
 }
@@ -2536,6 +2555,7 @@ export default function App() {
       widthPx: size.widthPx,
       heightPx: size.heightPx,
       itemCount: 1,
+      artwork: piece,
     });
   }
 
@@ -2573,6 +2593,7 @@ export default function App() {
                 label: piece.label,
                 widthIn: piece.widthIn,
                 heightIn: piece.heightIn,
+                hookSpec: piece.hookSpec,
                 xIn:
                   getSectionOffsetX(state.sections, placement.sectionId) +
                   placement.xIn -
@@ -2600,6 +2621,7 @@ export default function App() {
       widthPx: size.widthPx,
       heightPx: size.heightPx,
       itemCount: placements.length,
+      artwork: placements.length === 1 ? grabbedPiece : undefined,
       pieces: previewPieces,
     });
   }
@@ -2628,6 +2650,7 @@ export default function App() {
       widthPx: size.widthPx,
       heightPx: size.heightPx,
       itemCount: 1,
+      feature: snappedFeature,
     });
   }
 
@@ -3132,15 +3155,6 @@ export default function App() {
               <button
                 type="button"
                 className="secondary"
-                aria-expanded={settingsDrawerOpen}
-                onClick={() => setSettingsDrawerOpen(true)}
-              >
-                <SlidersHorizontal size={18} />
-                Placement settings
-              </button>
-              <button
-                type="button"
-                className="secondary"
                 aria-expanded={advancedDrawerOpen}
                 onClick={() => setAdvancedDrawerOpen(true)}
               >
@@ -3182,6 +3196,8 @@ export default function App() {
                 onFeaturePointerDown={handleFeaturePointerDown}
                 onPieceKeyDown={handlePieceKeyDown}
                 onFeatureKeyDown={handleFeatureKeyDown}
+                onRemovePlacement={removePlacement}
+                onRemoveFeaturePlacement={removeFeaturePlacement}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
               />
@@ -3232,6 +3248,7 @@ export default function App() {
               unit={state.unit}
               onAutoPlace={handleAutoPlace}
               onShuffle={handleShuffleAutoPlace}
+              onOpenPlacementSettings={() => setSettingsDrawerOpen(true)}
               onSelect={togglePieceSelection}
               onFeatureSelect={toggleFeatureSelection}
               onPointerDown={handleStagedPiecePointerDown}
@@ -3476,7 +3493,7 @@ function WallDragPreviewOverlay({
 
   const label =
     preview.itemKind === 'piece' && preview.itemCount === 1
-      ? fitPieceLabel(preview.label, preview.widthIn, preview.heightIn)
+      ? fitArtworkLabel(preview.label, preview.widthIn, preview.heightIn)
       : null;
   const bufferGapPx =
     artPieceBufferEnabled && preview.itemKind === 'piece'
@@ -3515,69 +3532,57 @@ function WallDragPreviewOverlay({
       >
         {isGroupPreview ? (
           preview.pieces?.map((piece) => (
-            <g key={piece.id} className="piece selected" data-testid="group-drag-preview-piece">
-              <rect
-                x={piece.xIn}
-                y={piece.yIn}
-                width={piece.widthIn}
-                height={piece.heightIn}
-                rx="0.8"
-              />
-              <PieceLabelSvg
-                piece={piece}
-                offsetX={piece.xIn}
-                offsetY={piece.yIn}
+            <g key={piece.id} data-testid="group-drag-preview-piece">
+              <RenderableItem
+                item={{
+                  kind: 'artwork',
+                  artwork: piece,
+                  xIn: piece.xIn,
+                  yIn: piece.yIn,
+                  selected: true,
+                }}
+                profile="drag-preview"
                 clipId={`preview-${piece.id}`}
               />
             </g>
           ))
         ) : preview.itemKind === 'piece' ? (
-          <g className="piece selected">
-            <rect x="0" y="0" width={preview.widthIn} height={preview.heightIn} rx="0.8" />
-            {preview.itemCount === 1 ? (
-              <PieceLabelSvg
-                piece={{
-                  id: preview.itemId,
-                  label: preview.label,
-                  widthIn: preview.widthIn,
-                  heightIn: preview.heightIn,
-                }}
-                offsetX={0}
-                offsetY={0}
-                clipId={`preview-${preview.itemId}`}
-              />
-            ) : (
-              <text
-                x={preview.widthIn / 2}
-                y={preview.heightIn / 2}
-                className="piece-label"
-                dominantBaseline="middle"
-                textAnchor="middle"
-              >
-                {preview.label}
-              </text>
-            )}
-          </g>
+          <RenderableItem
+            item={{
+              kind: 'artwork',
+              artwork: preview.artwork ?? {
+                id: preview.itemId,
+                label: preview.label,
+                widthIn: preview.widthIn,
+                heightIn: preview.heightIn,
+              },
+              xIn: 0,
+              yIn: 0,
+              selected: true,
+            }}
+            profile="drag-preview"
+            clipId={`preview-${preview.itemId}`}
+          />
         ) : (
-          <g className="wall-feature selected">
-            <rect
-              x="0"
-              y="0"
-              width={preview.widthIn}
-              height={preview.heightIn}
-              rx="0.8"
-              className="wall-feature-block"
-            />
-            <text
-              x={preview.widthIn / 2}
-              y={preview.heightIn / 2}
-              className="wall-feature-label"
-              dominantBaseline="middle"
-              textAnchor="middle"
-            >
-              {preview.label}
-            </text>
-          </g>
+          <RenderableItem
+            item={{
+              kind: 'feature',
+              feature: preview.feature ?? {
+                id: preview.itemId,
+                type: 'custom',
+                name: preview.label,
+                xIn: 0,
+                yIn: 0,
+                widthIn: preview.widthIn,
+                heightIn: preview.heightIn,
+              },
+              xIn: 0,
+              yIn: 0,
+              selected: true,
+            }}
+            profile="drag-preview"
+            clipId={`preview-${preview.itemId}`}
+          />
         )}
       </svg>
     </div>
@@ -3989,24 +3994,24 @@ function PlacementSettingsDrawer({
       <button
         type="button"
         className="advanced-drawer-backdrop"
-        aria-label="Close placement settings"
+        aria-label="Close auto-placement settings"
         onClick={onClose}
       />
       <aside
         className="advanced-drawer placement-settings-drawer"
         role={open ? 'dialog' : undefined}
         aria-modal={open ? 'true' : undefined}
-        aria-label="Placement settings"
+        aria-label="Auto-placement settings"
       >
         <div className="advanced-drawer-header">
           <div className="panel-title">
             <SlidersHorizontal size={18} />
-            <h2>Placement settings</h2>
+            <h2>Auto-placement settings</h2>
           </div>
           <button
             type="button"
             className="icon-button"
-            aria-label="Close placement settings"
+            aria-label="Close auto-placement settings"
             onClick={onClose}
           >
             <X size={18} />
@@ -4410,6 +4415,7 @@ function TooltipIconButton({
   tooltip,
   children,
   onClick,
+  buttonClassName = 'icon-button',
   className,
   wrapperClassName,
   onPointerDown,
@@ -4418,6 +4424,7 @@ function TooltipIconButton({
   tooltip: string;
   children: ReactNode;
   onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  buttonClassName?: string;
   className?: string;
   wrapperClassName?: string;
   onPointerDown?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
@@ -4519,7 +4526,7 @@ function TooltipIconButton({
       <button
         ref={buttonRef}
         type="button"
-        className={className ? `icon-button ${className}` : 'icon-button'}
+        className={className ? `${buttonClassName} ${className}` : buttonClassName}
         aria-label={ariaLabel}
         aria-describedby={tooltipId}
         onPointerDown={onPointerDown}
@@ -4736,9 +4743,14 @@ function AutoPlacementControls({
 
   return (
     <>
-      <label className="field">
-        Layout
+      <div className="field">
+        <FieldLabelWithInfo
+          htmlFor="auto-placement-layout"
+          label="Layout"
+          info="Layout chooses the auto-placement pattern. Auto picks a pattern from your art sizes; Grid, Row, Stack, and Salon force that layout style."
+        />
         <select
+          id="auto-placement-layout"
           value={settings.layoutPreference}
           onChange={(event) =>
             onChange({
@@ -4753,7 +4765,7 @@ function AutoPlacementControls({
           <option value="stack">Stack</option>
           <option value="salon">Salon</option>
         </select>
-      </label>
+      </div>
       <div className="field">
         <FieldLabelWithInfo
           htmlFor="auto-placement-wall-setup"
@@ -5092,6 +5104,7 @@ function StagingTray({
   unit,
   onAutoPlace,
   onShuffle,
+  onOpenPlacementSettings,
   onSelect,
   onFeatureSelect,
   onPointerDown,
@@ -5107,6 +5120,7 @@ function StagingTray({
   unit: Unit;
   onAutoPlace: () => void;
   onShuffle: () => void;
+  onOpenPlacementSettings: () => void;
   onSelect: (pieceId: string) => void;
   onFeatureSelect: (featureId: string) => void;
   onPointerDown: (event: React.PointerEvent<HTMLElement>, pieceId: string) => void;
@@ -5135,78 +5149,48 @@ function StagingTray({
             <Wand2 size={18} />
             Auto-place pieces
           </button>
-          <button type="button" className="secondary" onClick={onShuffle}>
+          <TooltipIconButton
+            ariaLabel="Shuffle"
+            tooltip="Shuffle layout"
+            buttonClassName="secondary"
+            onClick={onShuffle}
+          >
             <RotateCcw size={18} />
             Shuffle
-          </button>
+          </TooltipIconButton>
+          <TooltipIconButton
+            ariaLabel="Auto-placement options"
+            tooltip="Auto-placement options"
+            className="secondary"
+            onClick={onOpenPlacementSettings}
+          >
+            <Settings size={18} aria-hidden="true" focusable="false" />
+          </TooltipIconButton>
         </div>
       </div>
       {hasStagedItems ? (
         <div className="staged-piece-list">
           {stagedPieces.map((piece) => (
-            <StagedArtPiece
+            <StagedItem
               key={piece.id}
-              piece={piece}
+              item={{ kind: 'artwork', artwork: piece }}
               selected={piece.id === selectedPieceId}
               unit={unit}
               onSelect={onSelect}
               onPointerDown={onPointerDown}
-              onRemovePiece={onRemovePiece}
+              onRemove={onRemovePiece}
             />
           ))}
           {stagedFeatures.map((feature) => (
-            <div key={feature.id} className="staged-item-shell">
-              <div
-                className={`staged-piece staged-feature ${
-                  feature.id === selectedFeatureId ? 'selected' : ''
-                }`}
-                role="button"
-                tabIndex={0}
-                aria-label={`Drag ${feature.name} from staging`}
-                onClick={() => onFeatureSelect(feature.id)}
-                onPointerDown={(event) => onFeaturePointerDown(event, feature.id)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    onFeatureSelect(feature.id);
-                  }
-                }}
-              >
-                <span className="staged-piece-preview-shell">
-                  <TooltipIconButton
-                    ariaLabel={`Remove ${feature.name} from staging`}
-                    tooltip={getWallFeatureRemoveTooltip(feature.type)}
-                    className="remove-control-button staged-remove-button"
-                    wrapperClassName="staged-remove-anchor"
-                    onPointerDown={(event) => {
-                      event.stopPropagation();
-                    }}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onRemoveFeature(feature.id);
-                    }}
-                  >
-                    <Trash2 size={14} />
-                  </TooltipIconButton>
-                  <span
-                    className="staged-piece-preview staged-feature-preview"
-                    data-testid="staged-feature-preview"
-                    style={{
-                      width: `${feature.widthIn * STAGING_SCALE_PX_PER_IN}px`,
-                      height: `${feature.heightIn * STAGING_SCALE_PX_PER_IN}px`,
-                    }}
-                    aria-hidden="true"
-                  />
-                </span>
-                <span className="staged-piece-caption">
-                  <span className="staged-piece-name">{feature.name}</span>
-                  <small className="staged-piece-size">
-                    {formatMeasurement(feature.widthIn, unit)} x{' '}
-                    {formatMeasurement(feature.heightIn, unit)}
-                  </small>
-                </span>
-              </div>
-            </div>
+            <StagedItem
+              key={feature.id}
+              item={{ kind: 'feature', feature }}
+              selected={feature.id === selectedFeatureId}
+              unit={unit}
+              onSelect={onFeatureSelect}
+              onPointerDown={onFeaturePointerDown}
+              onRemove={onRemoveFeature}
+            />
           ))}
         </div>
       ) : (
@@ -5216,43 +5200,53 @@ function StagingTray({
   );
 }
 
-function StagedArtPiece({
-  piece,
+type StagedItemInput =
+  { kind: 'artwork'; artwork: ArtPiece } | { kind: 'feature'; feature: WallFeature };
+
+function StagedItem({
+  item,
   selected,
   unit,
   onSelect,
   onPointerDown,
-  onRemovePiece,
+  onRemove,
 }: {
-  piece: ArtPiece;
+  item: StagedItemInput;
   selected: boolean;
   unit: Unit;
-  onSelect: (pieceId: string) => void;
-  onPointerDown: (event: React.PointerEvent<HTMLElement>, pieceId: string) => void;
-  onRemovePiece: (pieceId: string) => void;
+  onSelect: (itemId: string) => void;
+  onPointerDown: (event: React.PointerEvent<HTMLElement>, itemId: string) => void;
+  onRemove: (itemId: string) => void;
 }) {
-  const previewSize = getStagedArtPreviewSize(piece);
+  const displayItem = item.kind === 'artwork' ? item.artwork : item.feature;
+  const displayLabel = item.kind === 'artwork' ? item.artwork.label : item.feature.name;
+  const previewSize = getStagedItemPreviewSize(item);
+  const previewTestId = item.kind === 'artwork' ? 'staged-piece-preview' : 'staged-feature-preview';
+  const removeTooltip =
+    item.kind === 'artwork' ? 'Remove artwork' : getWallFeatureRemoveTooltip(item.feature.type);
 
   return (
     <div className="staged-item-shell">
       <div
-        className={`staged-piece ${selected ? 'selected' : ''}`}
+        className={`staged-piece ${item.kind === 'feature' ? 'staged-feature' : ''} ${
+          selected ? 'selected' : ''
+        }`}
         role="button"
         tabIndex={0}
-        aria-label={`Drag ${piece.label} from staging`}
-        onClick={() => onSelect(piece.id)}
-        onPointerDown={(event) => onPointerDown(event, piece.id)}
+        aria-label={`Drag ${displayLabel} from staging`}
+        onClick={() => onSelect(displayItem.id)}
+        onPointerDown={(event) => onPointerDown(event, displayItem.id)}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
-            onSelect(piece.id);
+            onSelect(displayItem.id);
           }
         }}
       >
         <span className="staged-piece-preview-shell">
           <TooltipIconButton
-            ariaLabel={`Remove ${piece.label} from staging`}
-            tooltip="Remove artwork"
+            ariaLabel={`Remove ${displayLabel} from staging`}
+            tooltip={removeTooltip}
             className="remove-control-button staged-remove-button"
             wrapperClassName="staged-remove-anchor"
             onPointerDown={(event) => {
@@ -5260,25 +5254,52 @@ function StagedArtPiece({
             }}
             onClick={(event) => {
               event.stopPropagation();
-              onRemovePiece(piece.id);
+              onRemove(displayItem.id);
             }}
           >
             <Trash2 size={14} />
           </TooltipIconButton>
-          <span
-            className="staged-piece-preview"
-            data-testid="staged-piece-preview"
+          <svg
+            className={`staged-piece-preview ${
+              item.kind === 'feature' ? 'staged-feature-preview' : ''
+            }`}
+            data-testid={previewTestId}
             style={{
               width: `${previewSize.widthPx}px`,
               height: `${previewSize.heightPx}px`,
             }}
+            viewBox={`0 0 ${displayItem.widthIn} ${displayItem.heightIn}`}
             aria-hidden="true"
-          />
+            focusable="false"
+          >
+            <RenderableItem
+              item={
+                item.kind === 'artwork'
+                  ? {
+                      kind: 'artwork',
+                      artwork: item.artwork,
+                      xIn: 0,
+                      yIn: 0,
+                      selected,
+                    }
+                  : {
+                      kind: 'feature',
+                      feature: item.feature,
+                      xIn: 0,
+                      yIn: 0,
+                      selected,
+                    }
+              }
+              profile="tray"
+              clipId={`tray-${displayItem.id}`}
+            />
+          </svg>
         </span>
         <span className="staged-piece-caption">
-          <span className="staged-piece-name">{piece.label}</span>
+          <span className="staged-piece-name">{displayLabel}</span>
           <small className="staged-piece-size">
-            {formatMeasurement(piece.widthIn, unit)} x {formatMeasurement(piece.heightIn, unit)}
+            {formatMeasurement(displayItem.widthIn, unit)} x{' '}
+            {formatMeasurement(displayItem.heightIn, unit)}
           </small>
         </span>
       </div>
@@ -5286,7 +5307,15 @@ function StagedArtPiece({
   );
 }
 
-function getStagedArtPreviewSize(piece: ArtPiece) {
+function getStagedItemPreviewSize(item: StagedItemInput) {
+  if (item.kind === 'feature') {
+    return {
+      widthPx: item.feature.widthIn * STAGING_SCALE_PX_PER_IN,
+      heightPx: item.feature.heightIn * STAGING_SCALE_PX_PER_IN,
+    };
+  }
+
+  const piece = item.artwork;
   const rawWidthPx = piece.widthIn * STAGING_SCALE_PX_PER_IN;
   const rawHeightPx = piece.heightIn * STAGING_SCALE_PX_PER_IN;
 
@@ -5338,6 +5367,8 @@ function WallCanvas({
   onFeaturePointerDown,
   onPieceKeyDown,
   onFeatureKeyDown,
+  onRemovePlacement,
+  onRemoveFeaturePlacement,
   onPointerMove,
   onPointerUp,
 }: {
@@ -5367,9 +5398,41 @@ function WallCanvas({
   onFeaturePointerDown: (event: React.PointerEvent<SVGRectElement>, feature: WallFeature) => void;
   onPieceKeyDown: (event: React.KeyboardEvent<SVGRectElement>, placement: Placement) => void;
   onFeatureKeyDown: (event: React.KeyboardEvent<SVGRectElement>, feature: WallFeature) => void;
+  onRemovePlacement: (pieceId: string) => void;
+  onRemoveFeaturePlacement: (featureId: string) => void;
   onPointerMove: (event: React.PointerEvent<SVGSVGElement>) => void;
   onPointerUp: (event: React.PointerEvent<SVGSVGElement>) => void;
 }) {
+  const [hoveredWallItemId, setHoveredWallItemId] = useState<string | null>(null);
+  const wallRemoveControlHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function showWallRemoveControl(itemId: string) {
+    if (wallRemoveControlHideTimeoutRef.current !== null) {
+      clearTimeout(wallRemoveControlHideTimeoutRef.current);
+      wallRemoveControlHideTimeoutRef.current = null;
+    }
+    setHoveredWallItemId(itemId);
+  }
+
+  function hideWallRemoveControl(itemId: string) {
+    if (wallRemoveControlHideTimeoutRef.current !== null) {
+      clearTimeout(wallRemoveControlHideTimeoutRef.current);
+    }
+    wallRemoveControlHideTimeoutRef.current = setTimeout(() => {
+      setHoveredWallItemId((current) => (current === itemId ? null : current));
+      wallRemoveControlHideTimeoutRef.current = null;
+    }, 120);
+  }
+
+  useEffect(
+    () => () => {
+      if (wallRemoveControlHideTimeoutRef.current !== null) {
+        clearTimeout(wallRemoveControlHideTimeoutRef.current);
+      }
+    },
+    [],
+  );
+
   const layout = useMemo(() => getWallLayout(sections), [sections]);
   const sectionOffsets = useMemo(
     () =>
@@ -5403,6 +5466,80 @@ function WallCanvas({
       };
     });
   }, [autoPlacementSettings, sections]);
+  const wallRemoveControls = useMemo<WallRemoveControl[]>(
+    () => [
+      ...featureBlocks.map((block) => ({
+        id: `feature-${block.id}`,
+        itemId: block.id,
+        itemKind: 'feature' as const,
+        label: block.label,
+        xIn: block.left + block.width,
+        yIn: block.top,
+      })),
+      ...placements.flatMap((placement) => {
+        const piece = piecesById.get(placement.pieceId);
+        if (!piece) {
+          return [];
+        }
+        const offset = sectionOffsets.get(placement.sectionId) ?? { offsetXIn: 0, offsetYIn: 0 };
+        return [
+          {
+            id: `artwork-${piece.id}`,
+            itemId: piece.id,
+            itemKind: 'artwork' as const,
+            label: piece.label,
+            xIn: offset.offsetXIn + placement.xIn + piece.widthIn,
+            yIn: offset.offsetYIn + placement.yIn,
+          },
+        ];
+      }),
+    ],
+    [featureBlocks, piecesById, placements, sectionOffsets],
+  );
+  const [wallRemoveControlPositions, setWallRemoveControlPositions] = useState<
+    Record<string, { leftPx: number; topPx: number }>
+  >({});
+
+  useLayoutEffect(() => {
+    const updatePositions = () => {
+      const svg = svgRef.current;
+      const rect = svg?.getBoundingClientRect();
+      const matrix = svg?.getScreenCTM?.();
+      if (!svg || !rect || rect.width <= 0 || rect.height <= 0) {
+        return;
+      }
+      const nextPositions = Object.fromEntries(
+        wallRemoveControls.map((control) => {
+          const clientX = matrix
+            ? control.xIn * matrix.a + control.yIn * (matrix.c ?? 0) + matrix.e
+            : rect.left + ((control.xIn - viewBox.x) / viewBox.width) * rect.width;
+          const clientY = matrix
+            ? control.xIn * (matrix.b ?? 0) + control.yIn * matrix.d + matrix.f
+            : rect.top + ((control.yIn - viewBox.y) / viewBox.height) * rect.height;
+          return [
+            control.id,
+            {
+              leftPx: clientX - rect.left,
+              topPx: clientY - rect.top,
+            },
+          ];
+        }),
+      );
+      setWallRemoveControlPositions((current) =>
+        JSON.stringify(current) === JSON.stringify(nextPositions) ? current : nextPositions,
+      );
+    };
+
+    updatePositions();
+
+    const svg = svgRef.current;
+    if (!svg || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(updatePositions);
+    observer.observe(svg);
+    return () => observer.disconnect();
+  }, [svgRef, viewBox.x, viewBox.y, viewBox.width, viewBox.height, wallRemoveControls]);
   const gridSize = features.snapToGrid ? Math.max(0.125, features.gridSizeIn) : 6;
   const wallEdgeBufferPaths = useMemo(
     () =>
@@ -5424,273 +5561,320 @@ function WallCanvas({
   );
 
   return (
-    <svg
-      ref={svgRef}
-      className="wall-canvas"
-      role="img"
-      aria-label="Scaled gallery wall layout"
-      viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
-      onPointerDownCapture={onPointerDownCapture}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-    >
-      <defs>
-        <pattern id="minor-grid" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
-          <path
-            d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`}
-            fill="none"
-            stroke="var(--grid-line)"
-            strokeWidth="0.18"
-          />
-        </pattern>
-      </defs>
-      <rect
-        x={viewBox.x}
-        y={viewBox.y}
-        width={viewBox.width}
-        height={viewBox.height}
-        fill="url(#minor-grid)"
-        className="wall-pan-surface"
-        onPointerDown={onPanPointerDown}
-        onPointerMove={onPanPointerMove}
-        onMouseDown={onPanMouseDown}
-        onMouseMove={onPanMouseMove}
-      />
-      {layout.map(({ section, offsetXIn, offsetYIn }) => (
-        <g key={section.id}>
-          <rect
-            x={offsetXIn}
-            y={offsetYIn}
-            width={section.widthIn}
-            height={section.heightIn}
-            className={section.id === selectedSectionId ? 'wall-section selected' : 'wall-section'}
-            onPointerDown={onPanPointerDown}
-            onPointerMove={onPanPointerMove}
-            onMouseDown={onPanMouseDown}
-            onMouseMove={onPanMouseMove}
-          />
-          {sections.length > 1 ? (
-            <g
+    <>
+      <svg
+        ref={svgRef}
+        className="wall-canvas"
+        role="img"
+        aria-label="Scaled gallery wall layout"
+        viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
+        onPointerDownCapture={onPointerDownCapture}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        <defs>
+          <pattern id="minor-grid" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
+            <path
+              d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`}
+              fill="none"
+              stroke="var(--grid-line)"
+              strokeWidth="0.18"
+            />
+          </pattern>
+        </defs>
+        <rect
+          x={viewBox.x}
+          y={viewBox.y}
+          width={viewBox.width}
+          height={viewBox.height}
+          fill="url(#minor-grid)"
+          className="wall-pan-surface"
+          onPointerDown={onPanPointerDown}
+          onPointerMove={onPanPointerMove}
+          onMouseDown={onPanMouseDown}
+          onMouseMove={onPanMouseMove}
+        />
+        {layout.map(({ section, offsetXIn, offsetYIn }) => (
+          <g key={section.id}>
+            <rect
+              x={offsetXIn}
+              y={offsetYIn}
+              width={section.widthIn}
+              height={section.heightIn}
               className={
-                section.id === selectedSectionId
-                  ? 'wall-section-handle selected'
-                  : 'wall-section-handle'
+                section.id === selectedSectionId ? 'wall-section selected' : 'wall-section'
               }
-              role="button"
-              tabIndex={0}
-              aria-pressed={section.id === selectedSectionId}
-              aria-label={`Move ${section.name}`}
-              onPointerDown={(event) => onSectionPointerDown(event, section)}
-              onMouseDown={(event) => onSectionMouseDown(event, section)}
-              onKeyDown={(event) => onSectionKeyDown(event, section)}
+              onPointerDown={onPanPointerDown}
+              onPointerMove={onPanPointerMove}
+              onMouseDown={onPanMouseDown}
+              onMouseMove={onPanMouseMove}
+            />
+            {sections.length > 1 ? (
+              <g
+                className={
+                  section.id === selectedSectionId
+                    ? 'wall-section-handle selected'
+                    : 'wall-section-handle'
+                }
+                role="button"
+                tabIndex={0}
+                aria-pressed={section.id === selectedSectionId}
+                aria-label={`Move ${section.name}`}
+                onPointerDown={(event) => onSectionPointerDown(event, section)}
+                onMouseDown={(event) => onSectionMouseDown(event, section)}
+                onKeyDown={(event) => onSectionKeyDown(event, section)}
+              >
+                <rect
+                  x={offsetXIn - 3.8}
+                  y={offsetYIn - 4.9}
+                  width={3.6}
+                  height={3.6}
+                  rx={0.6}
+                  className="wall-section-handle-background"
+                />
+                <Move
+                  x={offsetXIn - 3.1}
+                  y={offsetYIn - 4.2}
+                  width={2.2}
+                  height={2.2}
+                  strokeWidth={2.5}
+                  className="wall-section-handle-icon"
+                  aria-hidden="true"
+                />
+              </g>
+            ) : null}
+            <text x={offsetXIn + 2} y={offsetYIn - 2} className="section-label">
+              {section.name} - {formatMeasurement(section.widthIn, unit)} x{' '}
+              {formatMeasurement(section.heightIn, unit)}
+            </text>
+          </g>
+        ))}
+        {exteriorEdges.map((edge, index) => (
+          <line
+            key={`wall-exterior-edge-${index}-${edge.x1}-${edge.y1}-${edge.x2}-${edge.y2}`}
+            x1={edge.x1}
+            y1={edge.y1}
+            x2={edge.x2}
+            y2={edge.y2}
+            className="wall-exterior-edge"
+          />
+        ))}
+        {wallEdgeBufferPaths.map((path, index) => (
+          <path
+            key={`wall-edge-buffer-${index}`}
+            d={toClosedSvgPath(path.points)}
+            className="wall-edge-buffer-guide"
+            strokeDasharray="1.5 1"
+            strokeWidth="0.25"
+          />
+        ))}
+        {alignmentGuides.guides.map((guide) =>
+          guide.axis === 'x' ? (
+            <g
+              key={`alignment-guide-${guide.axis}-${guide.coordinateIn}-${guide.kind}`}
+              className={alignmentGuides.isLingering ? 'is-lingering' : ''}
             >
-              <rect
-                x={offsetXIn - 3.8}
-                y={offsetYIn - 4.9}
-                width={3.6}
-                height={3.6}
-                rx={0.6}
-                className="wall-section-handle-background"
+              <line
+                x1={guide.coordinateIn}
+                y1={wallBounds.minY}
+                x2={guide.coordinateIn}
+                y2={wallBounds.maxY}
+                className={`alignment-snap-guide-backdrop ${guide.kind} ${
+                  alignmentGuides.isLingering ? 'is-lingering' : ''
+                }`}
               />
-              <Move
-                x={offsetXIn - 3.1}
-                y={offsetYIn - 4.2}
-                width={2.2}
-                height={2.2}
-                strokeWidth={2.5}
-                className="wall-section-handle-icon"
-                aria-hidden="true"
+              <line
+                x1={guide.coordinateIn}
+                y1={wallBounds.minY}
+                x2={guide.coordinateIn}
+                y2={wallBounds.maxY}
+                className={`alignment-snap-guide ${guide.kind} ${
+                  alignmentGuides.isLingering ? 'is-lingering' : ''
+                }`}
+                data-testid="alignment-guide-x"
               />
             </g>
-          ) : null}
-          <text x={offsetXIn + 2} y={offsetYIn - 2} className="section-label">
-            {section.name} - {formatMeasurement(section.widthIn, unit)} x{' '}
-            {formatMeasurement(section.heightIn, unit)}
-          </text>
-        </g>
-      ))}
-      {exteriorEdges.map((edge, index) => (
-        <line
-          key={`wall-exterior-edge-${index}-${edge.x1}-${edge.y1}-${edge.x2}-${edge.y2}`}
-          x1={edge.x1}
-          y1={edge.y1}
-          x2={edge.x2}
-          y2={edge.y2}
-          className="wall-exterior-edge"
-        />
-      ))}
-      {wallEdgeBufferPaths.map((path, index) => (
-        <path
-          key={`wall-edge-buffer-${index}`}
-          d={toClosedSvgPath(path.points)}
-          className="wall-edge-buffer-guide"
-          strokeDasharray="1.5 1"
-          strokeWidth="0.25"
-        />
-      ))}
-      {alignmentGuides.guides.map((guide) =>
-        guide.axis === 'x' ? (
-          <g
-            key={`alignment-guide-${guide.axis}-${guide.coordinateIn}-${guide.kind}`}
-            className={alignmentGuides.isLingering ? 'is-lingering' : ''}
-          >
-            <line
-              x1={guide.coordinateIn}
-              y1={wallBounds.minY}
-              x2={guide.coordinateIn}
-              y2={wallBounds.maxY}
-              className={`alignment-snap-guide-backdrop ${guide.kind} ${
-                alignmentGuides.isLingering ? 'is-lingering' : ''
-              }`}
-            />
-            <line
-              x1={guide.coordinateIn}
-              y1={wallBounds.minY}
-              x2={guide.coordinateIn}
-              y2={wallBounds.maxY}
-              className={`alignment-snap-guide ${guide.kind} ${
-                alignmentGuides.isLingering ? 'is-lingering' : ''
-              }`}
-              data-testid="alignment-guide-x"
-            />
-          </g>
-        ) : (
-          <g
-            key={`alignment-guide-${guide.axis}-${guide.coordinateIn}-${guide.kind}`}
-            className={alignmentGuides.isLingering ? 'is-lingering' : ''}
-          >
-            <line
-              x1={wallBounds.minX}
-              y1={guide.coordinateIn}
-              x2={wallBounds.maxX}
-              y2={guide.coordinateIn}
-              className={`alignment-snap-guide-backdrop ${guide.kind} ${
-                alignmentGuides.isLingering ? 'is-lingering' : ''
-              }`}
-            />
-            <line
-              x1={wallBounds.minX}
-              y1={guide.coordinateIn}
-              x2={wallBounds.maxX}
-              y2={guide.coordinateIn}
-              className={`alignment-snap-guide ${guide.kind} ${
-                alignmentGuides.isLingering ? 'is-lingering' : ''
-              }`}
-              data-testid="alignment-guide-y"
-            />
-          </g>
-        ),
-      )}
-      {featureBlocks.map((block) => (
-        <g
-          key={block.id}
-          className={block.id === selectedFeatureId ? 'wall-feature selected' : 'wall-feature'}
-        >
-          <rect
-            x={block.left}
-            y={block.clearanceTop}
-            width={block.width}
-            height={block.clearanceHeight}
-            className="wall-feature-clearance"
-            aria-label={`${block.label} blocked area`}
+          ) : (
+            <g
+              key={`alignment-guide-${guide.axis}-${guide.coordinateIn}-${guide.kind}`}
+              className={alignmentGuides.isLingering ? 'is-lingering' : ''}
+            >
+              <line
+                x1={wallBounds.minX}
+                y1={guide.coordinateIn}
+                x2={wallBounds.maxX}
+                y2={guide.coordinateIn}
+                className={`alignment-snap-guide-backdrop ${guide.kind} ${
+                  alignmentGuides.isLingering ? 'is-lingering' : ''
+                }`}
+              />
+              <line
+                x1={wallBounds.minX}
+                y1={guide.coordinateIn}
+                x2={wallBounds.maxX}
+                y2={guide.coordinateIn}
+                className={`alignment-snap-guide ${guide.kind} ${
+                  alignmentGuides.isLingering ? 'is-lingering' : ''
+                }`}
+                data-testid="alignment-guide-y"
+              />
+            </g>
+          ),
+        )}
+        {featureBlocks.map((block) => (
+          <RenderableItem
+            key={block.id}
+            item={{
+              kind: 'feature',
+              feature: block.feature,
+              xIn: block.left,
+              yIn: block.top,
+              selected: block.id === selectedFeatureId,
+              clearance: {
+                topIn: block.clearanceTop,
+                heightIn: block.clearanceHeight,
+              },
+            }}
+            profile="wall"
+            clipId={`wall-${block.id}`}
+            shapeProps={{
+              focusable: 'false',
+              role: 'button',
+              tabIndex: 0,
+              'aria-pressed': block.id === selectedFeatureId,
+              'aria-label': `Move ${block.label}`,
+              onPointerDown: (event) => onFeaturePointerDown(event, block.feature),
+              onKeyDown: (event) => onFeatureKeyDown(event, block.feature),
+            }}
+            groupProps={{
+              onPointerEnter: () => showWallRemoveControl(`feature-${block.id}`),
+              onPointerLeave: () => hideWallRemoveControl(`feature-${block.id}`),
+              onMouseEnter: () => showWallRemoveControl(`feature-${block.id}`),
+              onMouseLeave: () => hideWallRemoveControl(`feature-${block.id}`),
+            }}
           />
-          <rect
-            x={block.left}
-            y={block.top}
-            width={block.width}
-            height={block.height}
-            rx="0.8"
-            className="wall-feature-block"
-            focusable="false"
-            role="button"
-            tabIndex={0}
-            aria-pressed={block.id === selectedFeatureId}
-            aria-label={`Move ${block.label}`}
-            onPointerDown={(event) => onFeaturePointerDown(event, block.feature)}
-            onKeyDown={(event) => onFeatureKeyDown(event, block.feature)}
-          />
-          <text
-            x={block.left + block.width / 2}
-            y={block.top + block.height / 2}
-            className="wall-feature-label"
-            dominantBaseline="middle"
-            textAnchor="middle"
-          >
-            {block.label}
-          </text>
-        </g>
-      ))}
-      {placements.map((placement) => {
-        const piece = piecesById.get(placement.pieceId);
-        if (!piece) {
-          return null;
-        }
-        const offset = sectionOffsets.get(placement.sectionId) ?? { offsetXIn: 0, offsetYIn: 0 };
-        const offsetX = offset.offsetXIn;
-        const offsetY = offset.offsetYIn;
-        const selected = selectedPieceIds.includes(piece.id);
-        const pieceX = offsetX + placement.xIn;
-        const pieceY = offsetY + placement.yIn;
-        return (
-          <g key={piece.id} className={selected ? 'piece selected' : 'piece'}>
+        ))}
+        {placements.map((placement) => {
+          const piece = piecesById.get(placement.pieceId);
+          if (!piece) {
+            return null;
+          }
+          const offset = sectionOffsets.get(placement.sectionId) ?? { offsetXIn: 0, offsetYIn: 0 };
+          const offsetX = offset.offsetXIn;
+          const offsetY = offset.offsetYIn;
+          const selected = selectedPieceIds.includes(piece.id);
+          const pieceX = offsetX + placement.xIn;
+          const pieceY = offsetY + placement.yIn;
+          return (
+            <RenderableItem
+              key={piece.id}
+              item={{
+                kind: 'artwork',
+                artwork: piece,
+                xIn: pieceX,
+                yIn: pieceY,
+                selected,
+              }}
+              profile="wall"
+              clipId={piece.id}
+              shapeProps={{
+                focusable: 'false',
+                role: 'button',
+                tabIndex: 0,
+                'aria-pressed': selected,
+                'aria-label': `Move ${piece.label}`,
+                onPointerDown: (event) => onPointerDown(event, placement),
+                onKeyDown: (event) => onPieceKeyDown(event, placement),
+              }}
+              groupProps={{
+                onPointerEnter: () => showWallRemoveControl(`artwork-${piece.id}`),
+                onPointerLeave: () => hideWallRemoveControl(`artwork-${piece.id}`),
+                onMouseEnter: () => showWallRemoveControl(`artwork-${piece.id}`),
+                onMouseLeave: () => hideWallRemoveControl(`artwork-${piece.id}`),
+              }}
+            />
+          );
+        })}
+        {groupDragPreview.map((placement) => {
+          const piece = piecesById.get(placement.pieceId);
+          if (!piece) {
+            return null;
+          }
+          const offset = sectionOffsets.get(placement.sectionId) ?? { offsetXIn: 0, offsetYIn: 0 };
+          return (
             <rect
-              x={pieceX}
-              y={pieceY}
+              key={`group-preview-${placement.pieceId}`}
+              x={offset.offsetXIn + placement.xIn}
+              y={offset.offsetYIn + placement.yIn}
               width={piece.widthIn}
               height={piece.heightIn}
               rx="0.8"
-              focusable="false"
-              role="button"
-              tabIndex={0}
-              aria-pressed={selected}
-              aria-label={`Move ${piece.label}`}
-              onPointerDown={(event) => onPointerDown(event, placement)}
-              onKeyDown={(event) => onPieceKeyDown(event, placement)}
+              className="group-drag-piece-preview"
             />
-            <PieceLabelSvg piece={piece} offsetX={pieceX} offsetY={pieceY} clipId={piece.id} />
-            {piece.hookSpec ? <HookMarks piece={piece} offsetX={pieceX} offsetY={pieceY} /> : null}
-          </g>
-        );
-      })}
-      {groupDragPreview.map((placement) => {
-        const piece = piecesById.get(placement.pieceId);
-        if (!piece) {
-          return null;
-        }
-        const offset = sectionOffsets.get(placement.sectionId) ?? { offsetXIn: 0, offsetYIn: 0 };
-        return (
+          );
+        })}
+        {groupPreviewBounds ? (
           <rect
-            key={`group-preview-${placement.pieceId}`}
-            x={offset.offsetXIn + placement.xIn}
-            y={offset.offsetYIn + placement.yIn}
-            width={piece.widthIn}
-            height={piece.heightIn}
-            rx="0.8"
-            className="group-drag-piece-preview"
+            x={groupPreviewBounds.left}
+            y={groupPreviewBounds.top}
+            width={groupPreviewBounds.right - groupPreviewBounds.left}
+            height={groupPreviewBounds.bottom - groupPreviewBounds.top}
+            className="group-drag-bounds-preview"
           />
+        ) : null}
+        {selectionMarquee ? (
+          <rect
+            x={selectionMarquee.left}
+            y={selectionMarquee.top}
+            width={selectionMarquee.right - selectionMarquee.left}
+            height={selectionMarquee.bottom - selectionMarquee.top}
+            className="selection-marquee"
+            data-testid="selection-marquee"
+          />
+        ) : null}
+      </svg>
+      {wallRemoveControls.map((control) => {
+        const position = wallRemoveControlPositions[control.id];
+        const visible = hoveredWallItemId === control.id;
+        return (
+          <div
+            key={control.id}
+            className={
+              visible ? 'wall-piece-remove-control is-visible' : 'wall-piece-remove-control'
+            }
+            data-world-x={control.xIn}
+            data-world-y={control.yIn}
+            style={
+              position ? { left: `${position.leftPx}px`, top: `${position.topPx}px` } : undefined
+            }
+            onPointerEnter={() => showWallRemoveControl(control.id)}
+            onPointerLeave={() => hideWallRemoveControl(control.id)}
+            onMouseEnter={() => showWallRemoveControl(control.id)}
+            onMouseLeave={() => hideWallRemoveControl(control.id)}
+          >
+            <TooltipIconButton
+              ariaLabel={`Return ${control.label} to staging`}
+              tooltip="Return to staging"
+              className="remove-control-button staged-remove-button wall-piece-remove-button"
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (control.itemKind === 'artwork') {
+                  onRemovePlacement(control.itemId);
+                } else {
+                  onRemoveFeaturePlacement(control.itemId);
+                }
+              }}
+            >
+              <X size={14} />
+            </TooltipIconButton>
+          </div>
         );
       })}
-      {groupPreviewBounds ? (
-        <rect
-          x={groupPreviewBounds.left}
-          y={groupPreviewBounds.top}
-          width={groupPreviewBounds.right - groupPreviewBounds.left}
-          height={groupPreviewBounds.bottom - groupPreviewBounds.top}
-          className="group-drag-bounds-preview"
-        />
-      ) : null}
-      {selectionMarquee ? (
-        <rect
-          x={selectionMarquee.left}
-          y={selectionMarquee.top}
-          width={selectionMarquee.right - selectionMarquee.left}
-          height={selectionMarquee.bottom - selectionMarquee.top}
-          className="selection-marquee"
-          data-testid="selection-marquee"
-        />
-      ) : null}
-    </svg>
+    </>
   );
 }
 
@@ -5700,142 +5884,6 @@ function toClosedSvgPath(points: Array<{ x: number; y: number }>): string {
   }
 
   return `M ${points.map(({ x, y }) => `${x} ${y}`).join(' L ')} Z`;
-}
-
-function PieceLabelSvg({
-  piece,
-  offsetX,
-  offsetY,
-  clipId,
-}: {
-  piece: ArtPiece;
-  offsetX: number;
-  offsetY: number;
-  clipId: string;
-}) {
-  const label = fitPieceLabel(piece.label, piece.widthIn, piece.heightIn);
-  const labelLineHeight = label.fontSize * LABEL_LINE_HEIGHT_RATIO;
-  const labelCenterY =
-    label.placement === 'inside'
-      ? offsetY + piece.heightIn / 2 - ((label.lines.length - 1) * labelLineHeight) / 2
-      : offsetY + piece.heightIn + labelLineHeight;
-  const labelCenterX = offsetX + piece.widthIn / 2;
-  const resolvedClipId = `piece-label-clip-${clipId}`;
-
-  return (
-    <>
-      {label.placement === 'inside' ? (
-        <clipPath id={resolvedClipId}>
-          <rect
-            x={offsetX + label.padding}
-            y={offsetY + label.padding}
-            width={Math.max(0.1, piece.widthIn - label.padding * 2)}
-            height={Math.max(0.1, piece.heightIn - label.padding * 2)}
-          />
-        </clipPath>
-      ) : null}
-      <text
-        x={labelCenterX}
-        y={labelCenterY}
-        textAnchor="middle"
-        dominantBaseline="middle"
-        className={label.placement === 'inside' ? 'piece-label' : 'piece-label outside-piece-label'}
-        clipPath={label.placement === 'inside' ? `url(#${resolvedClipId})` : undefined}
-        style={{ fontSize: `${label.fontSize}px` }}
-      >
-        {label.lines.map((line, index) => (
-          <tspan
-            key={`${clipId}-label-${index}`}
-            x={labelCenterX}
-            dy={index === 0 ? 0 : labelLineHeight}
-          >
-            {line}
-          </tspan>
-        ))}
-      </text>
-    </>
-  );
-}
-
-const LABEL_LINE_HEIGHT_RATIO = 1.15;
-const LABEL_WIDTH_RATIO = 0.62;
-
-function fitPieceLabel(label: string, widthIn: number, heightIn: number) {
-  const padding = Math.min(1.25, Math.max(0.5, Math.min(widthIn, heightIn) * 0.1));
-  const availableWidth = Math.max(0.5, widthIn - padding * 2);
-  const availableHeight = Math.max(0.5, heightIn - padding * 2);
-  const text = label.trim().replace(/\s+/g, ' ') || 'Untitled';
-  const fontSizes = [3, 2.5, 2, 1.6];
-  const minimumInsideFontSize = 1.6;
-
-  for (const fontSize of fontSizes) {
-    const lines = wrapLabelLines(text, availableWidth, fontSize);
-    const lineHeight = fontSize * LABEL_LINE_HEIGHT_RATIO;
-    if (
-      fontSize >= minimumInsideFontSize &&
-      lines.length * lineHeight <= availableHeight &&
-      lines.every((line) => labelLineFits(line, availableWidth, fontSize))
-    ) {
-      return { lines, fontSize, padding, placement: 'inside' as const };
-    }
-  }
-
-  return { lines: [text], fontSize: 1.6, padding, placement: 'outside' as const };
-}
-
-function wrapLabelLines(label: string, availableWidth: number, fontSize: number): string[] {
-  const maxCharacters = Math.max(1, Math.floor(availableWidth / (fontSize * LABEL_WIDTH_RATIO)));
-  const lines: string[] = [];
-
-  for (const word of label.split(' ')) {
-    const current = lines.at(-1);
-    if (!current) {
-      lines.push(word);
-    } else if (`${current} ${word}`.length <= maxCharacters) {
-      lines[lines.length - 1] = `${current} ${word}`;
-    } else {
-      lines.push(word);
-    }
-  }
-
-  return lines;
-}
-
-function labelLineFits(line: string, availableWidth: number, fontSize: number): boolean {
-  return line.length * fontSize * LABEL_WIDTH_RATIO <= availableWidth;
-}
-
-function HookMarks({
-  piece,
-  offsetX,
-  offsetY,
-}: {
-  piece: ArtPiece;
-  offsetX: number;
-  offsetY: number;
-}) {
-  const hooks =
-    piece.hookSpec?.count === 1
-      ? [{ xIn: piece.hookSpec.leftOffsetIn, yIn: piece.hookSpec.topOffsetIn }]
-      : piece.hookSpec?.count === 2
-        ? [
-            { xIn: piece.hookSpec.leftSideOffsetIn, yIn: piece.hookSpec.leftTopOffsetIn },
-            {
-              xIn: piece.widthIn - piece.hookSpec.rightSideOffsetIn,
-              yIn: piece.hookSpec.rightTopOffsetIn,
-            },
-          ]
-        : [];
-
-  return hooks.map((hook, index) => (
-    <circle
-      key={`${piece.id}-hook-${index}`}
-      cx={offsetX + hook.xIn}
-      cy={offsetY + hook.yIn}
-      r="1.2"
-      className="hook-mark"
-    />
-  ));
 }
 
 function ExportPanel({
