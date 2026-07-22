@@ -319,6 +319,8 @@ export default function App() {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [exporting, setExporting] = useState<'png' | 'pdf' | null>(null);
   const wallDisplayRef = useRef<HTMLDivElement | null>(null);
+  const workspaceRef = useRef<HTMLElement | null>(null);
+  const editorColumnRef = useRef<HTMLElement | null>(null);
   const clearMenuRef = useRef<HTMLDivElement | null>(null);
   const wallBaseViewBoxRef = useRef<WallViewBox | null>(null);
   const wallZoomRef = useRef(wallZoom);
@@ -422,6 +424,31 @@ export default function App() {
     handleWallWheelInput,
     handleCanvasKeyDown,
   };
+
+  useEffect(() => {
+    const workspace = workspaceRef.current;
+    const editorColumn = editorColumnRef.current;
+    if (!workspace || !editorColumn) {
+      return;
+    }
+    const scrollTarget = editorColumn;
+
+    function handleWorkspaceWheel(event: WheelEvent) {
+      if (event.target !== workspace) {
+        return;
+      }
+
+      event.preventDefault();
+      scrollTarget.scrollBy({
+        left: event.deltaX,
+        top: event.deltaY,
+        behavior: 'auto',
+      });
+    }
+
+    workspace.addEventListener('wheel', handleWorkspaceWheel, { passive: false });
+    return () => workspace.removeEventListener('wheel', handleWorkspaceWheel);
+  }, []);
 
   useEffect(() => {
     latestStateRef.current = state;
@@ -2855,7 +2882,7 @@ export default function App() {
         </div>
       </header>
 
-      <section className="workspace">
+      <section className="workspace" ref={workspaceRef}>
         <aside className="setup-panel" aria-label="Setup controls">
           <CollapsiblePanel
             icon={<Ruler size={18} />}
@@ -3083,7 +3110,7 @@ export default function App() {
           </CollapsiblePanel>
         </aside>
 
-        <section className="editor-column">
+        <section className="editor-column" ref={editorColumnRef}>
           <div className="editor-toolbar" role="toolbar" aria-label="Editor controls">
             <div className="toolbar-group" role="group" aria-label="Placement controls">
               <div className="clear-menu" ref={clearMenuRef}>
