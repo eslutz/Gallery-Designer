@@ -26,6 +26,7 @@ describe('Gallery Designer app', () => {
     document.body.classList.remove('suppress-text-selection');
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 });
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 768 });
+    mockNavigatorLocale(['en-US'], 'en-US');
     window.matchMedia = vi.fn(
       (query: string) =>
         ({
@@ -47,6 +48,17 @@ describe('Gallery Designer app', () => {
 
   async function openPlacementSettingsDrawer(user: ReturnType<typeof userEvent.setup>) {
     await user.click(screen.getByRole('button', { name: /^Placement settings$/i }));
+  }
+
+  function mockNavigatorLocale(languages: readonly string[], language: string) {
+    Object.defineProperty(navigator, 'languages', {
+      configurable: true,
+      get: () => languages,
+    });
+    Object.defineProperty(navigator, 'language', {
+      configurable: true,
+      get: () => language,
+    });
   }
 
   it('creates a multi-section wall, adds pieces, auto-places them, and shows export-ready measurements', async () => {
@@ -138,6 +150,66 @@ describe('Gallery Designer app', () => {
 
     expect(document.documentElement).toHaveAttribute('data-palette', 'slate');
     expect(screen.queryByText(/application theme preview/i)).not.toBeInTheDocument();
+  });
+
+  it('defaults first-run users in the United States to inches', () => {
+    render(<App />);
+
+    expect(screen.getByLabelText('Section 1 width unit')).toHaveValue('in');
+    expect(screen.getByLabelText('Piece 1 width unit')).toHaveValue('in');
+  });
+
+  it('defaults first-run users outside the United States to centimeters', () => {
+    mockNavigatorLocale(['en-GB'], 'en-GB');
+
+    render(<App />);
+
+    expect(screen.getByLabelText('Section 1 width unit')).toHaveValue('cm');
+    expect(screen.getByLabelText('Piece 1 width unit')).toHaveValue('cm');
+  });
+
+  it('preserves a saved measurement unit instead of recalculating it from locale', () => {
+    mockNavigatorLocale(['en-GB'], 'en-GB');
+    localStorage.setItem(
+      'gallery-designer-state-v1',
+      JSON.stringify({
+        unit: 'in',
+        sections: [{ id: 'section-1', name: 'Section 1', widthIn: 96, heightIn: 84 }],
+        pieces: [{ id: 'piece-1', label: 'Piece 1', widthIn: 16, heightIn: 20 }],
+        placements: [],
+      }),
+    );
+
+    render(<App />);
+
+    expect(screen.getByLabelText('Section 1 width unit')).toHaveValue('in');
+    expect(screen.getByLabelText('Piece 1 width unit')).toHaveValue('in');
+  });
+
+  it('preserves an imported design measurement unit instead of recalculating it from locale', async () => {
+    mockNavigatorLocale(['en-GB'], 'en-GB');
+    render(<App />);
+
+    expect(screen.getByLabelText('Section 1 width unit')).toHaveValue('cm');
+
+    const importedDesign = {
+      text: vi.fn().mockResolvedValue(
+        JSON.stringify({
+          unit: 'in',
+          sections: [{ id: 'section-1', name: 'Section 1', widthIn: 96, heightIn: 84 }],
+          pieces: [{ id: 'piece-1', label: 'Piece 1', widthIn: 16, heightIn: 20 }],
+          placements: [],
+        }),
+      ),
+    } as unknown as File;
+
+    fireEvent.change(screen.getByLabelText('Import JSON design file'), {
+      target: { files: [importedDesign] },
+    });
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('imported'));
+    expect(screen.getByLabelText('Section 1 width unit')).toHaveValue('in');
+    expect(screen.getByLabelText('Piece 1 width unit')).toHaveValue('in');
   });
 
   it('uses a staging tray for unplaced pieces and no longer renders a place-on-first-wall action', async () => {

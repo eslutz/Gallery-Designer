@@ -40,6 +40,7 @@ import {
   resolveApplicationTheme,
 } from './lib/applicationTheme';
 import { parseDesignFile, serializeDesignFile } from './lib/designFile';
+import { resolveDefaultUnit } from './lib/defaultUnit';
 import { downloadPdf, downloadPng, type ExportDesignInput } from './lib/exportDesign';
 import { buildMeasurementInstructions } from './lib/measurements';
 import { buildMeasurementTableRows, MEASUREMENT_TABLE_HEADERS } from './lib/measurementTable';
@@ -6194,11 +6195,11 @@ function loadState(): GalleryState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return defaultState;
+      return getDefaultState();
     }
     const parsed = JSON.parse(raw) as unknown;
     if (!isPersistedGalleryState(parsed)) {
-      return defaultState;
+      return getDefaultState();
     }
     const validPieceIds = new Set(parsed.pieces?.map((piece) => piece.id) ?? []);
     const persistedRecord = parsed as Record<string, unknown>;
@@ -6235,6 +6236,24 @@ function loadState(): GalleryState {
       message: defaultState.message,
     };
   } catch {
-    return defaultState;
+    return getDefaultState();
   }
+}
+
+function getDefaultState(): GalleryState {
+  return {
+    ...defaultState,
+    unit: resolveDefaultUnit(getBrowserLocaleInput()),
+  };
+}
+
+function getBrowserLocaleInput() {
+  if (typeof navigator === 'undefined') {
+    return {};
+  }
+
+  return {
+    languages: navigator.languages,
+    language: navigator.language,
+  };
 }
