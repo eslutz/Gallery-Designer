@@ -87,6 +87,27 @@ describe('Gallery Designer app', () => {
     expect(screen.getByRole('button', { name: /Export PDF/i })).toBeEnabled();
   });
 
+  it('places a staged piece onto the wall via the keyboard-accessible Place button', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+
+    expect(screen.getByRole('button', { name: /Drag Piece 1 from staging/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Drag Piece 2 from staging/i })).toBeInTheDocument();
+
+    const placeButton = screen.getByRole('button', { name: /Place Piece 1 on the wall/i });
+    await user.click(placeButton);
+
+    expect(
+      screen.queryByRole('button', { name: /Drag Piece 1 from staging/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Drag Piece 2 from staging/i })).toBeInTheDocument();
+
+    const table = screen.getByRole('table', { name: /Installation measurements/i });
+    expect(within(table).getAllByRole('row')).toHaveLength(2);
+  });
+
   it('shows PNG export progress and prevents concurrent print exports', async () => {
     const user = userEvent.setup();
     let finishExport: (() => void) | undefined;

@@ -6,6 +6,7 @@ import {
   FileJson,
   FileText,
   Info,
+  MapPin,
   Maximize2,
   Move,
   PackageOpen,
@@ -27,6 +28,7 @@ import {
   useId,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -210,6 +212,30 @@ interface DragPreviewPiece {
   yIn: number;
 }
 
+interface DragPreviewState {
+  wallDragPreview: WallDragPreview | null;
+  groupDragPreview: Placement[];
+}
+
+type DragPreviewAction =
+  | { type: 'set-wall-preview'; preview: WallDragPreview | null }
+  | { type: 'set-group-preview'; placements: Placement[] };
+
+const EMPTY_PLACEMENTS: Placement[] = [];
+const DRAG_PREVIEW_IDLE: DragPreviewState = {
+  wallDragPreview: null,
+  groupDragPreview: EMPTY_PLACEMENTS,
+};
+
+function dragPreviewReducer(state: DragPreviewState, action: DragPreviewAction): DragPreviewState {
+  switch (action.type) {
+    case 'set-wall-preview':
+      return { ...state, wallDragPreview: action.preview };
+    case 'set-group-preview':
+      return { ...state, groupDragPreview: action.placements };
+  }
+}
+
 interface WallRemoveControl {
   id: string;
   itemId: string;
@@ -298,8 +324,14 @@ export default function App() {
   } | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState('');
   const [selectedFeatureId, setSelectedFeatureId] = useState('');
-  const [wallDragPreview, setWallDragPreview] = useState<WallDragPreview | null>(null);
-  const [groupDragPreview, setGroupDragPreview] = useState<Placement[]>([]);
+  const [dragPreview, dispatchDragPreview] = useReducer(dragPreviewReducer, DRAG_PREVIEW_IDLE);
+  const { wallDragPreview, groupDragPreview } = dragPreview;
+  const setWallDragPreview = useCallback((preview: WallDragPreview | null) => {
+    dispatchDragPreview({ type: 'set-wall-preview', preview });
+  }, []);
+  const setGroupDragPreview = useCallback((placements: Placement[]) => {
+    dispatchDragPreview({ type: 'set-group-preview', placements });
+  }, []);
   const [selectionMarquee, setSelectionMarquee] = useState<Rect | null>(null);
   const [visibleAlignmentGuides, setVisibleAlignmentGuides] = useState<VisibleAlignmentGuides>({
     guides: [],
@@ -1769,6 +1801,41 @@ export default function App() {
 
   function handleShuffleAutoPlace() {
     runAutoPlacement(autoPlacementVariantIndex + 1, 'shuffle');
+  }
+
+  function placeStagedPiece(pieceId: string) {
+    const piece = state.pieces.find((candidate) => candidate.id === pieceId);
+    const alreadyPlacedIds = new Set(state.placements.map((placement) => placement.pieceId));
+    if (!piece || alreadyPlacedIds.has(pieceId)) {
+      return;
+    }
+
+    const piecesToConsider = state.pieces.filter(
+      (candidate) => alreadyPlacedIds.has(candidate.id) || candidate.id === pieceId,
+    );
+    const result = autoPlacePieces(state.sections, piecesToConsider, {
+      settings: state.autoPlacementSettings,
+      existingPlacements: state.placements,
+      features: {
+        ...state.features,
+        wallEdgeBufferGapIn: state.features.wallEdgeBuffer ? state.features.wallEdgeBufferGapIn : 0,
+        artPieceBufferGapIn: state.features.artPieceBuffer ? state.features.artPieceBufferGapIn : 0,
+      },
+    });
+
+    if (!result.ok) {
+      setState((current) => ({ ...current, message: result.message }));
+      return;
+    }
+
+    recordUndoSnapshot();
+    setSelectedFeatureId('');
+    setState((current) => ({
+      ...current,
+      placements: result.placements,
+      selectedPieceIds: [pieceId],
+      message: `Placed ${piece.label} on the wall.`,
+    }));
   }
 
   function undoLastChange() {
@@ -3280,6 +3347,7 @@ export default function App() {
               onFeatureSelect={toggleFeatureSelection}
               onPointerDown={handleStagedPiecePointerDown}
               onFeaturePointerDown={handleStagedFeaturePointerDown}
+              onPlacePiece={placeStagedPiece}
               onRemovePiece={removePiece}
               onRemoveFeature={(featureId) =>
                 updateAutoPlacementSettings({
@@ -5136,6 +5204,7 @@ function StagingTray({
   onFeatureSelect,
   onPointerDown,
   onFeaturePointerDown,
+  onPlacePiece,
   onRemovePiece,
   onRemoveFeature,
 }: {
@@ -5152,6 +5221,7 @@ function StagingTray({
   onFeatureSelect: (featureId: string) => void;
   onPointerDown: (event: React.PointerEvent<HTMLElement>, pieceId: string) => void;
   onFeaturePointerDown: (event: React.PointerEvent<HTMLElement>, featureId: string) => void;
+  onPlacePiece: (pieceId: string) => void;
   onRemovePiece: (pieceId: string) => void;
   onRemoveFeature: (featureId: string) => void;
 }) {
@@ -5205,6 +5275,7 @@ function StagingTray({
               unit={unit}
               onSelect={onSelect}
               onPointerDown={onPointerDown}
+              onPlace={onPlacePiece}
               onRemove={onRemovePiece}
             />
           ))}
@@ -5236,6 +5307,7 @@ function StagedItem({
   unit,
   onSelect,
   onPointerDown,
+  onPlace,
   onRemove,
 }: {
   item: StagedItemInput;
@@ -5243,6 +5315,7 @@ function StagedItem({
   unit: Unit;
   onSelect: (itemId: string) => void;
   onPointerDown: (event: React.PointerEvent<HTMLElement>, itemId: string) => void;
+  onPlace?: (itemId: string) => void;
   onRemove: (itemId: string) => void;
 }) {
   const displayItem = item.kind === 'artwork' ? item.artwork : item.feature;
@@ -5271,6 +5344,23 @@ function StagedItem({
         }}
       >
         <span className="staged-piece-preview-shell">
+          {onPlace ? (
+            <TooltipIconButton
+              ariaLabel={`Place ${displayLabel} on the wall`}
+              tooltip="Place on wall"
+              className="place-control-button staged-place-button"
+              wrapperClassName="staged-place-anchor"
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.stopPropagation();
+                onPlace(displayItem.id);
+              }}
+            >
+              <MapPin size={14} />
+            </TooltipIconButton>
+          ) : null}
           <TooltipIconButton
             ariaLabel={`Remove ${displayLabel} from staging`}
             tooltip={removeTooltip}
