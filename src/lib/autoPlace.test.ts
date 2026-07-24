@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { autoPlacePieces } from './autoPlace';
-import { getAutoPlacementIssues } from './placement';
+import { getAutoPlacementIssues, placementsOverlapOrTouch } from './placement';
 import type { ArtPiece, AutoPlacementSettings, Placement, WallSection } from '../types';
+
+function mulberry32(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state |= 0;
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 const wall: WallSection[] = [{ id: 'main', name: 'Main wall', widthIn: 120, heightIn: 96 }];
 
@@ -630,4 +641,75 @@ describe('automatic placement', () => {
       ).toBe(true);
     },
   );
+
+  it('places 50 identical pieces on a generous wall without any overlap', () => {
+    const pieces: ArtPiece[] = Array.from({ length: 50 }, (_, index) => ({
+      id: `piece-${index}`,
+      label: `Piece ${index}`,
+      widthIn: 4,
+      heightIn: 4,
+    }));
+    const generousWall: WallSection[] = [{ id: 'main', name: 'Main wall', widthIn: 300, heightIn: 200 }];
+
+    const result = autoPlacePieces(generousWall, pieces, { settings: blankSettings });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.placements).toHaveLength(50);
+    for (let i = 0; i < result.placements.length; i += 1) {
+      for (let j = i + 1; j < result.placements.length; j += 1) {
+        const pieceA = pieces.find((piece) => piece.id === result.placements[i].pieceId)!;
+        const pieceB = pieces.find((piece) => piece.id === result.placements[j].pieceId)!;
+        expect(
+          placementsOverlapOrTouch(result.placements[i], pieceA, result.placements[j], pieceB),
+        ).toBe(false);
+      }
+    }
+  });
+
+  it('gracefully rejects more than the maximum supported piece count instead of throwing', () => {
+    const pieces: ArtPiece[] = Array.from({ length: 51 }, (_, index) => ({
+      id: `piece-${index}`,
+      label: `Piece ${index}`,
+      widthIn: 4,
+      heightIn: 4,
+    }));
+
+    const result = autoPlacePieces(wall, pieces, { settings: blankSettings });
+
+    expect(result).toEqual({
+      ok: false,
+      message: 'Auto-placement supports up to 50 pieces at a time.',
+    });
+  });
+
+  it('never overlaps placements across randomized piece dimensions and never throws', { timeout: 15000 }, () => {
+    const random = mulberry32(20260723);
+    const randomWall: WallSection[] = [{ id: 'main', name: 'Main wall', widthIn: 240, heightIn: 180 }];
+
+    for (let trial = 0; trial < 25; trial += 1) {
+      const pieceCount = 2 + Math.floor(random() * 8);
+      const pieces: ArtPiece[] = Array.from({ length: pieceCount }, (_, index) => ({
+        id: `piece-${index}`,
+        label: `Piece ${index}`,
+        widthIn: 6 + Math.floor(random() * 24),
+        heightIn: 6 + Math.floor(random() * 24),
+      }));
+
+      const result = autoPlacePieces(randomWall, pieces, { settings: blankSettings });
+
+      expect(result.ok === true || result.ok === false).toBe(true);
+      if (!result.ok) continue;
+
+      for (let i = 0; i < result.placements.length; i += 1) {
+        for (let j = i + 1; j < result.placements.length; j += 1) {
+          const pieceA = pieces.find((piece) => piece.id === result.placements[i].pieceId)!;
+          const pieceB = pieces.find((piece) => piece.id === result.placements[j].pieceId)!;
+          expect(
+            placementsOverlapOrTouch(result.placements[i], pieceA, result.placements[j], pieceB),
+          ).toBe(false);
+        }
+      }
+    }
+  });
 });

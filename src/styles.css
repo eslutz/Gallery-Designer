@@ -1672,8 +1672,27 @@ select:focus,
   flex: 0 0 24px;
 }
 
+.staged-place-anchor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
+}
+
+.staged-place-button {
+  flex: 0 0 24px;
+}
+
 .staged-item-shell:hover .staged-remove-anchor,
-.staged-item-shell:focus-within .staged-remove-anchor {
+.staged-item-shell:focus-within .staged-remove-anchor,
+.staged-item-shell:hover .staged-place-anchor,
+.staged-item-shell:focus-within .staged-place-anchor {
   opacity: 1;
   pointer-events: auto;
 }
@@ -1682,6 +1701,12 @@ select:focus,
 .staged-item-shell:focus-within .staged-remove-anchor,
 .staged-remove-anchor:focus-within {
   transform: translate(50%, -50%) scale(1);
+}
+
+.staged-item-shell:hover .staged-place-anchor,
+.staged-item-shell:focus-within .staged-place-anchor,
+.staged-place-anchor:focus-within {
+  transform: translate(-50%, -50%) scale(1);
 }
 
 .staged-piece {
