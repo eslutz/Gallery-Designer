@@ -87,6 +87,52 @@ describe('Gallery Designer app', () => {
     expect(screen.getByRole('button', { name: /Export PDF/i })).toBeEnabled();
   });
 
+  it('does not show a toast on initial load', () => {
+    render(<App />);
+
+    expect(document.querySelector('.message-toast')).not.toHaveClass('is-visible');
+  });
+
+  it('shows an error toast when auto-place fails, and it can be dismissed', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.clear(screen.getByLabelText('Section 1 width'));
+    await user.type(screen.getByLabelText('Section 1 width'), '10');
+    await user.clear(screen.getByLabelText('Section 1 height'));
+    await user.type(screen.getByLabelText('Section 1 height'), '10');
+    await user.clear(screen.getByLabelText('Piece 1 width'));
+    await user.type(screen.getByLabelText('Piece 1 width'), '40');
+    await user.clear(screen.getByLabelText('Piece 1 height'));
+    await user.type(screen.getByLabelText('Piece 1 height'), '40');
+
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    const toast = document.querySelector('.message-toast');
+    expect(toast).toHaveClass('error');
+    expect(toast).toHaveClass('is-visible');
+    expect(within(toast as HTMLElement).getByText(/cannot fit within the wall margin/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Dismiss notification/i }));
+    expect(toast).not.toHaveClass('is-visible');
+  });
+
+  it('shows an info toast after a successful action, matching the Advanced drawer history', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /Duplicate Piece 1/i }));
+
+    const toast = document.querySelector('.message-toast');
+    expect(toast).toHaveClass('info');
+    expect(toast).toHaveClass('is-visible');
+    expect(within(toast as HTMLElement).getByText(/Duplicated Piece 1\./i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Advanced$/i }));
+    const statusPanel = screen.getByRole('region', { name: /Latest update/i });
+    expect(within(statusPanel).getByText('Duplicated Piece 1.')).toBeInTheDocument();
+  });
+
   it('places a staged piece onto the wall via the keyboard-accessible Place button', async () => {
     const user = userEvent.setup();
     render(<App />);

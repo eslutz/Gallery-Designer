@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   ChevronDown,
   Copy,
   Download,
@@ -126,6 +127,8 @@ const ZOOM_BUTTON_FACTOR = 1.2;
 const WALL_MOUSE_PAN_ID = -2;
 const POINTER_DRAG_THRESHOLD_PX = 4;
 
+type MessageTone = 'info' | 'error';
+
 interface GalleryState {
   unit: Unit;
   themeMode: ThemeMode;
@@ -137,6 +140,12 @@ interface GalleryState {
   autoPlacementSettings: AutoPlacementSettings;
   selectedPieceIds: string[];
   message: string;
+  messageTone: MessageTone;
+  messageRevision: number;
+}
+
+function withMessage(current: GalleryState, message: string, tone: MessageTone = 'info') {
+  return { message, messageTone: tone, messageRevision: current.messageRevision + 1 };
 }
 
 interface VisibleAlignmentGuides {
@@ -314,6 +323,8 @@ const defaultState: GalleryState = {
   },
   selectedPieceIds: ['piece-1'],
   message: 'Enter wall and art dimensions, then place pieces on the scaled wall.',
+  messageTone: 'info',
+  messageRevision: 0,
 };
 
 export default function App() {
@@ -898,7 +909,7 @@ export default function App() {
     }
     setState((current) => {
       if (current.sections.length === 1) {
-        return { ...current, message: 'At least one wall section is required.' };
+        return { ...current, ...withMessage(current, 'At least one wall section is required.', 'error') };
       }
       const nextSections = normalizeWallSections(current.sections).filter(
         (section) => section.id !== sectionId,
@@ -955,7 +966,7 @@ export default function App() {
         ...current,
         pieces: [...current.pieces, duplicate],
         selectedPieceIds: [duplicate.id],
-        message: `Duplicated ${source.label}.`,
+        ...withMessage(current, `Duplicated ${source.label}.`),
       };
     });
   }
@@ -1110,10 +1121,12 @@ export default function App() {
           ...current.placements.filter((candidate) => candidate.pieceId !== placement.pieceId),
           placement,
         ],
-        message:
+        ...withMessage(
+          current,
           piece && placementSection
             ? `Placed ${piece.label} on ${placementSection.name}.`
             : 'Placed a piece on the wall.',
+        ),
       };
     });
     if (guides.length > 0) {
@@ -1139,10 +1152,12 @@ export default function App() {
         ...current.placements.filter((placement) => !movingIds.has(placement.pieceId)),
         ...proposedPlacements,
       ],
-      message:
+      ...withMessage(
+        current,
         proposedPlacements.length === 1
           ? `Moved ${getPieceLabel(current, proposedPlacements[0].pieceId)} on the wall.`
           : `Moved ${proposedPlacements.length} art pieces as a group.`,
+      ),
     }));
     showAlignmentGuides(guides);
   }
@@ -1180,7 +1195,7 @@ export default function App() {
           ),
           proposedPlacement,
         ],
-        message: `Moved ${getPieceLabel(current, proposedPlacement.pieceId)} on the wall.`,
+        ...withMessage(current, `Moved ${getPieceLabel(current, proposedPlacement.pieceId)} on the wall.`),
       }));
       if (guides.length > 0) {
         showAlignmentGuides(guides);
@@ -1231,7 +1246,7 @@ export default function App() {
             candidate.id === placedFeature.id ? placedFeature : candidate,
           ),
         },
-        message: `Placed ${placedFeature.name} on the wall.`,
+        ...withMessage(current, `Placed ${placedFeature.name} on the wall.`),
       };
     });
     setSelectedFeatureId(proposedFeature.id);
@@ -1262,7 +1277,7 @@ export default function App() {
             candidate.id === placedFeature.id ? placedFeature : candidate,
           ),
         },
-        message: `Moved ${placedFeature.name} on the wall.`,
+        ...withMessage(current, `Moved ${placedFeature.name} on the wall.`),
       };
     });
     setSelectedFeatureId(proposedFeature.id);
@@ -1281,7 +1296,7 @@ export default function App() {
       ...current,
       placements: [],
       selectedPieceIds: current.pieces[0] ? [current.pieces[0].id] : [],
-      message: 'Cleared placed art. All pieces returned to the staging tray.',
+      ...withMessage(current, 'Cleared placed art. All pieces returned to the staging tray.'),
     }));
   }
 
@@ -1292,7 +1307,7 @@ export default function App() {
       ...current,
       sections: [],
       placements: [],
-      message: 'Cleared wall sections. Add at least one wall section before placing art.',
+      ...withMessage(current, 'Cleared wall sections. Add at least one wall section before placing art.'),
     }));
   }
 
@@ -1305,7 +1320,7 @@ export default function App() {
         ...current.autoPlacementSettings,
         wallFeatures: [],
       },
-      message: 'Cleared furniture and wall features.',
+      ...withMessage(current, 'Cleared furniture and wall features.'),
     }));
   }
 
@@ -1331,7 +1346,7 @@ export default function App() {
         wallFeatures: [],
       },
       selectedPieceIds: [],
-      message: 'Reset the entire design. Add wall sections and art pieces to start over.',
+      ...withMessage(state, 'Reset the entire design. Add wall sections and art pieces to start over.'),
     });
     setWallZoom(getDefaultWallZoomState(getWallCanvasBaseViewBox([])));
   }
@@ -1383,7 +1398,7 @@ export default function App() {
         ...current.features,
         ...patch,
       },
-      message: 'Updated snapping and buffer settings.',
+      ...withMessage(current, 'Updated snapping and buffer settings.'),
     }));
   }
 
@@ -1397,7 +1412,7 @@ export default function App() {
     setState((current) => ({
       ...current,
       autoPlacementSettings: settings,
-      message: 'Updated auto-placement settings.',
+      ...withMessage(current, 'Updated auto-placement settings.'),
     }));
   }
 
@@ -1408,7 +1423,7 @@ export default function App() {
       ...current,
       selectedPieceIds: [pieceId],
       placements: current.placements.filter((placement) => placement.pieceId !== pieceId),
-      message: `Returned ${getPieceLabel(current, pieceId)} to the staging tray.`,
+      ...withMessage(current, `Returned ${getPieceLabel(current, pieceId)} to the staging tray.`),
     }));
   }
 
@@ -1422,10 +1437,12 @@ export default function App() {
       ...current,
       selectedPieceIds: pieceIds,
       placements: current.placements.filter((placement) => !movingIds.has(placement.pieceId)),
-      message:
+      ...withMessage(
+        current,
         pieceIds.length === 1
           ? `Returned ${getPieceLabel(current, pieceIds[0])} to the staging tray.`
           : `Returned ${pieceIds.length} art pieces to the staging tray.`,
+      ),
     }));
   }
 
@@ -1444,9 +1461,12 @@ export default function App() {
             candidate.id === featureId ? { ...candidate, placed: false } : candidate,
           ),
         },
-        message: feature
-          ? `Returned ${feature.name} to the staging tray.`
-          : 'Returned furniture or feature to the staging tray.',
+        ...withMessage(
+          current,
+          feature
+            ? `Returned ${feature.name} to the staging tray.`
+            : 'Returned furniture or feature to the staging tray.',
+        ),
       };
     });
     setSelectedFeatureId(featureId);
@@ -1761,7 +1781,7 @@ export default function App() {
       setAutoPlacementFailure(
         result.diagnostics ? { message: result.message, diagnostics: result.diagnostics } : null,
       );
-      setState((current) => ({ ...current, message: result.message }));
+      setState((current) => ({ ...current, ...withMessage(current, result.message, 'error') }));
       return;
     }
 
@@ -1771,7 +1791,7 @@ export default function App() {
     if (result.newPlacementCount === 0) {
       setState((current) => ({
         ...current,
-        message: result.explanation ?? 'Auto-placement made no changes.',
+        ...withMessage(current, result.explanation ?? 'Auto-placement made no changes.'),
       }));
       return;
     }
@@ -1786,12 +1806,14 @@ export default function App() {
       ...current,
       placements: result.placements,
       selectedPieceIds: firstNewPlacement ? [firstNewPlacement.pieceId] : current.selectedPieceIds,
-      message:
+      ...withMessage(
+        current,
         result.preservedPlacementCount > 0
           ? `Auto-placement placed ${formatCount(result.newPlacementCount, 'remaining piece')} around ${formatCount(result.preservedPlacementCount, 'piece')} you positioned. Existing pieces were not moved.`
           : mode === 'shuffle'
             ? `Shuffled to layout ${resolvedVariantIndex + 1} of ${result.variantCount}.`
             : (result.explanation ?? `Auto-placement created a ${result.layoutKind} layout.`),
+      ),
     }));
   }
 
@@ -1824,7 +1846,7 @@ export default function App() {
     });
 
     if (!result.ok) {
-      setState((current) => ({ ...current, message: result.message }));
+      setState((current) => ({ ...current, ...withMessage(current, result.message, 'error') }));
       return;
     }
 
@@ -1834,7 +1856,7 @@ export default function App() {
       ...current,
       placements: result.placements,
       selectedPieceIds: [pieceId],
-      message: `Placed ${piece.label} on the wall.`,
+      ...withMessage(current, `Placed ${piece.label} on the wall.`),
     }));
   }
 
@@ -1842,7 +1864,7 @@ export default function App() {
     if (!undoState) {
       return;
     }
-    setState({ ...undoState, message: 'Restored the previous change.' });
+    setState({ ...undoState, ...withMessage(undoState, 'Restored the previous change.') });
     setUndoState(null);
   }
 
@@ -2029,7 +2051,7 @@ export default function App() {
             sectionDrag.sectionId,
           ),
         },
-        message: 'Wall section moved. Sections snap together by shared edges.',
+        ...withMessage(current, 'Wall section moved. Sections snap together by shared edges.'),
       };
     });
     return true;
@@ -2400,7 +2422,7 @@ export default function App() {
             section.id,
           ),
         },
-        message: 'Wall section moved. Sections snap together by shared edges.',
+        ...withMessage(current, 'Wall section moved. Sections snap together by shared edges.'),
       };
     });
   }
@@ -2859,13 +2881,13 @@ export default function App() {
       return;
     }
     setExporting('png');
-    setState((current) => ({ ...current, message: 'Exporting PNG...' }));
+    setState((current) => ({ ...current, ...withMessage(current, 'Exporting PNG...') }));
     try {
       await downloadPng(getExportInput());
-      setState((current) => ({ ...current, message: 'PNG export generated.' }));
+      setState((current) => ({ ...current, ...withMessage(current, 'PNG export generated.') }));
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'Unknown export error.';
-      setState((current) => ({ ...current, message: `PNG export failed: ${reason}` }));
+      setState((current) => ({ ...current, ...withMessage(current, `PNG export failed: ${reason}`, 'error') }));
     } finally {
       setExporting(null);
     }
@@ -2876,13 +2898,13 @@ export default function App() {
       return;
     }
     setExporting('pdf');
-    setState((current) => ({ ...current, message: 'Exporting PDF...' }));
+    setState((current) => ({ ...current, ...withMessage(current, 'Exporting PDF...') }));
     try {
       await downloadPdf(getExportInput());
-      setState((current) => ({ ...current, message: 'PDF export generated.' }));
+      setState((current) => ({ ...current, ...withMessage(current, 'PDF export generated.') }));
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'Unknown export error.';
-      setState((current) => ({ ...current, message: `PDF export failed: ${reason}` }));
+      setState((current) => ({ ...current, ...withMessage(current, `PDF export failed: ${reason}`, 'error') }));
     } finally {
       setExporting(null);
     }
@@ -2899,7 +2921,7 @@ export default function App() {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    setState((current) => ({ ...current, message: 'JSON design file exported.' }));
+    setState((current) => ({ ...current, ...withMessage(current, 'JSON design file exported.') }));
   }
 
   async function importJson(event: React.ChangeEvent<HTMLInputElement>) {
@@ -2915,17 +2937,36 @@ export default function App() {
       setState({
         ...defaultState,
         ...imported,
-        message: 'JSON design file imported.',
+        ...withMessage(state, 'JSON design file imported.'),
       });
       setSelectedSectionId('');
       setSelectedFeatureId('');
     } catch (error) {
       setState((current) => ({
         ...current,
-        message: error instanceof Error ? error.message : 'Could not import the design file.',
+        ...withMessage(
+          current,
+          error instanceof Error ? error.message : 'Could not import the design file.',
+          'error',
+        ),
       }));
     }
   }
+
+  const isFirstMessageRender = useRef(true);
+  const [toastVisible, setToastVisible] = useState(false);
+  useEffect(() => {
+    if (isFirstMessageRender.current) {
+      isFirstMessageRender.current = false;
+      return;
+    }
+    setToastVisible(true);
+    const timeout = window.setTimeout(
+      () => setToastVisible(false),
+      state.messageTone === 'error' ? 6000 : 4000,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [state.messageRevision, state.messageTone]);
 
   const appShellClassName = [
     'app-shell',
@@ -2939,6 +2980,12 @@ export default function App() {
 
   return (
     <main className={appShellClassName} onPointerDown={handlePagePointerDown}>
+      <MessageToast
+        message={state.message}
+        tone={state.messageTone}
+        visible={toastVisible}
+        onDismiss={() => setToastVisible(false)}
+      />
       <header className="topbar">
         <div className="brand-lockup">
           <BrandLogo />
@@ -4502,6 +4549,37 @@ function InfoTooltipButton({ label, info }: { label: string; info: string }) {
         document.body,
       )}
     </span>
+  );
+}
+
+function MessageToast({
+  message,
+  tone,
+  visible,
+  onDismiss,
+}: {
+  message: string;
+  tone: MessageTone;
+  visible: boolean;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className={`message-toast ${tone} ${visible ? 'is-visible' : ''}`}>
+      {tone === 'error' ? (
+        <AlertTriangle size={16} className="message-toast-icon" aria-hidden="true" />
+      ) : (
+        <Info size={16} className="message-toast-icon" aria-hidden="true" />
+      )}
+      <p className="message-toast-text">{message}</p>
+      <button
+        type="button"
+        className="message-toast-dismiss"
+        aria-label="Dismiss notification"
+        onClick={onDismiss}
+      >
+        <X size={14} />
+      </button>
+    </div>
   );
 }
 
@@ -6399,6 +6477,8 @@ function loadState(): GalleryState {
         : defaultState.autoPlacementSettings,
       selectedPieceIds: persistedSelectedPieceIds,
       message: defaultState.message,
+      messageTone: defaultState.messageTone,
+      messageRevision: defaultState.messageRevision,
     };
   } catch {
     return getDefaultState();
