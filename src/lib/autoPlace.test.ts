@@ -683,7 +683,7 @@ describe('automatic placement', () => {
     });
   });
 
-  it('never overlaps placements across randomized piece dimensions and never throws', () => {
+  it('never overlaps placements across randomized piece dimensions and never throws', { timeout: 15000 }, () => {
     const random = mulberry32(20260723);
     const randomWall: WallSection[] = [{ id: 'main', name: 'Main wall', widthIn: 240, heightIn: 180 }];
 

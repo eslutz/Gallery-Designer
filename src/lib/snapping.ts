@@ -2,12 +2,7 @@ import type { ArtPiece, EditorFeatures, Placement, WallFeature, WallSection } fr
 import { getGroupBounds, translatePlacementGroup } from './multiSelection';
 import { globalRectForPlacement } from './placement';
 import { roundToPrecision } from './units';
-import {
-  getInsetWallExteriorEdges,
-  getSectionOffsetX,
-  getSectionOffsetY,
-  getWallBounds,
-} from './wall';
+import { getInsetWallExteriorEdges, getSectionOffsetX, getSectionOffsetY } from './wall';
 
 interface SnapInput {
   placement: Placement;
@@ -286,7 +281,6 @@ function applyRectPlacementFeaturesWithMetadata({
   ) {
     const snapped = snapRectToAlignment({
       rect: next,
-      sections,
       edgeRects,
       centerRects,
       toleranceIn: features.alignmentToleranceIn,
@@ -400,20 +394,20 @@ function featureRectsFromFeatures(features: WallFeature[]): SnapRect[] {
 
 function snapRectToAlignment({
   rect,
-  sections,
   edgeRects,
   centerRects,
   toleranceIn,
 }: {
   rect: SnapRect;
-  sections: WallSection[];
   edgeRects: SnapRect[];
   centerRects: SnapRect[];
   toleranceIn: number;
 }): SnapResult<SnapRect> {
   const moving = rectEdges(rect);
-  const targetX = alignmentTargetsX(sections, edgeRects, centerRects);
-  const targetY = alignmentTargetsY(sections, edgeRects, centerRects);
+  const visibleEdgeRects = nearestVisibleRects(rect, edgeRects);
+  const visibleCenterRects = nearestVisibleRects(rect, centerRects);
+  const targetX = alignmentTargetsX(visibleEdgeRects, visibleCenterRects);
+  const targetY = alignmentTargetsY(visibleEdgeRects, visibleCenterRects);
 
   const xSnap = closestAlignmentDelta(
     [
@@ -447,15 +441,8 @@ function snapRectToAlignment({
   };
 }
 
-function alignmentTargetsX(
-  sections: WallSection[],
-  edgeRects: SnapRect[],
-  centerRects: SnapRect[],
-): SnapAxisCandidate[] {
-  const bounds = getWallBounds(sections);
+function alignmentTargetsX(edgeRects: SnapRect[], centerRects: SnapRect[]): SnapAxisCandidate[] {
   return [
-    { movingValue: 0, targetValue: bounds.minX, kind: 'edge' },
-    { movingValue: 0, targetValue: bounds.maxX, kind: 'edge' },
     ...edgeRects.flatMap((rect) => [
       { movingValue: 0, targetValue: rect.left, kind: 'edge' as const },
       { movingValue: 0, targetValue: rect.left + rect.widthIn, kind: 'edge' as const },
@@ -468,15 +455,8 @@ function alignmentTargetsX(
   ];
 }
 
-function alignmentTargetsY(
-  sections: WallSection[],
-  edgeRects: SnapRect[],
-  centerRects: SnapRect[],
-): SnapAxisCandidate[] {
-  const bounds = getWallBounds(sections);
+function alignmentTargetsY(edgeRects: SnapRect[], centerRects: SnapRect[]): SnapAxisCandidate[] {
   return [
-    { movingValue: 0, targetValue: bounds.minY, kind: 'edge' },
-    { movingValue: 0, targetValue: bounds.maxY, kind: 'edge' },
     ...edgeRects.flatMap((rect) => [
       { movingValue: 0, targetValue: rect.top, kind: 'edge' as const },
       { movingValue: 0, targetValue: rect.top + rect.heightIn, kind: 'edge' as const },
@@ -496,6 +476,88 @@ function rectEdges(rect: SnapRect) {
     right: rect.left + rect.widthIn,
     bottom: rect.top + rect.heightIn,
   };
+}
+
+interface LaneCandidate {
+  rect: SnapRect;
+  gap: number;
+  spanStart: number;
+  spanEnd: number;
+}
+
+/**
+ * Limits alignment candidates to ones with a clear line of sight to the moving
+ * rect: a candidate is eligible only if a straight horizontal or vertical line
+ * connects it to the moving rect without another candidate's bounding box in the
+ * way. A candidate directly left/right must share vertical span with the moving
+ * rect; directly above/below must share horizontal span (this determines which
+ * "lane" it's in). Within a lane, a candidate is occluded only by another
+ * candidate that is both nearer to the moving rect AND whose own perpendicular
+ * span overlaps its span — e.g. two pieces side by side in the same row don't
+ * block each other's guides just for sharing a lane, since neither actually sits
+ * between the other and the mover. Candidates that overlap the moving rect
+ * directly (common right as pieces near a snap, and in degenerate/test geometry)
+ * always have line of sight, since nothing can sit between two rects that
+ * already intersect.
+ */
+function nearestVisibleRects(rect: SnapRect, candidates: SnapRect[]): SnapRect[] {
+  const moving = rectEdges(rect);
+  const left: LaneCandidate[] = [];
+  const right: LaneCandidate[] = [];
+  const above: LaneCandidate[] = [];
+  const below: LaneCandidate[] = [];
+  const alwaysVisible: SnapRect[] = [];
+
+  for (const candidate of candidates) {
+    if (candidate.id === rect.id) {
+      continue;
+    }
+    const edges = rectEdges(candidate);
+    const verticalOverlap = edges.top < moving.bottom && edges.bottom > moving.top;
+    const horizontalOverlap = edges.left < moving.right && edges.right > moving.left;
+
+    if (verticalOverlap && horizontalOverlap) {
+      alwaysVisible.push(candidate);
+      continue;
+    }
+
+    if (edges.right <= moving.left && verticalOverlap) {
+      left.push({ rect: candidate, gap: moving.left - edges.right, spanStart: edges.top, spanEnd: edges.bottom });
+    } else if (edges.left >= moving.right && verticalOverlap) {
+      right.push({ rect: candidate, gap: edges.left - moving.right, spanStart: edges.top, spanEnd: edges.bottom });
+    } else if (edges.bottom <= moving.top && horizontalOverlap) {
+      above.push({ rect: candidate, gap: moving.top - edges.bottom, spanStart: edges.left, spanEnd: edges.right });
+    } else if (edges.top >= moving.bottom && horizontalOverlap) {
+      below.push({ rect: candidate, gap: edges.top - moving.bottom, spanStart: edges.left, spanEnd: edges.right });
+    }
+    // Neither span overlaps (a purely diagonal candidate) — no line of sight, excluded.
+  }
+
+  const visible = new Map<string, SnapRect>();
+  for (const candidate of alwaysVisible) {
+    visible.set(candidate.id, candidate);
+  }
+  for (const lane of [left, right, above, below]) {
+    for (const candidate of unoccludedInLane(lane)) {
+      visible.set(candidate.id, candidate);
+    }
+  }
+  return [...visible.values()];
+}
+
+function unoccludedInLane(lane: LaneCandidate[]): SnapRect[] {
+  return lane
+    .filter(
+      (candidate) =>
+        !lane.some(
+          (other) =>
+            other !== candidate &&
+            other.gap < candidate.gap &&
+            other.spanStart < candidate.spanEnd &&
+            other.spanEnd > candidate.spanStart,
+        ),
+    )
+    .map((candidate) => candidate.rect);
 }
 
 function closestDelta(
