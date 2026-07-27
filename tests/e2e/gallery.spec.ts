@@ -591,6 +591,9 @@ test('keeps responsive workspace panels contained and switches mobile measuremen
 
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto('/');
+  // goto resolves on load, but the app renders client side, so the layout nodes
+  // may not exist yet on a slow runner. Wait for the tree before measuring.
+  await page.locator('.editor-column').waitFor();
   const twoColumnDesktopLayout = await page.evaluate(() => {
     const getBox = (selector: string) => {
       const element = document.querySelector<HTMLElement>(selector);
@@ -633,6 +636,7 @@ test('keeps responsive workspace panels contained and switches mobile measuremen
 
   await page.setViewportSize({ width: 2200, height: 900 });
   await page.goto('/');
+  await page.locator('.editor-column').waitFor();
   const wideDesktopLayout = await page.evaluate(() => {
     const workspace = document.querySelector<HTMLElement>('.workspace');
     const editor = document.querySelector<HTMLElement>('.editor-column');
