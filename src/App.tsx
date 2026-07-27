@@ -38,6 +38,7 @@ import {
   type WallDragPreview,
 } from './components/WallDragPreviewOverlay';
 import { useAlignmentGuides } from './hooks/useAlignmentGuides';
+import { useWallZoomPan, type CursorInteraction } from './hooks/useWallZoomPan';
 import { autoPlacePieces, type AutoPlacementDiagnostics } from './lib/autoPlace';
 import { parseDesignFile, serializeDesignFile } from './lib/designFile';
 import { downloadPdf, downloadPng, type ExportDesignInput } from './lib/exportDesign';
@@ -57,8 +58,6 @@ import {
   getPointerId,
   isTextEntryTarget,
   isWallPanTarget,
-  midpointBetween,
-  normalizeWheelDelta,
   tryCapturePointer,
   POINTER_DRAG_THRESHOLD_PX,
   WALL_MOUSE_PAN_ID,
@@ -97,16 +96,7 @@ import {
   normalizeWallSections,
   validateWallSections,
 } from './lib/wall';
-import {
-  clampWallZoomCenter,
-  clampWallZoomScale,
-  getDefaultWallZoomState,
-  getWallCanvasBaseViewBox,
-  getWallZoomedViewBox,
-  zoomWallStateAroundPoint,
-  type WallViewBox,
-  type WallZoomState,
-} from './lib/wallZoom';
+import { getDefaultWallZoomState, getWallCanvasBaseViewBox } from './lib/wallZoom';
 import {
   isPlacedWallFeature,
   movePlacedFeaturesWithWallSection,
@@ -189,26 +179,6 @@ function dragPreviewReducer(state: DragPreviewState, action: DragPreviewAction):
   }
 }
 
-interface WallZoomGesture {
-  pointers: Map<number, { clientX: number; clientY: number }>;
-  startDistance: number;
-  startScale: number;
-}
-
-interface WallPanState {
-  pointerId: number;
-  startClientX: number;
-  startClientY: number;
-  startCenterX: number;
-  startCenterY: number;
-  viewBoxWidth: number;
-  viewBoxHeight: number;
-  canvasWidthPx: number;
-  canvasHeightPx: number;
-}
-
-type CursorInteraction = 'idle' | 'dragging-piece' | 'dragging-section' | 'panning-wall';
-
 export default function App() {
   const [state, setState] = useState<GalleryState>(() => loadState());
   const [autoPlacementFailure, setAutoPlacementFailure] = useState<{
@@ -238,28 +208,17 @@ export default function App() {
   const [expandedSectionId, setExpandedSectionId] = useState(defaultState.sections[0]?.id ?? '');
   const [autoPlacementVariantIndex, setAutoPlacementVariantIndex] = useState(0);
   const [cursorInteraction, setCursorInteraction] = useState<CursorInteraction>('idle');
-  const [wallZoom, setWallZoom] = useState<WallZoomState>(() =>
-    getDefaultWallZoomState(getWallCanvasBaseViewBox(defaultState.sections)),
-  );
-  const svgRef = useRef<SVGSVGElement | null>(null);
   const [exporting, setExporting] = useState<'png' | 'pdf' | null>(null);
-  const wallDisplayRef = useRef<HTMLDivElement | null>(null);
   const workspaceRef = useRef<HTMLElement | null>(null);
   const editorColumnRef = useRef<HTMLElement | null>(null);
   const clearMenuRef = useRef<HTMLDivElement | null>(null);
-  const wallBaseViewBoxRef = useRef<WallViewBox | null>(null);
-  const wallZoomRef = useRef(wallZoom);
-  const wallViewBoxRef = useRef<WallViewBox | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const latestStateRef = useRef(state);
   const fieldEditUndoSnapshotRef = useRef<GalleryState | null>(null);
   const sectionDragUndoSnapshotRef = useRef<GalleryState | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const marqueeRef = useRef<MarqueeState | null>(null);
-  const spacePressedRef = useRef(false);
   const sectionDragRef = useRef<SectionDragState | null>(null);
-  const wallZoomGestureRef = useRef<WallZoomGesture | null>(null);
-  const wallPanRef = useRef<WallPanState | null>(null);
   const interactionHandlersRef = useRef<{
     updateWallZoomGesture: (event: PointerEvent) => boolean;
     updateWallPan: (
@@ -286,17 +245,36 @@ export default function App() {
     handleCanvasKeyDown: (event: KeyboardEvent) => void;
   } | null>(null);
 
-  const wallIssues = useMemo(() => validateWallSections(state.sections), [state.sections]);
-  const wallBaseViewBox = useMemo(() => getWallCanvasBaseViewBox(state.sections), [state.sections]);
-  const wallViewBox = useMemo(
-    () => getWallZoomedViewBox(wallBaseViewBox, wallZoom),
-    [wallBaseViewBox, wallZoom],
-  );
-  useLayoutEffect(() => {
-    wallBaseViewBoxRef.current = wallBaseViewBox;
-    wallZoomRef.current = wallZoom;
-    wallViewBoxRef.current = wallViewBox;
+  const {
+    wallZoom,
+    setWallZoom,
+    wallViewBox,
+    svgRef,
+    wallDisplayRef,
+    wallPanRef,
+    wallZoomGestureRef,
+    spacePressedRef,
+    fitWallZoom,
+    zoomWallBy,
+    startWallPan,
+    updateWallPan,
+    updateWallMousePan,
+    updateWallZoomGesture,
+    finishWallZoomGesture,
+    finishWallPan,
+    finishWallMousePan,
+    handleWallWheelInput,
+    clientPointToSvg,
+    svgPointToClient,
+  } = useWallZoomPan({
+    sections: state.sections,
+    onInteractionChange: setCursorInteraction,
+    hasBlockingDrag: () => Boolean(dragRef.current) || Boolean(sectionDragRef.current),
+    startSuppressingTextSelection,
+    stopSuppressingTextSelection,
   });
+
+  const wallIssues = useMemo(() => validateWallSections(state.sections), [state.sections]);
   const placementIssues = useMemo(
     () => getPlacementIssues(state.sections, state.pieces, state.placements),
     [state.sections, state.pieces, state.placements],
@@ -502,118 +480,7 @@ export default function App() {
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);
     };
-  }, []);
-
-  useEffect(() => {
-    setWallZoom((current) =>
-      current.scale === 1
-        ? {
-            ...current,
-            centerX: wallBaseViewBox.x + wallBaseViewBox.width / 2,
-            centerY: wallBaseViewBox.y + wallBaseViewBox.height / 2,
-          }
-        : current,
-    );
-  }, [wallBaseViewBox.x, wallBaseViewBox.y, wallBaseViewBox.width, wallBaseViewBox.height]);
-
-  useEffect(() => {
-    const svg = svgRef.current;
-    if (!svg) {
-      return;
-    }
-    const canvas = svg;
-
-    function handleNativePointerDown(event: PointerEvent) {
-      const wantsPan =
-        event.pointerType === 'touch'
-          ? wallZoomRef.current.scale > 1
-          : event.button === 1 || spacePressedRef.current;
-      if (
-        !wantsPan ||
-        dragRef.current ||
-        sectionDragRef.current ||
-        wallPanRef.current ||
-        !isWallPanTarget(event.target) ||
-        !Number.isFinite(event.clientX) ||
-        !Number.isFinite(event.clientY)
-      ) {
-        return;
-      }
-
-      const rect = canvas.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) {
-        return;
-      }
-
-      event.preventDefault();
-      startWallPan(event, getPointerId(event), rect);
-    }
-
-    function handleNativePointerMove(event: PointerEvent) {
-      if (interactionHandlersRef.current?.updateWallPan(event)) {
-        event.preventDefault();
-      }
-    }
-
-    function handleNativePointerUp(event: PointerEvent) {
-      interactionHandlersRef.current?.finishWallPan(event);
-    }
-
-    function handleNativeMouseDown(event: MouseEvent) {
-      const wantsPan = event.button === 1 || spacePressedRef.current;
-      if (
-        !wantsPan ||
-        dragRef.current ||
-        sectionDragRef.current ||
-        wallPanRef.current ||
-        !isWallPanTarget(event.target) ||
-        !Number.isFinite(event.clientX) ||
-        !Number.isFinite(event.clientY)
-      ) {
-        return;
-      }
-
-      const rect = canvas.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) {
-        return;
-      }
-
-      event.preventDefault();
-      startWallPan(event, WALL_MOUSE_PAN_ID, rect);
-    }
-
-    window.addEventListener('pointerdown', handleNativePointerDown, true);
-    window.addEventListener('pointermove', handleNativePointerMove);
-    window.addEventListener('pointerup', handleNativePointerUp);
-    window.addEventListener('mousedown', handleNativeMouseDown, true);
-    return () => {
-      window.removeEventListener('pointerdown', handleNativePointerDown, true);
-      window.removeEventListener('pointermove', handleNativePointerMove);
-      window.removeEventListener('pointerup', handleNativePointerUp);
-      window.removeEventListener('mousedown', handleNativeMouseDown, true);
-    };
-  }, []);
-
-  useEffect(() => {
-    const display = wallDisplayRef.current;
-    if (!display) {
-      return;
-    }
-    const displayPanel = display;
-
-    function handleDisplayWheel(event: WheelEvent) {
-      if (!(event.target instanceof Node) || !displayPanel.contains(event.target)) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      interactionHandlersRef.current?.handleWallWheelInput(event);
-    }
-
-    displayPanel.addEventListener('wheel', handleDisplayWheel, { passive: false });
-    return () => displayPanel.removeEventListener('wheel', handleDisplayWheel);
-  }, []);
+  }, [spacePressedRef]);
 
   useEffect(() => {
     if (!clearMenuOpen) {
@@ -1220,38 +1087,6 @@ export default function App() {
     action();
   }
 
-  function fitWallZoom() {
-    setWallZoom(getDefaultWallZoomState(wallBaseViewBox));
-    wallZoomGestureRef.current = null;
-    wallPanRef.current = null;
-    setCursorInteraction((current) => (current === 'panning-wall' ? 'idle' : current));
-  }
-
-  function zoomWallBy(factor: number) {
-    setWallZoom((current) =>
-      zoomWallStateAroundPoint(
-        wallBaseViewBox,
-        getWallZoomedViewBox(wallBaseViewBox, current),
-        clampWallZoomScale(current.scale * factor),
-      ),
-    );
-  }
-
-  function zoomWallAroundClientPoint(
-    nextScale: number,
-    focusPoint?: Pick<React.PointerEvent | PointerEvent | React.WheelEvent, 'clientX' | 'clientY'>,
-  ) {
-    const focusSvgPoint = focusPoint ? clientPointToSvg(focusPoint) : null;
-    setWallZoom((current) =>
-      zoomWallStateAroundPoint(
-        wallBaseViewBox,
-        getWallZoomedViewBox(wallBaseViewBox, current),
-        clampWallZoomScale(nextScale),
-        focusSvgPoint,
-      ),
-    );
-  }
-
   function updateFeatures(patch: Partial<EditorFeatures>, options: UndoableChangeOptions = {}) {
     if (options.undoable !== false) {
       recordUndoSnapshot();
@@ -1368,38 +1203,6 @@ export default function App() {
     wallZoomGestureRef.current = gesture;
   }
 
-  function handleWallWheelInput(event: {
-    altKey: boolean;
-    clientX: number;
-    clientY: number;
-    ctrlKey: boolean;
-    deltaMode: number;
-    deltaX: number;
-    deltaY: number;
-    metaKey: boolean;
-  }) {
-    if (!event.ctrlKey && !event.metaKey && !event.altKey) {
-      panWallByWheel(event);
-      return;
-    }
-
-    const baseViewBox = wallBaseViewBoxRef.current;
-    if (!baseViewBox) {
-      return;
-    }
-
-    const factor = Math.exp(-event.deltaY * 0.0015);
-    const focusSvgPoint = clientPointToSvg(event);
-    setWallZoom((current) =>
-      zoomWallStateAroundPoint(
-        baseViewBox,
-        getWallZoomedViewBox(baseViewBox, current),
-        clampWallZoomScale(current.scale * factor),
-        focusSvgPoint,
-      ),
-    );
-  }
-
   function handleWallPanPointerDown(event: React.PointerEvent<SVGRectElement>) {
     if (
       dragRef.current ||
@@ -1471,32 +1274,6 @@ export default function App() {
 
     event.preventDefault();
     startWallPan(event, WALL_MOUSE_PAN_ID, rect);
-  }
-
-  function startWallPan(
-    event: { clientX: number; clientY: number },
-    pointerId: number,
-    rect: DOMRect,
-  ) {
-    const currentZoom = wallZoomRef.current;
-    const currentViewBox = wallViewBoxRef.current;
-    if (!currentViewBox) {
-      return;
-    }
-
-    wallPanRef.current = {
-      pointerId,
-      startClientX: event.clientX,
-      startClientY: event.clientY,
-      startCenterX: currentZoom.centerX,
-      startCenterY: currentZoom.centerY,
-      viewBoxWidth: currentViewBox.width,
-      viewBoxHeight: currentViewBox.height,
-      canvasWidthPx: rect.width,
-      canvasHeightPx: rect.height,
-    };
-    setCursorInteraction('panning-wall');
-    startSuppressingTextSelection();
   }
 
   function handleWallPanPointerMove(event: React.PointerEvent<SVGRectElement>) {
@@ -2048,150 +1825,6 @@ export default function App() {
     stopSuppressingTextSelection();
   }
 
-  function finishWallZoomGesture(event?: { pointerId?: number }) {
-    const gesture = wallZoomGestureRef.current;
-    if (!gesture) {
-      return;
-    }
-
-    if (event && typeof event.pointerId === 'number') {
-      gesture.pointers.delete(event.pointerId);
-    }
-
-    if (gesture.pointers.size < 2) {
-      wallZoomGestureRef.current = null;
-    }
-  }
-
-  function finishWallPan(event?: { pointerId?: number }) {
-    const pan = wallPanRef.current;
-    if (!pan) {
-      return;
-    }
-    if (!event || getPointerId(event) === pan.pointerId) {
-      wallPanRef.current = null;
-      setCursorInteraction('idle');
-      stopSuppressingTextSelection();
-    }
-  }
-
-  function finishWallMousePan() {
-    const pan = wallPanRef.current;
-    if (!pan || pan.pointerId !== WALL_MOUSE_PAN_ID) {
-      return;
-    }
-    wallPanRef.current = null;
-    setCursorInteraction('idle');
-    stopSuppressingTextSelection();
-  }
-
-  function updateWallZoomGesture(
-    event: Pick<PointerEvent, 'pointerId' | 'clientX' | 'clientY'> & { pointerType?: string },
-  ): boolean {
-    const gesture = wallZoomGestureRef.current;
-    if (!gesture || gesture.pointers.size < 2) {
-      return false;
-    }
-
-    if (event.pointerType && event.pointerType !== 'touch') {
-      return false;
-    }
-
-    if (!gesture.pointers.has(event.pointerId)) {
-      return false;
-    }
-
-    gesture.pointers.set(event.pointerId, {
-      clientX: event.clientX,
-      clientY: event.clientY,
-    });
-
-    const points = [...gesture.pointers.values()].slice(0, 2);
-    if (points.length < 2) {
-      return false;
-    }
-
-    const currentDistance = distanceBetween(points[0], points[1]);
-    if (currentDistance <= 0 || gesture.startScale <= 0 || gesture.startDistance <= 0) {
-      return false;
-    }
-
-    const focusPoint = midpointBetween(points[0], points[1]);
-    const nextScale = clampWallZoomScale(
-      gesture.startScale * (currentDistance / gesture.startDistance),
-    );
-    zoomWallAroundClientPoint(nextScale, focusPoint);
-    return true;
-  }
-
-  function updateWallPan(
-    event: Pick<PointerEvent, 'clientX' | 'clientY'> & { pointerId?: number },
-  ): boolean {
-    const pan = wallPanRef.current;
-    if (
-      !pan ||
-      getPointerId(event) !== pan.pointerId ||
-      !Number.isFinite(event.clientX) ||
-      !Number.isFinite(event.clientY)
-    ) {
-      return false;
-    }
-
-    const deltaX = event.clientX - pan.startClientX;
-    const deltaY = event.clientY - pan.startClientY;
-    const nextCenter = clampWallZoomCenter(
-      wallBaseViewBox,
-      pan.viewBoxWidth,
-      pan.viewBoxHeight,
-      pan.startCenterX - (deltaX / pan.canvasWidthPx) * pan.viewBoxWidth,
-      pan.startCenterY - (deltaY / pan.canvasHeightPx) * pan.viewBoxHeight,
-    );
-
-    setWallZoom((current) => ({
-      ...current,
-      centerX: nextCenter.centerX,
-      centerY: nextCenter.centerY,
-    }));
-    return true;
-  }
-
-  function updateWallMousePan(event: MouseEvent): boolean {
-    const pan = wallPanRef.current;
-    if (pan?.pointerId !== WALL_MOUSE_PAN_ID) {
-      return false;
-    }
-    return updateWallPan({
-      pointerId: WALL_MOUSE_PAN_ID,
-      clientX: event.clientX,
-      clientY: event.clientY,
-    });
-  }
-
-  function panWallByWheel(event: { deltaMode: number; deltaX: number; deltaY: number }) {
-    const rect = svgRef.current?.getBoundingClientRect();
-    const baseViewBox = wallBaseViewBoxRef.current;
-    if (!rect || rect.width <= 0 || rect.height <= 0 || !baseViewBox) {
-      return;
-    }
-
-    const delta = normalizeWheelDelta(event);
-    setWallZoom((current) => {
-      const currentViewBox = getWallZoomedViewBox(baseViewBox, current);
-      const nextCenter = clampWallZoomCenter(
-        baseViewBox,
-        currentViewBox.width,
-        currentViewBox.height,
-        current.centerX + (delta.x / rect.width) * currentViewBox.width,
-        current.centerY + (delta.y / rect.height) * currentViewBox.height,
-      );
-      return {
-        ...current,
-        centerX: nextCenter.centerX,
-        centerY: nextCenter.centerY,
-      };
-    });
-  }
-
   function pointerIsOverStagingTray(
     event: Pick<React.PointerEvent | PointerEvent, 'clientX' | 'clientY'>,
   ): boolean {
@@ -2360,61 +1993,6 @@ export default function App() {
       xIn: roundToPrecision(feature.xIn + deltaX),
       yIn: roundToPrecision((feature.yIn ?? getLegacyFeatureYIn(feature)) + deltaY),
     });
-  }
-
-  function clientPointToSvg(event: { clientX: number; clientY: number }): DOMPoint | null {
-    if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) {
-      return null;
-    }
-
-    const svg = svgRef.current;
-    if (!svg) {
-      return null;
-    }
-    if (typeof svg.getScreenCTM !== 'function') {
-      return clientPointToSvgFromViewBox(event);
-    }
-    const matrix = svg.getScreenCTM();
-    if (!matrix) {
-      return clientPointToSvgFromViewBox(event);
-    }
-    const inverse = matrix.inverse();
-    return {
-      x: event.clientX * inverse.a + event.clientY * inverse.c + inverse.e,
-      y: event.clientX * inverse.b + event.clientY * inverse.d + inverse.f,
-    } as DOMPoint;
-  }
-
-  function clientPointToSvgFromViewBox(event: {
-    clientX: number;
-    clientY: number;
-  }): DOMPoint | null {
-    const svg = svgRef.current;
-    const viewBox = wallViewBoxRef.current;
-    const rect = svg?.getBoundingClientRect();
-    if (!svg || !viewBox || !rect || rect.width <= 0 || rect.height <= 0) {
-      return null;
-    }
-
-    return {
-      x: viewBox.x + ((event.clientX - rect.left) / rect.width) * viewBox.width,
-      y: viewBox.y + ((event.clientY - rect.top) / rect.height) * viewBox.height,
-    } as DOMPoint;
-  }
-
-  function svgPointToClient(point: { x: number; y: number }): { x: number; y: number } | null {
-    const svg = svgRef.current;
-    if (!svg || typeof svg.getScreenCTM !== 'function') {
-      return null;
-    }
-    const matrix = svg.getScreenCTM();
-    if (!matrix) {
-      return null;
-    }
-    return {
-      x: point.x * matrix.a + point.y * matrix.c + matrix.e,
-      y: point.x * matrix.b + point.y * matrix.d + matrix.f,
-    };
   }
 
   function updatePointerDrag(event: { clientX: number; clientY: number }) {
