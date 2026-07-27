@@ -4,6 +4,7 @@ import type {
   MeasurementReferenceMode,
   MeasurementReference,
   Placement,
+  SideMeasurementReference,
   Unit,
   WallSection,
 } from '../types';
@@ -48,37 +49,57 @@ export function buildMeasurementInstructions(
     .filter((value): value is PlacedPiece => Boolean(value))
     .sort((a, b) => a.globalTop - b.globalTop || a.globalLeft - b.globalLeft);
 
-  return placed.map((item, index) => ({
-    order: index + 1,
-    pieceId: item.piece.id,
-    pieceLabel: item.piece.label,
-    sectionName: item.section.name,
-    pieceDimensions: {
-      widthIn: item.piece.widthIn,
-      heightIn: item.piece.heightIn,
-      formatted: `${formatMeasurement(item.piece.widthIn, unit)} x ${formatMeasurement(item.piece.heightIn, unit)}`,
-    },
-    topReference:
+  return placed.map((item, index) => {
+    const topReference =
       referenceMode === 'absolute'
         ? absoluteTopReference(item, bounds.minY, unit)
         : index === 0
           ? wallTopReference(item, unit)
-          : findTopReference(item, placed, unit),
-    sideReference:
+          : findTopReference(item, placed, unit);
+    const sideReference =
       referenceMode === 'absolute'
         ? absoluteSideReference(item, bounds.minX, unit)
         : index === 0
           ? wallLeftReference(item, unit)
-          : findSideReference(item, placed, unit),
-    hooks: getHookPoints(item.piece).map((hook) => ({
-      ...hook,
-      formattedX: formatMeasurement(
-        hook.reference === 'right' ? item.piece.widthIn - hook.xIn : hook.xIn,
-        unit,
-      ),
-      formattedY: formatMeasurement(hook.yIn, unit),
-    })),
-  }));
+          : findSideReference(item, placed, unit);
+
+    return {
+      order: index + 1,
+      pieceId: item.piece.id,
+      pieceLabel: item.piece.label,
+      sectionName: item.section.name,
+      pieceDimensions: {
+        widthIn: item.piece.widthIn,
+        heightIn: item.piece.heightIn,
+        formatted: `${formatMeasurement(item.piece.widthIn, unit)} x ${formatMeasurement(item.piece.heightIn, unit)}`,
+      },
+      topReference,
+      sideReference,
+      // Anchored to the same wall/section reference points as the piece's
+      // own placement above, not to the piece's frame — an installer marking
+      // hook positions shouldn't have to add the frame offset by hand.
+      hooks: getHookPoints(item.piece).map((hook) => {
+        const topDistanceIn = topReference.distanceIn + hook.yIn;
+        const sideDistanceIn =
+          sideReference.anchor === 'right'
+            ? sideReference.distanceIn + (item.piece.widthIn - hook.xIn)
+            : sideReference.distanceIn + hook.xIn;
+        return {
+          label: hook.label,
+          topReference: {
+            label: topReference.label,
+            distanceIn: topDistanceIn,
+            formatted: formatMeasurement(topDistanceIn, unit),
+          },
+          sideReference: {
+            label: sideReference.label,
+            distanceIn: sideDistanceIn,
+            formatted: formatMeasurement(sideDistanceIn, unit),
+          },
+        };
+      }),
+    };
+  });
 }
 
 function absoluteTopReference(
@@ -98,12 +119,13 @@ function absoluteSideReference(
   item: PlacedPiece,
   wallOriginXIn: number,
   unit: Unit,
-): MeasurementReference {
+): SideMeasurementReference {
   const distanceIn = item.globalLeft - wallOriginXIn;
   return {
     label: 'top-left wall origin',
     distanceIn,
     formatted: formatMeasurement(distanceIn, unit),
+    anchor: 'left',
   };
 }
 
@@ -115,11 +137,12 @@ function wallTopReference(item: PlacedPiece, unit: Unit): MeasurementReference {
   };
 }
 
-function wallLeftReference(item: PlacedPiece, unit: Unit): MeasurementReference {
+function wallLeftReference(item: PlacedPiece, unit: Unit): SideMeasurementReference {
   return {
     label: `left side of ${item.section.name}`,
     distanceIn: item.rect.left,
     formatted: formatMeasurement(item.rect.left, unit),
+    anchor: 'left',
   };
 }
 
@@ -154,13 +177,14 @@ function findSideReference(
   item: PlacedPiece,
   placed: PlacedPiece[],
   unit: Unit,
-): MeasurementReference {
-  const candidates: MeasurementReference[] = [
+): SideMeasurementReference {
+  const candidates: SideMeasurementReference[] = [
     wallLeftReference(item, unit),
     {
       label: `right side of ${item.section.name}`,
       distanceIn: item.section.widthIn - item.rect.right,
       formatted: formatMeasurement(item.section.widthIn - item.rect.right, unit),
+      anchor: 'right',
     },
   ];
 
@@ -173,19 +197,25 @@ function findSideReference(
     }
 
     if (other.rect.right <= item.rect.left) {
+      // `other` sits to the left of `item`, so distance from its right edge
+      // grows the same direction as distance from the section's left edge.
       const distanceIn = item.rect.left - other.rect.right;
       candidates.push({
         label: `right side of ${other.piece.label}`,
         distanceIn,
         formatted: formatMeasurement(distanceIn, unit),
+        anchor: 'left',
       });
     }
     if (other.rect.left >= item.rect.right) {
+      // `other` sits to the right of `item`, so distance from its left edge
+      // grows the same direction as distance from the section's right edge.
       const distanceIn = other.rect.left - item.rect.right;
       candidates.push({
         label: `left side of ${other.piece.label}`,
         distanceIn,
         formatted: formatMeasurement(distanceIn, unit),
+        anchor: 'right',
       });
     }
   }

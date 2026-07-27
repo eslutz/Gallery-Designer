@@ -1,6 +1,10 @@
 import { Ruler } from 'lucide-react';
 import type { buildMeasurementInstructions } from '../lib/measurements';
-import { buildMeasurementTableRows, MEASUREMENT_TABLE_HEADERS } from '../lib/measurementTable';
+import {
+  buildMeasurementTableRows,
+  formatHookSummary,
+  MEASUREMENT_TABLE_HEADERS,
+} from '../lib/measurementTable';
 import { CollapsiblePanel } from './CollapsiblePanel';
 
 export function MeasurementsTable({
@@ -76,16 +80,7 @@ export function MeasurementsTable({
                 </div>
                 <div>
                   <dt>Hooks</dt>
-                  <dd>
-                    {instruction.hooks.length === 0
-                      ? 'No hook data'
-                      : instruction.hooks
-                          .map(
-                            (hook) =>
-                              `${hook.label}: ${hook.formattedY} down, ${hook.formattedX} from ${hook.reference}`,
-                          )
-                          .join('; ')}
-                  </dd>
+                  <dd>{formatHookSummary(instruction.hooks)}</dd>
                 </div>
               </dl>
             </article>

@@ -11,9 +11,13 @@ const instructions: MeasurementInstruction[] = [
     sectionName: 'Section 1',
     pieceDimensions: { widthIn: 16, heightIn: 20, formatted: '16 x 20 in' },
     topReference: { label: 'the floor', distanceIn: 60, formatted: '60 in' },
-    sideReference: { label: 'the left wall', distanceIn: 10, formatted: '10 in' },
+    sideReference: { label: 'the left wall', distanceIn: 10, formatted: '10 in', anchor: 'left' },
     hooks: [
-      { label: 'Hook', xIn: 8, yIn: 2, reference: 'left', formattedX: '8 in', formattedY: '2 in' },
+      {
+        label: 'Hook',
+        topReference: { label: 'the floor', distanceIn: 62, formatted: '62 in' },
+        sideReference: { label: 'the left wall', distanceIn: 18, formatted: '18 in' },
+      },
     ],
   },
 ];
@@ -32,6 +36,8 @@ describe('MeasurementsTable', () => {
 
     expect(screen.getAllByText('Sunset').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/60 in.*from.*the floor/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Hook: 2 in down, 8 in from left/).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/62 in from the floor; 18 in from the left wall/).length,
+    ).toBeGreaterThan(0);
   });
 });
