@@ -2362,7 +2362,11 @@ export default function App() {
       const { selectedPieceIds: importedSelectedPieceIds, ...importedRest } = parseDesignFile(
         await file.text(),
       );
-      recordUndoSnapshot();
+      // recordUndoSnapshot()'s default parameter closes over the state from
+      // the render that created this callback, which is stale once we're past
+      // the await — read the live value via the ref instead so an edit made
+      // while the file was being read isn't silently discarded by Undo.
+      recordUndoSnapshot(latestStateRef.current);
       setState((current) => ({
         ...defaultState,
         ...importedRest,

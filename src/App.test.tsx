@@ -348,6 +348,49 @@ describe('Gallery Designer app', () => {
     expect(screen.getByLabelText('Piece 1 width unit')).toHaveValue('in');
   });
 
+  // recordUndoSnapshot()'s default parameter closes over the state from the
+  // render that created the importJson callback, which goes stale once the
+  // async file read resolves. Undo must restore the state from immediately
+  // before the import applied — including an edit made while the file was
+  // still being read — not an earlier, pre-edit snapshot.
+  it('preserves an edit made while a design file is still being read', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    let resolveFileText: (value: string) => void = () => {};
+    const importedDesign = {
+      text: vi.fn(
+        () =>
+          new Promise<string>((resolve) => {
+            resolveFileText = resolve;
+          }),
+      ),
+    } as unknown as File;
+
+    fireEvent.change(screen.getByLabelText('Import JSON design file'), {
+      target: { files: [importedDesign] },
+    });
+
+    await user.click(screen.getByRole('button', { name: /Duplicate Piece 1/i }));
+    expect(screen.getByDisplayValue('Piece 1 copy')).toBeInTheDocument();
+
+    resolveFileText(
+      JSON.stringify({
+        unit: 'in',
+        sections: [{ id: 'section-1', name: 'Section 1', widthIn: 96, heightIn: 84 }],
+        pieces: [{ id: 'piece-1', label: 'Imported piece', widthIn: 16, heightIn: 20 }],
+        placements: [],
+      }),
+    );
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('imported'));
+    expect(screen.queryByDisplayValue('Piece 1 copy')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Undo last change/i }));
+
+    expect(screen.getByDisplayValue('Piece 1 copy')).toBeInTheDocument();
+  });
+
   it('uses a staging tray for unplaced pieces and no longer renders a place-on-first-wall action', async () => {
     const user = userEvent.setup();
     render(<App />);

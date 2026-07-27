@@ -687,6 +687,32 @@ describe('automatic placement', () => {
     });
   });
 
+  it('places a single new piece even when 50 pieces are already placed', () => {
+    const placedPieces: ArtPiece[] = Array.from({ length: 50 }, (_, index) => ({
+      id: `piece-${index}`,
+      label: `Piece ${index}`,
+      widthIn: 4,
+      heightIn: 4,
+    }));
+    const generousWall: WallSection[] = [
+      { id: 'main', name: 'Main wall', widthIn: 300, heightIn: 200 },
+    ];
+    const placedResult = autoPlacePieces(generousWall, placedPieces, { settings: blankSettings });
+    expect(placedResult.ok).toBe(true);
+    if (!placedResult.ok) return;
+
+    const newPiece: ArtPiece = { id: 'piece-new', label: 'New piece', widthIn: 4, heightIn: 4 };
+    const result = autoPlacePieces(generousWall, [...placedPieces, newPiece], {
+      settings: blankSettings,
+      existingPlacements: placedResult.placements,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.placements).toHaveLength(51);
+    expect(result.placements.some((placement) => placement.pieceId === 'piece-new')).toBe(true);
+  });
+
   it(
     'never overlaps placements across randomized piece dimensions and never throws',
     { timeout: 15000 },
