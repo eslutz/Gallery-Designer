@@ -72,7 +72,8 @@ describe('application typography', () => {
   });
 
   it('shares the fixed circular remove-control treatment between staging and wall items', () => {
-    const removeControlRule = stylesheet.match(/\.remove-control-button\s*{[^}]*}/s)?.[0] ?? '';
+    const removeControlRule =
+      stylesheet.match(/\.remove-control-button,\s*\.place-control-button\s*{[^}]*}/s)?.[0] ?? '';
     const wallRemoveControlRule =
       stylesheet.match(/\.wall-piece-remove-button\s*{[^}]*}/s)?.[0] ?? '';
 
@@ -81,10 +82,10 @@ describe('application typography', () => {
     expect(removeControlRule).toContain('border-radius: 999px;');
     expect(removeControlRule).toContain('box-shadow: var(--soft-shadow);');
     expect(stylesheet).toMatch(
-      /:root\[data-theme='dark'\]\s+\.remove-control-button\.icon-button\s*{[^}]*background:\s*var\(--piece-fill\);[^}]*color:\s*var\(--piece-label-inside\);/s,
+      /:root\[data-theme='dark'\]\s+\.remove-control-button\.icon-button,\s*:root\[data-theme='dark'\]\s+\.place-control-button\.icon-button\s*{[^}]*background:\s*var\(--piece-fill\);[^}]*color:\s*var\(--piece-label-inside\);/s,
     );
     expect(stylesheet).toMatch(
-      /:root\[data-theme='dark'\]\s+\.remove-control-button\.icon-button:hover:not\(:disabled\),\s*:root\[data-theme='dark'\]\s+\.remove-control-button\.icon-button:focus-visible,\s*:root\[data-theme='dark'\]\s+\.remove-control-button\.icon-button:active:not\(:disabled\)\s*{[^}]*background:\s*var\(--wall-edge\);[^}]*color:\s*var\(--primary-text\);/s,
+      /:root\[data-theme='dark'\]\s+\.remove-control-button\.icon-button:hover:not\(:disabled\),\s*:root\[data-theme='dark'\]\s+\.remove-control-button\.icon-button:focus-visible,\s*:root\[data-theme='dark'\]\s+\.remove-control-button\.icon-button:active:not\(:disabled\),\s*:root\[data-theme='dark'\]\s+\.place-control-button\.icon-button:hover:not\(:disabled\),\s*:root\[data-theme='dark'\]\s+\.place-control-button\.icon-button:focus-visible,\s*:root\[data-theme='dark'\]\s+\.place-control-button\.icon-button:active:not\(:disabled\)\s*{[^}]*background:\s*var\(--wall-edge\);[^}]*color:\s*var\(--primary-text\);/s,
     );
     expect(wallRemoveControlRule).toContain('flex: 0 0 24px;');
     expect(stylesheet).toMatch(

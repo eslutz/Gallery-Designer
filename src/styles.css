@@ -59,8 +59,6 @@
   --piece-selected-stroke: #1f7a52;
   --piece-label-inside: #1a261f;
   --piece-label-outside: #1a261f;
-  --hook-fill: #c84f3d;
-  --hook-stroke: #ffffff;
   --staging-border: #abc6b3;
   --issue-text: #8a422f;
   --table-border: #dfe8e1;
@@ -114,8 +112,6 @@
     --piece-selected-stroke: #8fd3ad;
     --piece-label-inside: #16211b;
     --piece-label-outside: #e7f0ea;
-    --hook-fill: #e77860;
-    --hook-stroke: #16211b;
     --staging-border: #547665;
     --issue-text: #e29a80;
     --table-border: #33483d;
@@ -164,8 +160,6 @@
   --piece-selected-stroke: #8fd3ad;
   --piece-label-inside: #16211b;
   --piece-label-outside: #e7f0ea;
-  --hook-fill: #e77860;
-  --hook-stroke: #16211b;
   --staging-border: #547665;
   --issue-text: #e29a80;
   --table-border: #33483d;
@@ -217,8 +211,6 @@
   --piece-selected-stroke: #2d6ea8;
   --piece-label-inside: #13202d;
   --piece-label-outside: #13202d;
-  --hook-fill: #c9673a;
-  --hook-stroke: #ffffff;
 }
 
 :root[data-theme='dark'][data-palette='coastal-blue'] {
@@ -262,8 +254,6 @@
   --piece-selected-stroke: #7ab4ea;
   --piece-label-inside: #0f1823;
   --piece-label-outside: #eaf2fb;
-  --hook-fill: #f0996b;
-  --hook-stroke: #0f1823;
 }
 
 :root[data-palette='aubergine'] {
@@ -307,8 +297,6 @@
   --piece-selected-stroke: #a35bb2;
   --piece-label-inside: #2f1838;
   --piece-label-outside: #2f1838;
-  --hook-fill: #c2622a;
-  --hook-stroke: #ffffff;
 }
 
 :root[data-theme='dark'][data-palette='aubergine'] {
@@ -352,8 +340,6 @@
   --piece-selected-stroke: #c08ee0;
   --piece-label-inside: #180f1f;
   --piece-label-outside: #f3eaf8;
-  --hook-fill: #eea36e;
-  --hook-stroke: #180f1f;
 }
 
 :root[data-palette='terracotta'] {
@@ -398,8 +384,6 @@
   --piece-selected-stroke: #d46f4d;
   --piece-label-inside: #472218;
   --piece-label-outside: #472218;
-  --hook-fill: #2f7a91;
-  --hook-stroke: #ffffff;
 }
 
 :root[data-theme='dark'][data-palette='terracotta'] {
@@ -444,8 +428,6 @@
   --piece-selected-stroke: #e09a72;
   --piece-label-inside: #25120d;
   --piece-label-outside: #f8eee8;
-  --hook-fill: #7fcbe0;
-  --hook-stroke: #25120d;
 }
 
 :root[data-palette='slate'] {
@@ -489,8 +471,6 @@
   --piece-selected-stroke: #4e6880;
   --piece-label-inside: #1b232b;
   --piece-label-outside: #1b232b;
-  --hook-fill: #c1573c;
-  --hook-stroke: #ffffff;
 }
 
 :root[data-theme='dark'][data-palette='slate'] {
@@ -534,8 +514,6 @@
   --piece-selected-stroke: #8ea5b8;
   --piece-label-inside: #11171d;
   --piece-label-outside: #edf3f7;
-  --hook-fill: #ec9d78;
-  --hook-stroke: #11171d;
 }
 
 h1,
@@ -1535,8 +1513,8 @@ select:focus,
 }
 
 .hook-mark {
-  fill: var(--hook-fill);
-  stroke: var(--hook-stroke);
+  fill: var(--focus-color);
+  stroke: var(--primary-text);
   stroke-width: 0.35;
   pointer-events: none;
 }
@@ -1555,7 +1533,8 @@ select:focus,
   pointer-events: auto;
 }
 
-.remove-control-button {
+.remove-control-button,
+.place-control-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1571,7 +1550,8 @@ select:focus,
   box-shadow: var(--soft-shadow);
 }
 
-:root[data-theme='dark'] .remove-control-button.icon-button {
+:root[data-theme='dark'] .remove-control-button.icon-button,
+:root[data-theme='dark'] .place-control-button.icon-button {
   border-color: var(--wall-edge);
   background: var(--piece-fill);
   color: var(--piece-label-inside);
@@ -1579,7 +1559,10 @@ select:focus,
 
 :root[data-theme='dark'] .remove-control-button.icon-button:hover:not(:disabled),
 :root[data-theme='dark'] .remove-control-button.icon-button:focus-visible,
-:root[data-theme='dark'] .remove-control-button.icon-button:active:not(:disabled) {
+:root[data-theme='dark'] .remove-control-button.icon-button:active:not(:disabled),
+:root[data-theme='dark'] .place-control-button.icon-button:hover:not(:disabled),
+:root[data-theme='dark'] .place-control-button.icon-button:focus-visible,
+:root[data-theme='dark'] .place-control-button.icon-button:active:not(:disabled) {
   background: var(--wall-edge);
   color: var(--primary-text);
 }
