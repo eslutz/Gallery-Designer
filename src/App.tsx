@@ -11,7 +11,15 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
 import { AdvancedDrawer } from './components/AdvancedDrawer';
 import { formatCount } from './components/AutoPlacementFailureDetails';
 import { BrandLogo } from './components/BrandLogo';
@@ -285,9 +293,11 @@ export default function App() {
     () => getWallZoomedViewBox(wallBaseViewBox, wallZoom),
     [wallBaseViewBox, wallZoom],
   );
-  wallBaseViewBoxRef.current = wallBaseViewBox;
-  wallZoomRef.current = wallZoom;
-  wallViewBoxRef.current = wallViewBox;
+  useLayoutEffect(() => {
+    wallBaseViewBoxRef.current = wallBaseViewBox;
+    wallZoomRef.current = wallZoom;
+    wallViewBoxRef.current = wallViewBox;
+  });
   const placementIssues = useMemo(
     () => getPlacementIssues(state.sections, state.pieces, state.placements),
     [state.sections, state.pieces, state.placements],
@@ -335,20 +345,22 @@ export default function App() {
   );
   const readyToExport = allIssues.length === 0 && state.pieces.length > 0;
 
-  interactionHandlersRef.current = {
-    updateWallZoomGesture,
-    updateWallPan,
-    updateWallMousePan,
-    updateSectionDrag,
-    updateMarquee,
-    updatePointerDrag,
-    finishMarquee,
-    finishPieceDrag,
-    finishWallPan,
-    finishWallMousePan,
-    handleWallWheelInput,
-    handleCanvasKeyDown,
-  };
+  useLayoutEffect(() => {
+    interactionHandlersRef.current = {
+      updateWallZoomGesture,
+      updateWallPan,
+      updateWallMousePan,
+      updateSectionDrag,
+      updateMarquee,
+      updatePointerDrag,
+      finishMarquee,
+      finishPieceDrag,
+      finishWallPan,
+      finishWallMousePan,
+      handleWallWheelInput,
+      handleCanvasKeyDown,
+    };
+  });
 
   useEffect(() => {
     const workspace = workspaceRef.current;
