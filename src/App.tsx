@@ -38,6 +38,7 @@ import {
   type WallDragPreview,
 } from './components/WallDragPreviewOverlay';
 import { useAlignmentGuides } from './hooks/useAlignmentGuides';
+import { useUndoHistory } from './hooks/useUndoHistory';
 import { useWallZoomPan, type CursorInteraction } from './hooks/useWallZoomPan';
 import { autoPlacePieces, type AutoPlacementDiagnostics } from './lib/autoPlace';
 import { parseDesignFile, serializeDesignFile } from './lib/designFile';
@@ -201,7 +202,6 @@ export default function App() {
   const { visibleAlignmentGuides, showAlignmentGuides, lingerAlignmentGuides } = useAlignmentGuides(
     state.features.showAlignmentGuides,
   );
-  const [undoState, setUndoState] = useState<GalleryState | null>(null);
   const [clearMenuOpen, setClearMenuOpen] = useState(false);
   const [advancedDrawerOpen, setAdvancedDrawerOpen] = useState(false);
   const [settingsDrawerOpen, setSettingsDrawerOpen] = useState(false);
@@ -214,8 +214,15 @@ export default function App() {
   const clearMenuRef = useRef<HTMLDivElement | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const latestStateRef = useRef(state);
-  const fieldEditUndoSnapshotRef = useRef<GalleryState | null>(null);
-  const sectionDragUndoSnapshotRef = useRef<GalleryState | null>(null);
+  const {
+    undoState,
+    recordUndoSnapshot,
+    beginFieldEdit,
+    finishFieldEdit,
+    beginSectionDragUndo,
+    finishSectionDragUndo,
+    undoLastChange,
+  } = useUndoHistory({ state, setState });
   const dragRef = useRef<DragState | null>(null);
   const marqueeRef = useRef<MarqueeState | null>(null);
   const sectionDragRef = useRef<SectionDragState | null>(null);
@@ -562,42 +569,9 @@ export default function App() {
     setState((current) => ({ ...current, selection: { kind: 'none' } }));
   }
 
-  function getUndoFingerprint(snapshot: GalleryState) {
-    return JSON.stringify({
-      unit: snapshot.unit,
-      themeMode: snapshot.themeMode,
-      applicationTheme: snapshot.applicationTheme,
-      sections: snapshot.sections,
-      pieces: snapshot.pieces,
-      placements: snapshot.placements,
-      features: snapshot.features,
-      autoPlacementSettings: snapshot.autoPlacementSettings,
-    });
-  }
-
-  function hasUndoableChange(before: GalleryState, after: GalleryState) {
-    return getUndoFingerprint(before) !== getUndoFingerprint(after);
-  }
-
-  function recordUndoSnapshot(snapshot = latestStateRef.current) {
-    setUndoState(snapshot);
-  }
-
   function updateUnit(unit: Unit) {
     recordUndoSnapshot();
     setState((current) => ({ ...current, unit }));
-  }
-
-  function beginFieldEdit() {
-    fieldEditUndoSnapshotRef.current ??= latestStateRef.current;
-  }
-
-  function finishFieldEdit() {
-    const snapshot = fieldEditUndoSnapshotRef.current;
-    fieldEditUndoSnapshotRef.current = null;
-    if (snapshot && hasUndoableChange(snapshot, latestStateRef.current)) {
-      recordUndoSnapshot(snapshot);
-    }
   }
 
   function handlePagePointerDown(event: React.PointerEvent<HTMLElement>) {
@@ -1394,7 +1368,7 @@ export default function App() {
     if (!point) {
       return;
     }
-    sectionDragUndoSnapshotRef.current = latestStateRef.current;
+    beginSectionDragUndo();
     sectionDragRef.current = {
       sectionId: section.id,
       startPoint: point,
@@ -1501,21 +1475,6 @@ export default function App() {
       selection: { kind: 'pieces', pieceIds: [pieceId] },
       ...withMessage(current, `Placed ${piece.label} on the wall.`),
     }));
-  }
-
-  function undoLastChange() {
-    if (!undoState) {
-      return;
-    }
-    // Derive the revision from the live state, not the snapshot: undoState is an
-    // older snapshot whose revision is behind current, so basing it on the
-    // snapshot could reuse (or move backwards past) a revision already shown and
-    // silently suppress the toast.
-    setState((current) => ({
-      ...undoState,
-      ...withMessage(current, 'Restored the previous change.'),
-    }));
-    setUndoState(null);
   }
 
   function handlePointerDown(event: React.PointerEvent<SVGRectElement>, placement: Placement) {
@@ -1807,13 +1766,9 @@ export default function App() {
     ) {
       commitFeaturePlacement(drag.latestFeature);
     }
-    const sectionDragSnapshot = sectionDragUndoSnapshotRef.current;
-    if (sectionDragSnapshot && hasUndoableChange(sectionDragSnapshot, latestStateRef.current)) {
-      recordUndoSnapshot(sectionDragSnapshot);
-    }
+    finishSectionDragUndo();
     dragRef.current = null;
     sectionDragRef.current = null;
-    sectionDragUndoSnapshotRef.current = null;
     setCursorInteraction('idle');
     setWallDragPreview(null);
     setGroupDragPreview([]);
