@@ -58,6 +58,19 @@ export function getSectionById(
   return sections.find((section) => section.id === sectionId);
 }
 
+// Finds the smallest unused `section-N` id. Using `sections.length + 1` (the
+// prior approach) collides after removing a middle section: [section-1,
+// section-2, section-3] minus section-2 leaves length 2, so the next add
+// recomputes `section-3`, which still exists.
+export function getNextSectionId(sections: WallSection[]): string {
+  const existingIds = new Set(sections.map((section) => section.id));
+  let index = sections.length + 1;
+  while (existingIds.has(`section-${index}`)) {
+    index += 1;
+  }
+  return `section-${index}`;
+}
+
 export function getSectionOffsetX(sections: WallSection[], sectionId: string): number {
   return getWallLayout(sections).find((layout) => layout.section.id === sectionId)?.offsetXIn ?? 0;
 }

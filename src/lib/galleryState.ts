@@ -18,6 +18,35 @@ export const STORAGE_KEY = 'gallery-designer-state-v1';
 
 export type MessageTone = 'info' | 'error';
 
+// Unifies what were three hand-synced primitives (selectedPieceIds,
+// selectedFeatureId, and — historically — a piece/feature toggle) into one
+// field, so "selecting a piece clears the feature selection" is true by
+// construction instead of needing a defensive clear at every write site.
+//
+// Wall-section selection is deliberately NOT folded in here: it is an
+// independent axis today (a section can stay selected while a piece or
+// feature is selected/cleared — see App.test.tsx "allows a wall section and
+// art piece to be selected at the same time"), so it remains its own
+// `useState` in App().
+export type Selection =
+  | { kind: 'none' }
+  | { kind: 'pieces'; pieceIds: string[] }
+  | { kind: 'feature'; featureId: string };
+
+export function getSelectedPieceIds(selection: Selection): string[] {
+  return selection.kind === 'pieces' ? selection.pieceIds : [];
+}
+
+export function getSelectedFeatureId(selection: Selection): string {
+  return selection.kind === 'feature' ? selection.featureId : '';
+}
+
+// Canonicalizes an empty piece-id list to `{ kind: 'none' }` so callers never
+// have to special-case a `'pieces'` selection with zero ids.
+export function pieceSelection(pieceIds: string[]): Selection {
+  return pieceIds.length > 0 ? { kind: 'pieces', pieceIds } : { kind: 'none' };
+}
+
 export interface GalleryState {
   unit: Unit;
   themeMode: ThemeMode;
@@ -27,7 +56,7 @@ export interface GalleryState {
   placements: Placement[];
   features: EditorFeatures;
   autoPlacementSettings: AutoPlacementSettings;
-  selectedPieceIds: string[];
+  selection: Selection;
   message: string;
   messageTone: MessageTone;
   messageRevision: number;
@@ -35,6 +64,16 @@ export interface GalleryState {
 
 export function withMessage(current: GalleryState, message: string, tone: MessageTone = 'info') {
   return { message, messageTone: tone, messageRevision: current.messageRevision + 1 };
+}
+
+// The wire/persisted shape must not change: `selection` (and the message
+// fields, which are write-then-discarded on load anyway) never hit
+// localStorage. Only `selectedPieceIds` — projected from `selection` — is
+// persisted, matching the format written before this field existed.
+export function toPersistedState(state: GalleryState) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to exclude them
+  const { selection, message, messageTone, messageRevision, ...rest } = state;
+  return { ...rest, selectedPieceIds: getSelectedPieceIds(selection) };
 }
 
 export const defaultState: GalleryState = {
@@ -71,7 +110,7 @@ export const defaultState: GalleryState = {
     layoutPreference: 'auto',
     wallFeatures: [],
   },
-  selectedPieceIds: ['piece-1'],
+  selection: { kind: 'pieces', pieceIds: ['piece-1'] },
   message: 'Enter wall and art dimensions, then place pieces on the scaled wall.',
   messageTone: 'info',
   messageRevision: 0,
@@ -257,10 +296,10 @@ export function loadState(): GalleryState {
     }
     const validPieceIds = new Set(parsed.pieces?.map((piece) => piece.id) ?? []);
     const persistedRecord = parsed as Record<string, unknown>;
-    const persistedSelectedPieceIds = Array.isArray(parsed.selectedPieceIds)
+    const persistedSelectedPieceIds = Array.isArray(persistedRecord.selectedPieceIds)
       ? [
           ...new Set(
-            parsed.selectedPieceIds.filter(
+            (persistedRecord.selectedPieceIds as unknown[]).filter(
               (pieceId): pieceId is string =>
                 typeof pieceId === 'string' && validPieceIds.has(pieceId),
             ),
@@ -286,7 +325,7 @@ export function loadState(): GalleryState {
       autoPlacementSettings: isAutoPlacementSettings(parsed.autoPlacementSettings)
         ? parsed.autoPlacementSettings
         : defaultState.autoPlacementSettings,
-      selectedPieceIds: persistedSelectedPieceIds,
+      selection: pieceSelection(persistedSelectedPieceIds),
       message: defaultState.message,
       messageTone: defaultState.messageTone,
       messageRevision: defaultState.messageRevision,

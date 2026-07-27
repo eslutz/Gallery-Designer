@@ -1,5 +1,15 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { defaultState, getDefaultState, loadState, STORAGE_KEY, withMessage } from './galleryState';
+import {
+  defaultState,
+  getDefaultState,
+  getSelectedFeatureId,
+  getSelectedPieceIds,
+  loadState,
+  pieceSelection,
+  STORAGE_KEY,
+  toPersistedState,
+  withMessage,
+} from './galleryState';
 
 describe('gallery state persistence', () => {
   beforeEach(() => {
@@ -43,7 +53,7 @@ describe('gallery state persistence', () => {
     expect(loaded.themeMode).toBe('dark');
     expect(loaded.pieces).toEqual(persisted.pieces);
     expect(loaded.placements).toEqual(persisted.placements);
-    expect(loaded.selectedPieceIds).toEqual(['art-1']);
+    expect(getSelectedPieceIds(loaded.selection)).toEqual(['art-1']);
     // The status message is session-local, not persisted across reloads.
     expect(loaded.message).toBe(defaultState.message);
     expect(loaded.messageTone).toBe(defaultState.messageTone);
@@ -60,7 +70,7 @@ describe('gallery state persistence', () => {
       }),
     );
 
-    expect(loadState().selectedPieceIds).toEqual(['art-1']);
+    expect(getSelectedPieceIds(loadState().selection)).toEqual(['art-1']);
   });
 
   it('migrates a legacy singular selectedPieceId', () => {
@@ -70,7 +80,38 @@ describe('gallery state persistence', () => {
     persisted.selectedPieceId = 'art-1';
     localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
 
-    expect(loadState().selectedPieceIds).toEqual(['art-1']);
+    expect(getSelectedPieceIds(loadState().selection)).toEqual(['art-1']);
+  });
+
+  it('projects selection down to a plain selectedPieceIds array for persistence, dropping message fields', () => {
+    const persisted = toPersistedState({
+      ...defaultState,
+      selection: { kind: 'feature', featureId: 'sofa-1' },
+      message: 'Placed a sofa.',
+      messageTone: 'info',
+      messageRevision: 3,
+    });
+
+    expect(persisted).not.toHaveProperty('selection');
+    expect(persisted).not.toHaveProperty('message');
+    expect(persisted).not.toHaveProperty('messageTone');
+    expect(persisted).not.toHaveProperty('messageRevision');
+    // A feature (or no) selection has no piece ids to persist.
+    expect((persisted as { selectedPieceIds: string[] }).selectedPieceIds).toEqual([]);
+
+    const withPieces = toPersistedState({
+      ...defaultState,
+      selection: pieceSelection(['piece-9']),
+    });
+    expect((withPieces as { selectedPieceIds: string[] }).selectedPieceIds).toEqual(['piece-9']);
+  });
+
+  it('canonicalizes an empty piece-id list to "none"', () => {
+    expect(pieceSelection([])).toEqual({ kind: 'none' });
+    expect(pieceSelection(['a', 'b'])).toEqual({ kind: 'pieces', pieceIds: ['a', 'b'] });
+    expect(getSelectedPieceIds({ kind: 'none' })).toEqual([]);
+    expect(getSelectedFeatureId({ kind: 'pieces', pieceIds: ['a'] })).toBe('');
+    expect(getSelectedFeatureId({ kind: 'feature', featureId: 'lamp-1' })).toBe('lamp-1');
   });
 
   it('bumps the revision and sets the tone on every message update', () => {

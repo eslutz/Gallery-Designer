@@ -34,8 +34,12 @@ import { parseDesignFile, serializeDesignFile } from './lib/designFile';
 import { downloadPdf, downloadPng, type ExportDesignInput } from './lib/exportDesign';
 import {
   defaultState,
+  getSelectedFeatureId,
+  getSelectedPieceIds,
   loadState,
+  pieceSelection,
   STORAGE_KEY,
+  toPersistedState,
   withMessage,
   type GalleryState,
 } from './lib/galleryState';
@@ -74,6 +78,7 @@ import {
 import { formatMeasurement, roundToPrecision } from './lib/units';
 import {
   applyWallSectionFeatures,
+  getNextSectionId,
   getSectionOffsetY,
   getSectionById,
   getSectionOffsetX,
@@ -201,8 +206,10 @@ export default function App() {
     message: string;
     diagnostics: AutoPlacementDiagnostics;
   } | null>(null);
+  // Section selection is deliberately independent from `state.selection`
+  // (pieces/feature): it can stay active while a piece or feature is
+  // selected or cleared. See the `Selection` type in lib/galleryState.ts.
   const [selectedSectionId, setSelectedSectionId] = useState('');
-  const [selectedFeatureId, setSelectedFeatureId] = useState('');
   const [dragPreview, dispatchDragPreview] = useReducer(dragPreviewReducer, DRAG_PREVIEW_IDLE);
   const { wallDragPreview, groupDragPreview } = dragPreview;
   const setWallDragPreview = useCallback((preview: WallDragPreview | null) => {
@@ -221,7 +228,6 @@ export default function App() {
   const [advancedDrawerOpen, setAdvancedDrawerOpen] = useState(false);
   const [settingsDrawerOpen, setSettingsDrawerOpen] = useState(false);
   const [expandedSectionId, setExpandedSectionId] = useState(defaultState.sections[0]?.id ?? '');
-  const [expandedPieceId, setExpandedPieceId] = useState(defaultState.pieces[0]?.id ?? '');
   const [autoPlacementVariantIndex, setAutoPlacementVariantIndex] = useState(0);
   const [cursorInteraction, setCursorInteraction] = useState<CursorInteraction>('idle');
   const [wallZoom, setWallZoom] = useState<WallZoomState>(() =>
@@ -311,7 +317,15 @@ export default function App() {
       state.features.measurementReferenceMode,
     ],
   );
-  const activeSelectedPieceId = state.selectedPieceIds.at(-1) ?? '';
+  const selectedPieceIds = getSelectedPieceIds(state.selection);
+  const selectedFeatureId = getSelectedFeatureId(state.selection);
+  // Derived, not stored: a piece row is "expanded" exactly when it is the
+  // sole selected piece. This deliberately means selecting a feature or
+  // section, running auto-place, multi-selecting, importing a design, or
+  // clearing selection now all collapse any previously-expanded piece row,
+  // since none of those leave exactly one piece selected.
+  const expandedPieceId = selectedPieceIds.length === 1 ? selectedPieceIds[0] : '';
+  const activeSelectedPieceId = selectedPieceIds.at(-1) ?? '';
   const selectedPiece = state.pieces.find((piece) => piece.id === activeSelectedPieceId);
   const selectedPlacement = state.placements.find(
     (placement) => placement.pieceId === activeSelectedPieceId,
@@ -376,7 +390,7 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(toPersistedState(state)));
     } catch {
       // Persistence is a convenience; a full or unavailable store must not break editing.
     }
@@ -617,22 +631,19 @@ export default function App() {
   }, [clearMenuOpen]);
 
   function selectPiece(pieceId: string) {
-    setSelectedFeatureId('');
-    setExpandedPieceId(pieceId);
-    setState((current) => ({ ...current, selectedPieceIds: [pieceId] }));
+    setState((current) => ({ ...current, selection: { kind: 'pieces', pieceIds: [pieceId] } }));
   }
 
   function togglePieceSelection(pieceId: string) {
-    setSelectedFeatureId('');
     setState((current) => {
-      const selected = current.selectedPieceIds.includes(pieceId);
+      const currentIds = getSelectedPieceIds(current.selection);
+      const selected = currentIds.includes(pieceId);
       const nextSelectedPieceIds = selected
-        ? current.selectedPieceIds.filter((candidate) => candidate !== pieceId)
-        : [...current.selectedPieceIds, pieceId];
-      setExpandedPieceId(nextSelectedPieceIds.at(-1) ?? '');
+        ? currentIds.filter((candidate) => candidate !== pieceId)
+        : [...currentIds, pieceId];
       return {
         ...current,
-        selectedPieceIds: nextSelectedPieceIds,
+        selection: pieceSelection(nextSelectedPieceIds),
       };
     });
   }
@@ -646,36 +657,40 @@ export default function App() {
   }
 
   function selectFeature(featureId: string) {
-    setSelectedFeatureId(featureId);
-    setState((current) => ({ ...current, selectedPieceIds: [] }));
+    setState((current) => ({ ...current, selection: { kind: 'feature', featureId } }));
   }
 
   function toggleFeatureSelection(featureId: string) {
-    setSelectedFeatureId((current) => (current === featureId ? '' : featureId));
-    setState((current) => ({ ...current, selectedPieceIds: [] }));
+    setState((current) => ({
+      ...current,
+      selection:
+        current.selection.kind === 'feature' && current.selection.featureId === featureId
+          ? { kind: 'none' }
+          : { kind: 'feature', featureId },
+    }));
   }
 
   function selectSection(sectionId: string) {
-    setSelectedFeatureId('');
+    setState((current) =>
+      current.selection.kind === 'feature' ? { ...current, selection: { kind: 'none' } } : current,
+    );
     setSelectedSectionId(sectionId);
     setExpandedSectionId(sectionId);
   }
 
   function toggleSectionSelection(sectionId: string) {
-    setSelectedFeatureId('');
-    setSelectedSectionId((current) => {
-      const next = current === sectionId ? '' : sectionId;
-      setExpandedSectionId(next);
-      return next;
-    });
+    const next = selectedSectionId === sectionId ? '' : sectionId;
+    setState((current) =>
+      current.selection.kind === 'feature' ? { ...current, selection: { kind: 'none' } } : current,
+    );
+    setSelectedSectionId(next);
+    setExpandedSectionId(next);
   }
 
   function clearSelection() {
     setSelectedSectionId('');
-    setSelectedFeatureId('');
     setExpandedSectionId('');
-    setExpandedPieceId('');
-    setState((current) => ({ ...current, selectedPieceIds: [] }));
+    setState((current) => ({ ...current, selection: { kind: 'none' } }));
   }
 
   function getUndoFingerprint(snapshot: GalleryState) {
@@ -744,28 +759,29 @@ export default function App() {
 
   function addSection() {
     recordUndoSnapshot();
-    setState((current) => {
-      const index = current.sections.length + 1;
-      const normalizedSections = normalizeWallSections(current.sections);
-      const previousSection = normalizedSections.at(-1);
-      const sectionId = `section-${index}`;
-      setExpandedSectionId(sectionId);
-      setSelectedSectionId(sectionId);
-      return {
-        ...current,
-        sections: [
-          ...normalizedSections,
-          {
-            id: sectionId,
-            name: `Section ${index}`,
-            widthIn: previousSection?.widthIn ?? 96,
-            heightIn: previousSection?.heightIn ?? 84,
-            xIn: previousSection ? (previousSection.xIn ?? 0) + previousSection.widthIn : 0,
-            yIn: previousSection?.yIn ?? 0,
-          },
-        ],
-      };
-    });
+    // Computed outside the updater: it must be pure, and StrictMode
+    // double-invokes it, so the section id (and the setSelectedSectionId/
+    // setExpandedSectionId calls that depend on it) cannot be decided inside.
+    const normalizedSections = normalizeWallSections(latestStateRef.current.sections);
+    const previousSection = normalizedSections.at(-1);
+    const sectionId = getNextSectionId(normalizedSections);
+    const index = normalizedSections.length + 1;
+    setState((current) => ({
+      ...current,
+      sections: [
+        ...normalizeWallSections(current.sections),
+        {
+          id: sectionId,
+          name: `Section ${index}`,
+          widthIn: previousSection?.widthIn ?? 96,
+          heightIn: previousSection?.heightIn ?? 84,
+          xIn: previousSection ? (previousSection.xIn ?? 0) + previousSection.widthIn : 0,
+          yIn: previousSection?.yIn ?? 0,
+        },
+      ],
+    }));
+    setExpandedSectionId(sectionId);
+    setSelectedSectionId(sectionId);
   }
 
   function removeSection(sectionId: string) {
@@ -800,7 +816,6 @@ export default function App() {
 
   function addPiece() {
     recordUndoSnapshot();
-    setSelectedFeatureId('');
     setState((current) => {
       const index = current.pieces.length + 1;
       const piece = {
@@ -809,18 +824,16 @@ export default function App() {
         widthIn: 16,
         heightIn: 20,
       };
-      setExpandedPieceId(piece.id);
       return {
         ...current,
         pieces: [...current.pieces, piece],
-        selectedPieceIds: [piece.id],
+        selection: { kind: 'pieces', pieceIds: [piece.id] },
       };
     });
   }
 
   function duplicatePiece(pieceId: string) {
     recordUndoSnapshot();
-    setSelectedFeatureId('');
     setState((current) => {
       const source = current.pieces.find((piece) => piece.id === pieceId);
       if (!source) {
@@ -832,11 +845,10 @@ export default function App() {
         label: `${source.label} copy`,
         hookSpec: source.hookSpec ? { ...source.hookSpec } : undefined,
       };
-      setExpandedPieceId(duplicate.id);
       return {
         ...current,
         pieces: [...current.pieces, duplicate],
-        selectedPieceIds: [duplicate.id],
+        selection: { kind: 'pieces', pieceIds: [duplicate.id] },
         ...withMessage(current, `Duplicated ${source.label}.`),
       };
     });
@@ -859,14 +871,16 @@ export default function App() {
 
   function removePiece(pieceId: string) {
     recordUndoSnapshot();
-    setSelectedFeatureId('');
     setState((current) => {
       const nextPieces = current.pieces.filter((piece) => piece.id !== pieceId);
+      const nextSelectedPieceIds = getSelectedPieceIds(current.selection).filter(
+        (candidate) => candidate !== pieceId,
+      );
       return {
         ...current,
         pieces: nextPieces,
         placements: current.placements.filter((placement) => placement.pieceId !== pieceId),
-        selectedPieceIds: current.selectedPieceIds.filter((candidate) => candidate !== pieceId),
+        selection: pieceSelection(nextSelectedPieceIds),
       };
     });
   }
@@ -967,7 +981,6 @@ export default function App() {
 
   function commitPiecePlacement(proposedPlacement: Placement) {
     recordUndoSnapshot();
-    setSelectedFeatureId('');
     const snapped = applyFeaturesWithMetadata(latestStateRef.current, proposedPlacement);
     const guides = placementsMatch(snapped.value, proposedPlacement) ? snapped.guides : [];
     setState((current) => {
@@ -987,7 +1000,7 @@ export default function App() {
 
       return {
         ...current,
-        selectedPieceIds: [placement.pieceId],
+        selection: { kind: 'pieces', pieceIds: [placement.pieceId] },
         placements: [
           ...current.placements.filter((candidate) => candidate.pieceId !== placement.pieceId),
           placement,
@@ -1018,7 +1031,7 @@ export default function App() {
     const movingIds = new Set(pieceIds);
     setState((current) => ({
       ...current,
-      selectedPieceIds: pieceIds,
+      selection: pieceSelection(pieceIds),
       placements: [
         ...current.placements.filter((placement) => !movingIds.has(placement.pieceId)),
         ...proposedPlacements,
@@ -1045,7 +1058,6 @@ export default function App() {
     if (pieceIds.length === 1 && proposedPlacements[0]) {
       const proposedPlacement = proposedPlacements[0];
       recordUndoSnapshot();
-      setSelectedFeatureId('');
       const snapped = applyFeaturesWithMetadata(
         {
           ...latestStateRef.current,
@@ -1059,7 +1071,7 @@ export default function App() {
       const guides = snapped.guides;
       setState((current) => ({
         ...current,
-        selectedPieceIds: [proposedPlacement.pieceId],
+        selection: { kind: 'pieces', pieceIds: [proposedPlacement.pieceId] },
         placements: [
           ...current.placements.filter(
             (candidate) => candidate.pieceId !== proposedPlacement.pieceId,
@@ -1105,7 +1117,7 @@ export default function App() {
         (candidate) => candidate.id === proposedFeature.id,
       );
       if (!feature) {
-        return current;
+        return { ...current, selection: { kind: 'feature', featureId: proposedFeature.id } };
       }
       const placedFeature = {
         ...applyFeatureFeatures(current, { ...feature, ...proposedFeature, placed: true }),
@@ -1113,7 +1125,7 @@ export default function App() {
       };
       return {
         ...current,
-        selectedPieceIds: [],
+        selection: { kind: 'feature', featureId: proposedFeature.id },
         autoPlacementSettings: {
           ...current.autoPlacementSettings,
           wallFeatures: current.autoPlacementSettings.wallFeatures.map((candidate) =>
@@ -1123,7 +1135,6 @@ export default function App() {
         ...withMessage(current, `Placed ${placedFeature.name} on the wall.`),
       };
     });
-    setSelectedFeatureId(proposedFeature.id);
     if (guides.length > 0) {
       showAlignmentGuides(guides);
     }
@@ -1139,12 +1150,12 @@ export default function App() {
         (candidate) => candidate.id === proposedFeature.id,
       );
       if (!feature) {
-        return current;
+        return { ...current, selection: { kind: 'feature', featureId: proposedFeature.id } };
       }
       const placedFeature = { ...feature, ...proposedFeature, placed: true };
       return {
         ...current,
-        selectedPieceIds: [],
+        selection: { kind: 'feature', featureId: proposedFeature.id },
         autoPlacementSettings: {
           ...current.autoPlacementSettings,
           wallFeatures: current.autoPlacementSettings.wallFeatures.map((candidate) =>
@@ -1154,7 +1165,6 @@ export default function App() {
         ...withMessage(current, `Moved ${placedFeature.name} on the wall.`),
       };
     });
-    setSelectedFeatureId(proposedFeature.id);
     if (guides.length > 0) {
       showAlignmentGuides(guides);
     } else {
@@ -1165,11 +1175,12 @@ export default function App() {
 
   function clearPlacedArt() {
     recordUndoSnapshot();
-    setSelectedFeatureId('');
     setState((current) => ({
       ...current,
       placements: [],
-      selectedPieceIds: current.pieces[0] ? [current.pieces[0].id] : [],
+      selection: current.pieces[0]
+        ? { kind: 'pieces', pieceIds: [current.pieces[0].id] }
+        : { kind: 'none' },
       ...withMessage(current, 'Cleared placed art. All pieces returned to the staging tray.'),
     }));
   }
@@ -1190,9 +1201,9 @@ export default function App() {
 
   function clearWallFeatures() {
     recordUndoSnapshot();
-    setSelectedFeatureId('');
     setState((current) => ({
       ...current,
+      selection: current.selection.kind === 'feature' ? { kind: 'none' } : current.selection,
       autoPlacementSettings: {
         ...current.autoPlacementSettings,
         wallFeatures: [],
@@ -1222,7 +1233,7 @@ export default function App() {
         context: { ...defaultState.autoPlacementSettings.context },
         wallFeatures: [],
       },
-      selectedPieceIds: [],
+      selection: { kind: 'none' },
       ...withMessage(
         current,
         'Reset the entire design. Add wall sections and art pieces to start over.',
@@ -1298,10 +1309,9 @@ export default function App() {
 
   function removePlacement(pieceId: string) {
     recordUndoSnapshot();
-    setSelectedFeatureId('');
     setState((current) => ({
       ...current,
-      selectedPieceIds: [pieceId],
+      selection: { kind: 'pieces', pieceIds: [pieceId] },
       placements: current.placements.filter((placement) => placement.pieceId !== pieceId),
       ...withMessage(current, `Returned ${getPieceLabel(current, pieceId)} to the staging tray.`),
     }));
@@ -1315,7 +1325,7 @@ export default function App() {
     const movingIds = new Set(pieceIds);
     setState((current) => ({
       ...current,
-      selectedPieceIds: pieceIds,
+      selection: pieceSelection(pieceIds),
       placements: current.placements.filter((placement) => !movingIds.has(placement.pieceId)),
       ...withMessage(
         current,
@@ -1334,7 +1344,7 @@ export default function App() {
       );
       return {
         ...current,
-        selectedPieceIds: [],
+        selection: { kind: 'feature', featureId },
         autoPlacementSettings: {
           ...current.autoPlacementSettings,
           wallFeatures: current.autoPlacementSettings.wallFeatures.map((candidate) =>
@@ -1349,7 +1359,6 @@ export default function App() {
         ),
       };
     });
-    setSelectedFeatureId(featureId);
   }
 
   function handleWallPointerDownCapture(event: React.PointerEvent<SVGSVGElement>) {
@@ -1463,7 +1472,7 @@ export default function App() {
       startClientX: event.clientX,
       startClientY: event.clientY,
       additive: event.shiftKey || event.metaKey || event.ctrlKey,
-      initialPieceIds: state.selectedPieceIds,
+      initialPieceIds: selectedPieceIds,
       hasMoved: false,
     };
   }
@@ -1681,11 +1690,12 @@ export default function App() {
       (placement) => !existingPieceIds.has(placement.pieceId),
     );
     recordUndoSnapshot();
-    setSelectedFeatureId('');
     setState((current) => ({
       ...current,
       placements: result.placements,
-      selectedPieceIds: firstNewPlacement ? [firstNewPlacement.pieceId] : current.selectedPieceIds,
+      selection: firstNewPlacement
+        ? { kind: 'pieces', pieceIds: [firstNewPlacement.pieceId] }
+        : pieceSelection(getSelectedPieceIds(current.selection)),
       ...withMessage(
         current,
         result.preservedPlacementCount > 0
@@ -1735,11 +1745,10 @@ export default function App() {
 
     setAutoPlacementFailure(null);
     recordUndoSnapshot();
-    setSelectedFeatureId('');
     setState((current) => ({
       ...current,
       placements: result.placements,
-      selectedPieceIds: [pieceId],
+      selection: { kind: 'pieces', pieceIds: [pieceId] },
       ...withMessage(current, `Placed ${piece.label} on the wall.`),
     }));
   }
@@ -1770,8 +1779,8 @@ export default function App() {
       return;
     }
     const rect = event.currentTarget.getBoundingClientRect();
-    const pieceIds = state.selectedPieceIds.includes(placement.pieceId)
-      ? state.selectedPieceIds.filter((pieceId) =>
+    const pieceIds = selectedPieceIds.includes(placement.pieceId)
+      ? selectedPieceIds.filter((pieceId) =>
           state.placements.some((candidate) => candidate.pieceId === pieceId),
         )
       : [placement.pieceId];
@@ -1834,8 +1843,13 @@ export default function App() {
         event,
       );
     }
-    setSelectedFeatureId('');
-    if (!state.selectedPieceIds.includes(placement.pieceId)) {
+    if (selectedPieceIds.includes(placement.pieceId)) {
+      setState((current) =>
+        current.selection.kind === 'feature'
+          ? { ...current, selection: { kind: 'none' } }
+          : current,
+      );
+    } else {
       selectPiece(placement.pieceId);
     }
   }
@@ -1972,7 +1986,6 @@ export default function App() {
     }
     if (!marquee.hasMoved) {
       marquee.hasMoved = true;
-      setSelectedFeatureId('');
       setSelectedSectionId('');
       startSuppressingTextSelection();
     }
@@ -1986,12 +1999,14 @@ export default function App() {
     setSelectionMarquee(rect);
     setState((current) => ({
       ...current,
-      selectedPieceIds: marquee.additive
-        ? [
-            ...marquee.initialPieceIds,
-            ...hitIds.filter((id) => !marquee.initialPieceIds.includes(id)),
-          ]
-        : hitIds,
+      selection: pieceSelection(
+        marquee.additive
+          ? [
+              ...marquee.initialPieceIds,
+              ...hitIds.filter((id) => !marquee.initialPieceIds.includes(id)),
+            ]
+          : hitIds,
+      ),
     }));
     return true;
   }
@@ -2254,7 +2269,7 @@ export default function App() {
       return;
     }
 
-    const selectedPlacedPieceIds = state.selectedPieceIds.filter((pieceId) =>
+    const selectedPlacedPieceIds = selectedPieceIds.filter((pieceId) =>
       state.placements.some((placement) => placement.pieceId === pieceId),
     );
     if (!selectedPiece || !selectedPlacement || selectedPlacedPieceIds.length === 0) {
@@ -2337,12 +2352,12 @@ export default function App() {
       ArrowRight: [step, 0],
     };
     const [deltaX, deltaY] = deltas[event.key];
-    const pieceIds = state.selectedPieceIds.includes(placement.pieceId)
-      ? state.selectedPieceIds.filter((pieceId) =>
+    const pieceIds = selectedPieceIds.includes(placement.pieceId)
+      ? selectedPieceIds.filter((pieceId) =>
           state.placements.some((candidate) => candidate.pieceId === pieceId),
         )
       : [placement.pieceId];
-    if (!state.selectedPieceIds.includes(placement.pieceId)) {
+    if (!selectedPieceIds.includes(placement.pieceId)) {
       selectPiece(placement.pieceId);
     }
     nudgePieceGroup(pieceIds, deltaX, deltaY);
@@ -2808,7 +2823,7 @@ export default function App() {
   }
 
   function exportJson() {
-    const json = serializeDesignFile(state);
+    const json = serializeDesignFile({ ...state, selectedPieceIds });
     const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -2829,15 +2844,17 @@ export default function App() {
     }
 
     try {
-      const imported = parseDesignFile(await file.text());
+      const { selectedPieceIds: importedSelectedPieceIds, ...importedRest } = parseDesignFile(
+        await file.text(),
+      );
       recordUndoSnapshot();
       setState((current) => ({
         ...defaultState,
-        ...imported,
+        ...importedRest,
+        selection: pieceSelection(importedSelectedPieceIds),
         ...withMessage(current, 'JSON design file imported.'),
       }));
       setSelectedSectionId('');
-      setSelectedFeatureId('');
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -3029,7 +3046,7 @@ export default function App() {
               {state.pieces.map((piece, index) => (
                 <article
                   className={`setup-row piece-row ${
-                    state.selectedPieceIds.includes(piece.id) ? 'selected' : ''
+                    selectedPieceIds.includes(piece.id) ? 'selected' : ''
                   } ${expandedPieceId === piece.id ? 'expanded' : 'collapsed'}`}
                   key={piece.id}
                   onClick={(event) => {
@@ -3228,7 +3245,7 @@ export default function App() {
                 sections={state.sections}
                 pieces={state.pieces}
                 placements={state.placements}
-                selectedPieceIds={state.selectedPieceIds}
+                selectedPieceIds={selectedPieceIds}
                 selectedFeatureId={selectedFeatureId}
                 selectedSectionId={selectedSectionId}
                 selectionMarquee={selectionMarquee}

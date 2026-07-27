@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyWallSectionFeatures,
+  getNextSectionId,
   getSectionOffsetY,
   getInsetWallExteriorPaths,
   getWallExteriorEdges,
@@ -185,6 +186,30 @@ describe('wall section geometry', () => {
         { x: 2, y: 78 },
       ]),
     );
+  });
+});
+
+describe('getNextSectionId', () => {
+  it('numbers the first section from the current count', () => {
+    expect(getNextSectionId([])).toBe('section-1');
+    expect(getNextSectionId(sections)).toBe('section-3');
+  });
+
+  it('produces a unique id after removing a middle section', () => {
+    const threeSections: WallSection[] = [
+      { id: 'section-1', name: 'Section 1', widthIn: 96, heightIn: 84, xIn: 0, yIn: 0 },
+      { id: 'section-2', name: 'Section 2', widthIn: 96, heightIn: 84, xIn: 96, yIn: 0 },
+      { id: 'section-3', name: 'Section 3', widthIn: 96, heightIn: 84, xIn: 192, yIn: 0 },
+    ];
+    // Removing the middle section leaves length 2, so a naive
+    // `section-${length + 1}` recomputation would collide with the
+    // still-existing section-3.
+    const afterRemovingMiddle = [threeSections[0], threeSections[2]];
+
+    const nextId = getNextSectionId(afterRemovingMiddle);
+
+    expect(afterRemovingMiddle.some((section) => section.id === nextId)).toBe(false);
+    expect(nextId).toBe('section-4');
   });
 });
 
