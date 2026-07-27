@@ -1993,7 +1993,8 @@ select:focus,
 }
 
 .measurements-table td:nth-child(2) > span,
-.measurements-table td:nth-child(3) > span {
+.measurements-table td:nth-child(3) > span,
+.measurements-table td:nth-child(4) > span {
   display: block;
 }
 

@@ -114,15 +114,6 @@ export interface MeasurementReference {
   formatted: string;
 }
 
-// A side reference additionally records which edge it's measured from, since
-// that determines how a piece-local offset (like a hook's distance from the
-// piece's own left edge) combines with it: an offset adds directly onto a
-// left-anchored reference, but must first be flipped to a right-edge
-// distance before adding onto a right-anchored one.
-export interface SideMeasurementReference extends MeasurementReference {
-  anchor: 'left' | 'right';
-}
-
 export interface PieceDimensions {
   widthIn: number;
   heightIn: number;
@@ -137,13 +128,16 @@ export interface HookPoint {
 }
 
 // Unlike HookPoint (piece-local, used to draw the hook mark on the piece
-// itself), these are wall/section-anchored using the same reference points
-// as the piece's own topReference/sideReference — what an installer actually
-// needs to mark a hook's position on the wall, not just within the frame.
+// itself), these are always measured from the top-left corner of the entire
+// continuous wall — a fixed point an installer can mark once and measure
+// every hook from, regardless of which section a piece lands in or whether
+// the piece placement above is shown in relative or absolute mode.
 export interface HookMeasurement {
   label: string;
-  topReference: MeasurementReference;
-  sideReference: MeasurementReference;
+  topDistanceIn: number;
+  topFormatted: string;
+  sideDistanceIn: number;
+  sideFormatted: string;
 }
 
 export interface MeasurementInstruction {
@@ -153,7 +147,7 @@ export interface MeasurementInstruction {
   sectionName: string;
   pieceDimensions: PieceDimensions;
   topReference: MeasurementReference;
-  sideReference: SideMeasurementReference;
+  sideReference: MeasurementReference;
   hooks: HookMeasurement[];
 }
 

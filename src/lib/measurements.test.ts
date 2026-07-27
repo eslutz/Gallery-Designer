@@ -33,7 +33,13 @@ describe('measurement instructions', () => {
     expect(instructions[2].topReference.distanceIn).toBe(8);
   });
 
-  it('anchors hook measurements to the wall/section, not the piece frame', () => {
+  it('measures hooks from the wall origin, not the piece frame or the piece reference', () => {
+    // wallLeftReference is only used for the topmost-leftmost (index 0)
+    // piece; a filler piece up in the corner pushes the piece under test to
+    // index 1, so its own Side reference resolves to something other than
+    // the wall's left edge (here, the filler's right side) — hooks must
+    // ignore that and still measure from the true wall origin.
+    const filler: ArtPiece = { id: 'filler', label: 'Filler', widthIn: 10, heightIn: 10 };
     const piece: ArtPiece = {
       id: 'hooked',
       label: 'Hooked piece',
@@ -43,75 +49,60 @@ describe('measurement instructions', () => {
     };
     const instructions = buildMeasurementInstructions(
       sections,
-      [piece],
-      [{ pieceId: 'hooked', sectionId: 'main', xIn: 12, yIn: 10 }],
-      'in',
-    );
-
-    const [instruction] = instructions;
-    expect(instruction.topReference).toMatchObject({ label: 'top of Main wall', distanceIn: 10 });
-    expect(instruction.sideReference).toMatchObject({
-      label: 'left side of Main wall',
-      distanceIn: 12,
-      anchor: 'left',
-    });
-
-    const [hook] = instruction.hooks;
-    // 10 (piece's own top distance) + 3 (hook's offset within the frame) —
-    // not just the frame-local "3 in down" a hanger can't act on directly.
-    expect(hook.topReference).toEqual({
-      label: 'top of Main wall',
-      distanceIn: 13,
-      formatted: '13 in',
-    });
-    expect(hook.sideReference).toEqual({
-      label: 'left side of Main wall',
-      distanceIn: 18,
-      formatted: '18 in',
-    });
-  });
-
-  it('flips a hook offset onto the far edge when the nearest side reference is right-anchored', () => {
-    // wallLeftReference is only used for the topmost-leftmost (index 0)
-    // piece; a small filler piece up in the corner pushes the piece under
-    // test to index 1, so it goes through the nearest-reference search that
-    // can pick the section's right side instead.
-    const filler: ArtPiece = { id: 'filler', label: 'Filler', widthIn: 10, heightIn: 10 };
-    const piece: ArtPiece = {
-      id: 'right-anchored',
-      label: 'Right anchored',
-      widthIn: 20,
-      heightIn: 16,
-      hookSpec: { count: 1, topOffsetIn: 2, leftOffsetIn: 15 },
-    };
-    // Placed close to the wall's right edge (120 wide), and far enough below
-    // the filler that they don't share any side-reference candidates, so the
-    // nearest side reference is the section's right side rather than its left.
-    const instructions = buildMeasurementInstructions(
-      sections,
       [filler, piece],
       [
-        { pieceId: 'filler', sectionId: 'main', xIn: 0, yIn: 0 },
-        { pieceId: 'right-anchored', sectionId: 'main', xIn: 95, yIn: 50 },
+        { pieceId: 'filler', sectionId: 'main', xIn: 0, yIn: 10 },
+        { pieceId: 'hooked', sectionId: 'main', xIn: 12, yIn: 10 },
       ],
       'in',
     );
 
-    const instruction = instructions.find((item) => item.pieceLabel === 'Right anchored')!;
+    const instruction = instructions.find((item) => item.pieceLabel === 'Hooked piece')!;
+    // The piece's own Side reference is relative to its neighbor, not the wall.
     expect(instruction.sideReference).toMatchObject({
-      label: 'right side of Main wall',
-      anchor: 'right',
-      distanceIn: 5,
+      label: 'right side of Filler',
+      distanceIn: 2,
     });
 
     const [hook] = instruction.hooks;
-    // 5 (piece's own distance from the right edge) + 5 (hook's distance from
-    // the piece's own right edge, i.e. 20 wide - 15 from the left).
-    expect(hook.sideReference).toEqual({
-      label: 'right side of Main wall',
-      distanceIn: 10,
-      formatted: '10 in',
+    // Wall origin is (0, 0) here, so: 10 (piece top) + 3 (hook offset) = 13,
+    // and 12 (piece left) + 6 (hook offset) = 18 — independent of whatever
+    // reference the piece's own Side row happens to use.
+    expect(hook).toEqual({
+      label: 'Hook',
+      topDistanceIn: 13,
+      topFormatted: '13 in',
+      sideDistanceIn: 18,
+      sideFormatted: '18 in',
     });
+  });
+
+  it('measures hooks from the true wall origin across multiple sections, not the local section', () => {
+    const multiSectionWall: WallSection[] = [
+      { id: 'main', name: 'Main wall', widthIn: 120, heightIn: 96 },
+      { id: 'return', name: 'Return wall', widthIn: 48, heightIn: 72, xIn: 120, yIn: 24 },
+    ];
+    const piece: ArtPiece = {
+      id: 'hooked',
+      label: 'Hooked piece',
+      widthIn: 20,
+      heightIn: 16,
+      hookSpec: { count: 1, topOffsetIn: 2, leftOffsetIn: 4 },
+    };
+    const instructions = buildMeasurementInstructions(
+      multiSectionWall,
+      [piece],
+      [{ pieceId: 'hooked', sectionId: 'return', xIn: 8, yIn: 6 }],
+      'in',
+    );
+
+    const [hook] = instructions[0].hooks;
+    // Return section sits at (120, 24) within the continuous wall, so the
+    // hook's absolute position folds in that section offset too:
+    // top = 24 (section) + 6 (placement) + 2 (hook) = 32
+    // left = 120 (section) + 8 (placement) + 4 (hook) = 132
+    expect(hook.topDistanceIn).toBe(32);
+    expect(hook.sideDistanceIn).toBe(132);
   });
 
   it('can report absolute placement coordinates from the continuous wall origin', () => {

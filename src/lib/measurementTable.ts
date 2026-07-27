@@ -22,7 +22,7 @@ export interface MeasurementTableRow {
   dimensions?: string;
   topReference: string;
   sideReference: string;
-  hooks: string;
+  hooks: string[];
 }
 
 interface MeasurementTableOptions {
@@ -40,36 +40,13 @@ export function buildMeasurementTableRows(
     ...(options.includeDimensions ? { dimensions: instruction.pieceDimensions.formatted } : {}),
     topReference: `${instruction.topReference.formatted} from ${instruction.topReference.label}`,
     sideReference: `${instruction.sideReference.formatted} from ${instruction.sideReference.label}`,
-    hooks: formatHookSummary(instruction.hooks),
+    hooks: formatHookLines(instruction.hooks),
   }));
 }
 
-// hooks[].topReference/sideReference are all computed from the same piece
-// reference points (see buildMeasurementInstructions), so their labels never
-// differ across a piece's own hooks — only the distances can, when a
-// two-hook piece has asymmetric side offsets. That lets the top distance be
-// stated once instead of once per hook.
-export function formatHookSummary(hooks: HookMeasurement[]): string {
-  if (hooks.length === 0) {
-    return 'No hook data';
-  }
-
-  const [first] = hooks;
-  const topsMatch = hooks.every(
-    (hook) => hook.topReference.formatted === first.topReference.formatted,
-  );
-  const topPart = topsMatch
-    ? `${first.topReference.formatted} from ${first.topReference.label}`
-    : hooks
-        .map(
-          (hook) => `${hook.label}: ${hook.topReference.formatted} from ${hook.topReference.label}`,
-        )
-        .join('; ');
-
-  const sidePart =
-    hooks.length === 1
-      ? `${first.sideReference.formatted} from ${first.sideReference.label}`
-      : `${hooks.map((hook) => `${hook.label.toLowerCase()} ${hook.sideReference.formatted}`).join(', ')} from ${first.sideReference.label}`;
-
-  return `${topPart}; ${sidePart}`;
+// One line per hook, e.g. "5 in down, 12 in from left" — the caller adds its
+// own "Hook 1:"/"Hook 2:" numbering, the same way "Top:"/"Side:" labels are
+// added at each render site rather than baked in here.
+export function formatHookLines(hooks: HookMeasurement[]): string[] {
+  return hooks.map((hook) => `${hook.topFormatted} down, ${hook.sideFormatted} from left`);
 }

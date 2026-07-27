@@ -418,7 +418,7 @@ function buildMeasurementTableSvg(rows: MeasurementTableRow[], startY: number): 
     .map((row, index) => {
       const rowY = nextRowY;
       const rowHeight = getSvgMeasurementRowHeight(row);
-      const hookLines = wrapExportText(row.hooks, SVG_MEASUREMENT_HOOK_MAX_CHARS);
+      const hookLines = wrapSvgHookLines(row);
       nextRowY += rowHeight;
       const fill = index % 2 === 0 ? '#f8faf9' : '#eef2f3';
       return [
@@ -457,11 +457,25 @@ export function getSvgMeasurementTableHeight(rows: MeasurementTableRow[]): numbe
 }
 
 export function getSvgMeasurementRowHeight(row: MeasurementTableRow): number {
-  const hookLineCount = wrapExportText(row.hooks, SVG_MEASUREMENT_HOOK_MAX_CHARS).length;
+  const hookLineCount = wrapSvgHookLines(row).length;
   return Math.max(
     SVG_MEASUREMENT_MIN_ROW_HEIGHT,
     34 + hookLineCount * SVG_MEASUREMENT_HOOK_LINE_HEIGHT,
   );
+}
+
+// One numbered "Hook N: ..." line per hook, further wrapped for width —
+// mirrors the "Hook N:" labeling used in the interactive table.
+function wrapSvgHookLines(row: MeasurementTableRow): string[] {
+  return labelHookLines(row.hooks).flatMap((line) =>
+    wrapExportText(line, SVG_MEASUREMENT_HOOK_MAX_CHARS),
+  );
+}
+
+function labelHookLines(hooks: string[]): string[] {
+  return hooks.length === 0
+    ? ['No hook data']
+    : hooks.map((line, index) => `Hook ${index + 1}: ${line}`);
 }
 
 export function wrapExportText(value: string, maxCharacters: number): string[] {
@@ -661,7 +675,7 @@ export function buildPdfMeasurementRowLayout(
   const dimensionLines = splitPdfText(doc, row.dimensions ?? '', 80);
   const topLines = splitPdfText(doc, `Top: ${row.topReference}`, 245);
   const sideLines = splitPdfText(doc, `Side: ${row.sideReference}`, 245);
-  const hookLines = splitPdfText(doc, row.hooks, 145);
+  const hookLines = labelHookLines(row.hooks).flatMap((line) => splitPdfText(doc, line, 145));
   const lineHeight = 10;
   const rowContentHeight =
     12 +

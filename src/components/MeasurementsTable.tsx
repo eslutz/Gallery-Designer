@@ -2,7 +2,7 @@ import { Ruler } from 'lucide-react';
 import type { buildMeasurementInstructions } from '../lib/measurements';
 import {
   buildMeasurementTableRows,
-  formatHookSummary,
+  formatHookLines,
   MEASUREMENT_TABLE_HEADERS,
 } from '../lib/measurementTable';
 import { CollapsiblePanel } from './CollapsiblePanel';
@@ -51,7 +51,19 @@ export function MeasurementsTable({
                     <strong>Side:</strong> {row.sideReference}
                   </span>
                 </td>
-                <td>{row.hooks}</td>
+                <td>
+                  {row.hooks.length === 0 ? (
+                    'No hook data'
+                  ) : (
+                    <>
+                      {row.hooks.map((hookLine, index) => (
+                        <span key={index}>
+                          <strong>Hook {index + 1}:</strong> {hookLine}
+                        </span>
+                      ))}
+                    </>
+                  )}
+                </td>
               </tr>
             ))
           )}
@@ -78,10 +90,19 @@ export function MeasurementsTable({
                     {instruction.sideReference.formatted} from {instruction.sideReference.label}
                   </dd>
                 </div>
-                <div>
-                  <dt>Hooks</dt>
-                  <dd>{formatHookSummary(instruction.hooks)}</dd>
-                </div>
+                {instruction.hooks.length === 0 ? (
+                  <div>
+                    <dt>Hooks</dt>
+                    <dd>No hook data</dd>
+                  </div>
+                ) : (
+                  formatHookLines(instruction.hooks).map((hookLine, index) => (
+                    <div key={index}>
+                      <dt>Hook {index + 1}</dt>
+                      <dd>{hookLine}</dd>
+                    </div>
+                  ))
+                )}
               </dl>
             </article>
           ))}

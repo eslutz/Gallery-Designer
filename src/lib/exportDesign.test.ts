@@ -143,8 +143,7 @@ describe('buildExportSheetSvg', () => {
     expect(sheet.markup).toContain('Dimensions');
     expect(sheet.markup).toContain('20 in x 16 in');
     expect(sheet.markup).toContain('Top: 10 in from top of Main &amp; Entry');
-    expect(sheet.markup).toContain('12 in from top of Main &amp; Entry;');
-    expect(sheet.markup).toContain('18 in from left side of Main &amp;');
+    expect(sheet.markup).toContain('Hook 1: 12 in down, 18 in from');
     expect(diagramMarkup).not.toContain('20 in x 16 in');
     expect(diagramMarkup).not.toContain('12 in x 18 in');
   });
@@ -217,10 +216,11 @@ describe('buildExportSheetSvg', () => {
     const { markup } = buildExportSheetSvg(input);
     const measurementMarkup = markup.slice(markup.indexOf('Installation measurements'));
 
-    expect(row.hooks).toContain('right hook');
+    expect(row.hooks).toHaveLength(2);
     expect(getSvgMeasurementRowHeight(row)).toBeGreaterThan(78);
+    expect(measurementMarkup).toContain('Hook 1:');
+    expect(measurementMarkup).toContain('Hook 2:');
     expect(measurementMarkup).toContain('<tspan');
-    expect(measurementMarkup).not.toContain(`>${row.hooks}</text>`);
   });
 
   it('matches the app wall diagram with exterior edges and outside section labels', () => {
