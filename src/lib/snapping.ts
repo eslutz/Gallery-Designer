@@ -404,8 +404,23 @@ function snapRectToAlignment({
   toleranceIn: number;
 }): SnapResult<SnapRect> {
   const moving = rectEdges(rect);
-  const visibleEdgeRects = nearestVisibleRects(rect, edgeRects);
-  const visibleCenterRects = nearestVisibleRects(rect, centerRects);
+  // Occlusion must be computed once against every candidate that can block line
+  // of sight — edgeRects (art + static features) — not separately per target
+  // list. Otherwise a feature that isn't itself a center target (centerRects is
+  // art-only) can't occlude a farther piece's center, even though it visibly
+  // sits between that piece and the mover.
+  const allCandidates = new Map<string, SnapRect>();
+  for (const candidate of edgeRects) {
+    allCandidates.set(candidate.id, candidate);
+  }
+  for (const candidate of centerRects) {
+    allCandidates.set(candidate.id, candidate);
+  }
+  const visibleIds = new Set(
+    nearestVisibleRects(rect, [...allCandidates.values()]).map((candidate) => candidate.id),
+  );
+  const visibleEdgeRects = edgeRects.filter((candidate) => visibleIds.has(candidate.id));
+  const visibleCenterRects = centerRects.filter((candidate) => visibleIds.has(candidate.id));
   const targetX = alignmentTargetsX(visibleEdgeRects, visibleCenterRects);
   const targetY = alignmentTargetsY(visibleEdgeRects, visibleCenterRects);
 

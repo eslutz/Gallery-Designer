@@ -4357,7 +4357,7 @@ function FeatureControls({
       <ToggleFieldWithInfo
         label="Snap to alignment"
         checked={features.snapToAlignment}
-        info="Pieces snap to nearby artwork and wall alignment guides. Alignment tolerance controls how close a piece must be before snapping engages."
+        info="Pieces snap to the edges and centers of nearby artwork and furniture with a clear line of sight — not to the wall's own edges. Alignment tolerance controls how close a piece must be before snapping engages."
         onChange={(checked) => onChange({ snapToAlignment: checked })}
       />
       <ToggleFieldWithInfo

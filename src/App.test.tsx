@@ -1957,7 +1957,7 @@ describe('Gallery Designer app', () => {
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Snap to alignment information' }),
-    ).toHaveAccessibleDescription(/nearby artwork and wall alignment.*how close/i);
+    ).toHaveAccessibleDescription(/line of sight.*not to the wall's own edges.*how close/i);
     expect(
       screen.getByRole('button', { name: 'Show alignment guides information' }),
     ).toHaveAccessibleDescription(/dotted guide lines.*snapping engages/i);
