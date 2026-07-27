@@ -31,12 +31,13 @@ import { MessageToast } from './components/MessageToast';
 import { NumberField } from './components/NumberField';
 import { PlacementSettingsDrawer } from './components/PlacementSettingsDrawer';
 import { StagingTray } from './components/StagingTray';
-import { WallCanvas, type VisibleAlignmentGuides } from './components/WallCanvas';
+import { WallCanvas } from './components/WallCanvas';
 import {
   WallDragPreviewOverlay,
   type DragItemKind,
   type WallDragPreview,
 } from './components/WallDragPreviewOverlay';
+import { useAlignmentGuides } from './hooks/useAlignmentGuides';
 import { autoPlacePieces, type AutoPlacementDiagnostics } from './lib/autoPlace';
 import { parseDesignFile, serializeDesignFile } from './lib/designFile';
 import { downloadPdf, downloadPng, type ExportDesignInput } from './lib/exportDesign';
@@ -227,10 +228,9 @@ export default function App() {
     dispatchDragPreview({ type: 'set-group-preview', placements });
   }, []);
   const [selectionMarquee, setSelectionMarquee] = useState<Rect | null>(null);
-  const [visibleAlignmentGuides, setVisibleAlignmentGuides] = useState<VisibleAlignmentGuides>({
-    guides: [],
-    isLingering: false,
-  });
+  const { visibleAlignmentGuides, showAlignmentGuides, lingerAlignmentGuides } = useAlignmentGuides(
+    state.features.showAlignmentGuides,
+  );
   const [undoState, setUndoState] = useState<GalleryState | null>(null);
   const [clearMenuOpen, setClearMenuOpen] = useState(false);
   const [advancedDrawerOpen, setAdvancedDrawerOpen] = useState(false);
@@ -257,7 +257,6 @@ export default function App() {
   const dragRef = useRef<DragState | null>(null);
   const marqueeRef = useRef<MarqueeState | null>(null);
   const spacePressedRef = useRef(false);
-  const alignmentGuideTimeoutRef = useRef<number | null>(null);
   const sectionDragRef = useRef<SectionDragState | null>(null);
   const wallZoomGestureRef = useRef<WallZoomGesture | null>(null);
   const wallPanRef = useRef<WallPanState | null>(null);
@@ -390,15 +389,6 @@ export default function App() {
   useEffect(() => {
     latestStateRef.current = state;
   }, [state]);
-
-  useEffect(() => () => clearAlignmentGuideTimeout(), []);
-
-  useEffect(() => {
-    if (!state.features.showAlignmentGuides) {
-      clearAlignmentGuideTimeout();
-      setVisibleAlignmentGuides({ guides: [], isLingering: false });
-    }
-  }, [state.features.showAlignmentGuides]);
 
   useEffect(() => {
     try {
@@ -943,35 +933,6 @@ export default function App() {
       },
       guides: snapped.guides,
     };
-  }
-
-  function clearAlignmentGuideTimeout() {
-    if (alignmentGuideTimeoutRef.current !== null) {
-      window.clearTimeout(alignmentGuideTimeoutRef.current);
-      alignmentGuideTimeoutRef.current = null;
-    }
-  }
-
-  function showAlignmentGuides(guides: AlignmentGuide[]) {
-    clearAlignmentGuideTimeout();
-    setVisibleAlignmentGuides({
-      guides: guides.slice(0, 2),
-      isLingering: false,
-    });
-  }
-
-  function lingerAlignmentGuides() {
-    clearAlignmentGuideTimeout();
-    setVisibleAlignmentGuides((current) => {
-      if (current.guides.length === 0) {
-        return current;
-      }
-      return { ...current, isLingering: true };
-    });
-    alignmentGuideTimeoutRef.current = window.setTimeout(() => {
-      alignmentGuideTimeoutRef.current = null;
-      setVisibleAlignmentGuides({ guides: [], isLingering: false });
-    }, 1000);
   }
 
   function placementsMatch(a: Placement, b: Placement): boolean {
