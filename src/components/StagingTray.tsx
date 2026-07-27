@@ -1,4 +1,4 @@
-import { MapPin, PackageOpen, RotateCcw, Settings, Trash2, Wand2 } from 'lucide-react';
+import { PackageOpen, Plus, RotateCcw, Settings, Trash2, Wand2 } from 'lucide-react';
 import { getWallFeatureRemoveTooltip } from '../lib/wallFeatureNaming';
 import { isPlacedWallFeature } from '../lib/wallFeatures';
 import { getStagedItemPreviewSize, type StagedItemInput } from '../lib/stagingPreview';
@@ -158,23 +158,6 @@ export function StagedItem({
         }}
       >
         <span className="staged-piece-preview-shell">
-          {onPlace ? (
-            <TooltipIconButton
-              ariaLabel={`Place ${displayLabel} on the wall`}
-              tooltip="Place on wall"
-              className="place-control-button staged-place-button"
-              wrapperClassName="staged-place-anchor"
-              onPointerDown={(event) => {
-                event.stopPropagation();
-              }}
-              onClick={(event) => {
-                event.stopPropagation();
-                onPlace(displayItem.id);
-              }}
-            >
-              <MapPin size={14} />
-            </TooltipIconButton>
-          ) : null}
           <TooltipIconButton
             ariaLabel={`Remove ${displayLabel} from staging`}
             tooltip={removeTooltip}
@@ -225,6 +208,23 @@ export function StagedItem({
               clipId={`tray-${displayItem.id}`}
             />
           </svg>
+          {onPlace ? (
+            <TooltipIconButton
+              ariaLabel={`Place ${displayLabel} on the wall`}
+              tooltip="Place on wall"
+              buttonClassName="staged-place-center-button"
+              wrapperClassName="staged-place-center-anchor"
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.stopPropagation();
+                onPlace(displayItem.id);
+              }}
+            >
+              <Plus size={22} aria-hidden="true" focusable="false" />
+            </TooltipIconButton>
+          ) : null}
         </span>
         <span className="staged-piece-caption">
           <span className="staged-piece-name">{displayLabel}</span>

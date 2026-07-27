@@ -1533,8 +1533,7 @@ select:focus,
   pointer-events: auto;
 }
 
-.remove-control-button,
-.place-control-button {
+.remove-control-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1550,8 +1549,7 @@ select:focus,
   box-shadow: var(--soft-shadow);
 }
 
-:root[data-theme='dark'] .remove-control-button.icon-button,
-:root[data-theme='dark'] .place-control-button.icon-button {
+:root[data-theme='dark'] .remove-control-button.icon-button {
   border-color: var(--wall-edge);
   background: var(--piece-fill);
   color: var(--piece-label-inside);
@@ -1559,10 +1557,7 @@ select:focus,
 
 :root[data-theme='dark'] .remove-control-button.icon-button:hover:not(:disabled),
 :root[data-theme='dark'] .remove-control-button.icon-button:focus-visible,
-:root[data-theme='dark'] .remove-control-button.icon-button:active:not(:disabled),
-:root[data-theme='dark'] .place-control-button.icon-button:hover:not(:disabled),
-:root[data-theme='dark'] .place-control-button.icon-button:focus-visible,
-:root[data-theme='dark'] .place-control-button.icon-button:active:not(:disabled) {
+:root[data-theme='dark'] .remove-control-button.icon-button:active:not(:disabled) {
   background: var(--wall-edge);
   color: var(--primary-text);
 }
@@ -1671,11 +1666,11 @@ select:focus,
   flex: 0 0 24px;
 }
 
-.staged-place-anchor {
+.staged-place-center-anchor {
   position: absolute;
-  top: 0;
-  left: 0;
-  transform: translate(-50%, -50%);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.85);
   z-index: 2;
   opacity: 0;
   pointer-events: none;
@@ -1684,14 +1679,25 @@ select:focus,
     transform 140ms ease;
 }
 
-.staged-place-button {
-  flex: 0 0 24px;
+.staged-place-center-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--focus-color);
 }
 
 .staged-item-shell:hover .staged-remove-anchor,
 .staged-item-shell:focus-within .staged-remove-anchor,
-.staged-item-shell:hover .staged-place-anchor,
-.staged-item-shell:focus-within .staged-place-anchor {
+.staged-item-shell:hover .staged-place-center-anchor,
+.staged-item-shell:focus-within .staged-place-center-anchor {
   opacity: 1;
   pointer-events: auto;
 }
@@ -1702,9 +1708,9 @@ select:focus,
   transform: translate(50%, -50%) scale(1);
 }
 
-.staged-item-shell:hover .staged-place-anchor,
-.staged-item-shell:focus-within .staged-place-anchor,
-.staged-place-anchor:focus-within {
+.staged-item-shell:hover .staged-place-center-anchor,
+.staged-item-shell:focus-within .staged-place-center-anchor,
+.staged-place-center-anchor:focus-within {
   transform: translate(-50%, -50%) scale(1);
 }
 
