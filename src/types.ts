@@ -21,9 +21,8 @@ export type HookSpec =
     }
   | {
       count: 2;
-      leftTopOffsetIn: number;
+      topOffsetIn: number;
       leftSideOffsetIn: number;
-      rightTopOffsetIn: number;
       rightSideOffsetIn: number;
     };
 

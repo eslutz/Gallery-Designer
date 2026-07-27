@@ -72,9 +72,8 @@ function makeTwoHookInput(): ExportDesignInput {
     heightIn: 18,
     hookSpec: {
       count: 2,
-      leftTopOffsetIn: 3,
+      topOffsetIn: 3,
       leftSideOffsetIn: 5,
-      rightTopOffsetIn: 3,
       rightSideOffsetIn: 5,
     },
   };

@@ -128,6 +128,37 @@ describe('design JSON files', () => {
     ).toEqual(['piece-2', 'piece-1']);
   });
 
+  it('migrates a pre-shared-top-offset two-hook piece onto a single topOffsetIn', () => {
+    const parsed = parseDesignFile(
+      JSON.stringify({
+        sections: [{ id: 'section-1', name: 'Section 1', widthIn: 96, heightIn: 84 }],
+        pieces: [
+          {
+            id: 'piece-1',
+            label: 'Piece 1',
+            widthIn: 16,
+            heightIn: 20,
+            hookSpec: {
+              count: 2,
+              leftTopOffsetIn: 4,
+              leftSideOffsetIn: 5,
+              rightTopOffsetIn: 7,
+              rightSideOffsetIn: 6,
+            },
+          },
+        ],
+        placements: [],
+      }),
+    );
+
+    expect(parsed.pieces[0].hookSpec).toEqual({
+      count: 2,
+      topOffsetIn: 4,
+      leftSideOffsetIn: 5,
+      rightSideOffsetIn: 6,
+    });
+  });
+
   it('rejects invalid design JSON with a clear error', () => {
     expect(() => parseDesignFile('{"unit":"yards"}')).toThrow('Design file is missing sections.');
   });

@@ -73,6 +73,37 @@ describe('gallery state persistence', () => {
     expect(getSelectedPieceIds(loadState().selection)).toEqual(['art-1']);
   });
 
+  it('migrates a pre-shared-top-offset two-hook piece onto a single topOffsetIn', () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        ...defaultState,
+        pieces: [
+          {
+            id: 'art-1',
+            label: 'Art',
+            widthIn: 10,
+            heightIn: 10,
+            hookSpec: {
+              count: 2,
+              leftTopOffsetIn: 4,
+              leftSideOffsetIn: 5,
+              rightTopOffsetIn: 7,
+              rightSideOffsetIn: 6,
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(loadState().pieces[0].hookSpec).toEqual({
+      count: 2,
+      topOffsetIn: 4,
+      leftSideOffsetIn: 5,
+      rightSideOffsetIn: 6,
+    });
+  });
+
   it('migrates a legacy singular selectedPieceId', () => {
     const persisted: Record<string, unknown> = { ...defaultState };
     delete persisted.selectedPieceIds;

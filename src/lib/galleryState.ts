@@ -2,7 +2,6 @@ import type {
   ArtPiece,
   AutoPlacementSettings,
   EditorFeatures,
-  HookSpec,
   Placement,
   ThemeMode,
   Unit,
@@ -12,6 +11,7 @@ import type {
 } from '../types';
 import { resolveApplicationTheme, type ApplicationTheme } from './applicationTheme';
 import { resolveDefaultUnit } from './defaultUnit';
+import { normalizeHookSpec } from './hooks';
 import { normalizeWallSections } from './wall';
 
 export const STORAGE_KEY = 'gallery-designer-state-v1';
@@ -124,19 +124,8 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-function isHookSpec(value: unknown): value is HookSpec | undefined {
-  if (value === undefined) {
-    return true;
-  }
-  if (!isRecord(value) || (value.count !== 1 && value.count !== 2)) {
-    return false;
-  }
-  return value.count === 1
-    ? isFiniteNumber(value.topOffsetIn) && isFiniteNumber(value.leftOffsetIn)
-    : isFiniteNumber(value.leftTopOffsetIn) &&
-        isFiniteNumber(value.leftSideOffsetIn) &&
-        isFiniteNumber(value.rightTopOffsetIn) &&
-        isFiniteNumber(value.rightSideOffsetIn);
+function isValidHookSpec(value: unknown): boolean {
+  return value === undefined || normalizeHookSpec(value) !== undefined;
 }
 
 function isEditorFeatures(value: unknown): value is EditorFeatures {
@@ -269,7 +258,7 @@ function isPersistedGalleryState(value: unknown): value is Partial<GalleryState>
         typeof piece.label === 'string' &&
         isFiniteNumber(piece.widthIn) &&
         isFiniteNumber(piece.heightIn) &&
-        isHookSpec(piece.hookSpec),
+        isValidHookSpec(piece.hookSpec),
     )
   ) {
     return false;
@@ -318,6 +307,10 @@ export function loadState(): GalleryState {
           : defaultState.themeMode,
       applicationTheme: resolveApplicationTheme(parsed.applicationTheme),
       sections: normalizeWallSections(parsed.sections ?? defaultState.sections),
+      pieces: (parsed.pieces ?? defaultState.pieces).map((piece) => ({
+        ...piece,
+        hookSpec: normalizeHookSpec(piece.hookSpec),
+      })),
       unit: parsed.unit === 'cm' ? 'cm' : 'in',
       features: isEditorFeatures(parsed.features)
         ? normalizeEditorFeatures(parsed.features)

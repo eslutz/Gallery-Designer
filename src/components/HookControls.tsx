@@ -37,9 +37,8 @@ export function HookControls({
             } else {
               onChange({
                 count: 2,
-                leftTopOffsetIn: 2,
+                topOffsetIn: 2,
                 leftSideOffsetIn: 3,
-                rightTopOffsetIn: 2,
                 rightSideOffsetIn: 3,
               });
             }
@@ -54,7 +53,7 @@ export function HookControls({
         <div className="field-grid">
           <NumberField
             label={`${piece.label} hook down from top`}
-            displayLabel="Hook down from top"
+            displayLabel="Down from top"
             valueIn={piece.hookSpec.topOffsetIn}
             unit={unit}
             onUnitChange={onUnitChange}
@@ -64,7 +63,7 @@ export function HookControls({
           />
           <NumberField
             label={`${piece.label} hook from left side`}
-            displayLabel="Hook from left side"
+            displayLabel="From left side"
             valueIn={piece.hookSpec.leftOffsetIn}
             unit={unit}
             onUnitChange={onUnitChange}
@@ -75,32 +74,44 @@ export function HookControls({
         </div>
       ) : null}
       {piece.hookSpec?.count === 2 ? (
-        <div className="field-grid">
+        <>
           <NumberField
-            label={`${piece.label} left hook from left side`}
-            displayLabel="Left hook from left side"
-            valueIn={piece.hookSpec.leftSideOffsetIn}
+            label={`${piece.label} hooks down from top`}
+            displayLabel="Down from top"
+            valueIn={piece.hookSpec.topOffsetIn}
             unit={unit}
             onUnitChange={onUnitChange}
             onEditStart={onEditStart}
             onEditEnd={onEditEnd}
-            onChange={(leftSideOffsetIn) =>
-              onChange({ ...piece.hookSpec!, leftSideOffsetIn } as HookSpec)
-            }
+            onChange={(topOffsetIn) => onChange({ ...piece.hookSpec!, topOffsetIn } as HookSpec)}
           />
-          <NumberField
-            label={`${piece.label} right hook from right side`}
-            displayLabel="Right hook from right side"
-            valueIn={piece.hookSpec.rightSideOffsetIn}
-            unit={unit}
-            onUnitChange={onUnitChange}
-            onEditStart={onEditStart}
-            onEditEnd={onEditEnd}
-            onChange={(rightSideOffsetIn) =>
-              onChange({ ...piece.hookSpec!, rightSideOffsetIn } as HookSpec)
-            }
-          />
-        </div>
+          <div className="field-grid">
+            <NumberField
+              label={`${piece.label} left hook from left side`}
+              displayLabel="From left"
+              valueIn={piece.hookSpec.leftSideOffsetIn}
+              unit={unit}
+              onUnitChange={onUnitChange}
+              onEditStart={onEditStart}
+              onEditEnd={onEditEnd}
+              onChange={(leftSideOffsetIn) =>
+                onChange({ ...piece.hookSpec!, leftSideOffsetIn } as HookSpec)
+              }
+            />
+            <NumberField
+              label={`${piece.label} right hook from right side`}
+              displayLabel="From right"
+              valueIn={piece.hookSpec.rightSideOffsetIn}
+              unit={unit}
+              onUnitChange={onUnitChange}
+              onEditStart={onEditStart}
+              onEditEnd={onEditEnd}
+              onChange={(rightSideOffsetIn) =>
+                onChange({ ...piece.hookSpec!, rightSideOffsetIn } as HookSpec)
+              }
+            />
+          </div>
+        </>
       ) : null}
     </div>
   );

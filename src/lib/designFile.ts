@@ -10,6 +10,7 @@ import type {
   WallFeatureType,
   WallSection,
 } from '../types';
+import { normalizeHookSpec } from './hooks';
 import { normalizeWallSections } from './wall';
 
 export interface DesignFileState {
@@ -135,9 +136,8 @@ function parsePiece(value: unknown): ArtPiece {
     widthIn: positiveNumber(value.widthIn, 'piece width'),
     heightIn: positiveNumber(value.heightIn, 'piece height'),
   };
-  return isRecord(value.hookSpec)
-    ? { ...piece, hookSpec: value.hookSpec as ArtPiece['hookSpec'] }
-    : piece;
+  const hookSpec = normalizeHookSpec(value.hookSpec);
+  return hookSpec ? { ...piece, hookSpec } : piece;
 }
 
 function parsePlacement(value: unknown): Placement {
