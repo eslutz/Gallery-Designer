@@ -183,7 +183,7 @@ function ArtworkAnnotations({
           key={`${artwork.id}-hook-${index}`}
           cx={xIn + hook.xIn}
           cy={yIn + hook.yIn}
-          r="1.2"
+          r="1"
           className="hook-mark"
         />
       ))}
