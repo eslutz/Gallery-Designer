@@ -143,3 +143,7 @@ export interface MeasurementInstruction {
   sideReference: MeasurementReference;
   hooks: HookMeasurement[];
 }
+
+export interface UndoableChangeOptions {
+  undoable?: boolean;
+}
