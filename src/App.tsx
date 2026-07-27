@@ -55,6 +55,17 @@ import {
   type GalleryState,
   type MessageTone,
 } from './lib/galleryState';
+import {
+  distanceBetween,
+  getPointerId,
+  isTextEntryTarget,
+  isWallPanTarget,
+  midpointBetween,
+  normalizeWheelDelta,
+  tryCapturePointer,
+  POINTER_DRAG_THRESHOLD_PX,
+  WALL_MOUSE_PAN_ID,
+} from './lib/pointerInput';
 import { buildMeasurementInstructions } from './lib/measurements';
 import { buildMeasurementTableRows, MEASUREMENT_TABLE_HEADERS } from './lib/measurementTable';
 import {
@@ -136,8 +147,6 @@ const MAX_STAGED_ART_PREVIEW_HEIGHT_PX = 96;
 const DRAG_PREVIEW_SCALE_PX_PER_IN = 3;
 const SUPPRESS_TEXT_SELECTION_CLASS = 'suppress-text-selection';
 const ZOOM_BUTTON_FACTOR = 1.2;
-const WALL_MOUSE_PAN_ID = -2;
-const POINTER_DRAG_THRESHOLD_PX = 4;
 
 interface VisibleAlignmentGuides {
   guides: AlignmentGuide[];
@@ -3583,16 +3592,6 @@ function shouldKeepSelection(target: EventTarget): boolean {
   );
 }
 
-function isWallPanTarget(target: EventTarget | null): boolean {
-  return (
-    target instanceof Element && Boolean(target.closest('.wall-pan-surface, .wall-exterior-edge'))
-  );
-}
-
-function isTextEntryTarget(target: EventTarget | null): boolean {
-  return target instanceof Element && Boolean(target.closest('input, select, textarea'));
-}
-
 function WallDragPreviewOverlay({
   preview,
   artPieceBufferEnabled,
@@ -3727,49 +3726,6 @@ function getPreviewBufferGapPx(
     (scale) => Number.isFinite(scale) && scale > 0,
   );
   return scales.length > 0 ? Math.min(...scales) * gapIn : 0;
-}
-
-function normalizeWheelDelta(event: { deltaMode: number; deltaX: number; deltaY: number }): {
-  x: number;
-  y: number;
-} {
-  const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 240 : 1;
-  return {
-    x: event.deltaX * unit,
-    y: event.deltaY * unit,
-  };
-}
-
-function getPointerId(event: { pointerId?: number }): number {
-  return Number.isFinite(event.pointerId) ? Number(event.pointerId) : -1;
-}
-
-function tryCapturePointer(element: Element, pointerId: number) {
-  if (!Number.isFinite(pointerId) || typeof element.setPointerCapture !== 'function') {
-    return;
-  }
-  try {
-    element.setPointerCapture(pointerId);
-  } catch {
-    // Synthetic pointer events and older browsers can expose capture without an active pointer.
-  }
-}
-
-function distanceBetween(
-  first: { clientX: number; clientY: number },
-  second: { clientX: number; clientY: number },
-) {
-  return Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
-}
-
-function midpointBetween(
-  first: { clientX: number; clientY: number },
-  second: { clientX: number; clientY: number },
-) {
-  return {
-    clientX: (first.clientX + second.clientX) / 2,
-    clientY: (first.clientY + second.clientY) / 2,
-  };
 }
 
 function getUnplacedPieceIssues(pieces: ArtPiece[], placements: Placement[]): string[] {
