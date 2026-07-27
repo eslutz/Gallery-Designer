@@ -71,6 +71,11 @@ import {
   getWallFeatureRemoveTooltip,
   isDefaultWallFeatureName,
 } from './lib/wallFeatureNaming';
+import {
+  getPreviewBufferGapPx,
+  getStagedItemPreviewSize,
+  type StagedItemInput,
+} from './lib/stagingPreview';
 import { buildMeasurementInstructions } from './lib/measurements';
 import { buildMeasurementTableRows, MEASUREMENT_TABLE_HEADERS } from './lib/measurementTable';
 import {
@@ -147,8 +152,6 @@ import type {
   WallSection,
 } from './types';
 
-const STAGING_SCALE_PX_PER_IN = 4;
-const MAX_STAGED_ART_PREVIEW_HEIGHT_PX = 96;
 const DRAG_PREVIEW_SCALE_PX_PER_IN = 3;
 const SUPPRESS_TEXT_SELECTION_CLASS = 'suppress-text-selection';
 const ZOOM_BUTTON_FACTOR = 1.2;
@@ -3718,21 +3721,6 @@ function stopSuppressingTextSelection() {
   document.body.classList.remove(SUPPRESS_TEXT_SELECTION_CLASS);
 }
 
-function getPreviewBufferGapPx(
-  piece: Pick<ArtPiece, 'widthIn' | 'heightIn'>,
-  size: { widthPx: number; heightPx: number },
-  gapIn: number,
-): number {
-  if (gapIn <= 0) {
-    return 0;
-  }
-
-  const scales = [size.widthPx / piece.widthIn, size.heightPx / piece.heightIn].filter(
-    (scale) => Number.isFinite(scale) && scale > 0,
-  );
-  return scales.length > 0 ? Math.min(...scales) * gapIn : 0;
-}
-
 function getUnplacedPieceIssues(pieces: ArtPiece[], placements: Placement[]): string[] {
   const placedPieceIds = new Set(placements.map((placement) => placement.pieceId));
   const countsByLabel = new Map<string, number>();
@@ -5178,9 +5166,6 @@ function StagingTray({
   );
 }
 
-type StagedItemInput =
-  { kind: 'artwork'; artwork: ArtPiece } | { kind: 'feature'; feature: WallFeature };
-
 function StagedItem({
   item,
   selected,
@@ -5302,39 +5287,6 @@ function StagedItem({
       </div>
     </div>
   );
-}
-
-function getStagedItemPreviewSize(item: StagedItemInput) {
-  if (item.kind === 'feature') {
-    return {
-      widthPx: item.feature.widthIn * STAGING_SCALE_PX_PER_IN,
-      heightPx: item.feature.heightIn * STAGING_SCALE_PX_PER_IN,
-    };
-  }
-
-  const piece = item.artwork;
-  const rawWidthPx = piece.widthIn * STAGING_SCALE_PX_PER_IN;
-  const rawHeightPx = piece.heightIn * STAGING_SCALE_PX_PER_IN;
-
-  if (
-    !Number.isFinite(rawWidthPx) ||
-    !Number.isFinite(rawHeightPx) ||
-    rawWidthPx <= 0 ||
-    rawHeightPx <= 0
-  ) {
-    return { widthPx: 0, heightPx: 0 };
-  }
-
-  const scale = Math.min(1, MAX_STAGED_ART_PREVIEW_HEIGHT_PX / rawHeightPx);
-
-  return {
-    widthPx: roundPixelValue(rawWidthPx * scale),
-    heightPx: roundPixelValue(rawHeightPx * scale),
-  };
-}
-
-function roundPixelValue(value: number) {
-  return Math.round(value * 10_000) / 10_000;
 }
 
 function WallCanvas({
