@@ -1,3 +1,4 @@
+import { StrictMode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -87,8 +88,15 @@ describe('Gallery Designer app', () => {
     expect(screen.getByRole('button', { name: /Export PDF/i })).toBeEnabled();
   });
 
-  it('does not show a toast on initial load', () => {
-    render(<App />);
+  // Rendered through StrictMode to match main.tsx: StrictMode double-invokes
+  // effects on mount, which previously slipped past the toast's first-render
+  // guard and raised a toast for the initial message.
+  it('does not show a toast on initial load, including under StrictMode', () => {
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
 
     expect(document.querySelector('.message-toast')).not.toHaveClass('is-visible');
   });
@@ -111,7 +119,9 @@ describe('Gallery Designer app', () => {
     const toast = document.querySelector('.message-toast');
     expect(toast).toHaveClass('error');
     expect(toast).toHaveClass('is-visible');
-    expect(within(toast as HTMLElement).getByText(/cannot fit within the wall margin/i)).toBeInTheDocument();
+    expect(
+      within(toast as HTMLElement).getByText(/cannot fit within the wall margin/i),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Dismiss notification/i }));
     expect(toast).not.toHaveClass('is-visible');
@@ -131,6 +141,26 @@ describe('Gallery Designer app', () => {
     await user.click(screen.getByRole('button', { name: /^Advanced$/i }));
     const statusPanel = screen.getByRole('region', { name: /Latest update/i });
     expect(within(statusPanel).getByText('Duplicated Piece 1.')).toBeInTheDocument();
+  });
+
+  // The undo snapshot predates the current message, so deriving the toast
+  // revision from the snapshot rather than live state reused an already-shown
+  // revision and silently suppressed this toast.
+  it('shows a toast when undoing a change', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /Duplicate Piece 1/i }));
+    await user.click(screen.getByRole('button', { name: /Dismiss notification/i }));
+    expect(document.querySelector('.message-toast')).not.toHaveClass('is-visible');
+
+    await user.click(screen.getByRole('button', { name: /Undo last change/i }));
+
+    const toast = document.querySelector('.message-toast');
+    expect(toast).toHaveClass('is-visible');
+    expect(
+      within(toast as HTMLElement).getByText(/Restored the previous change\./i),
+    ).toBeInTheDocument();
   });
 
   it('places a staged piece onto the wall via the keyboard-accessible Place button', async () => {

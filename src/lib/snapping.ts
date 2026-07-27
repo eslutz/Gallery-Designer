@@ -522,13 +522,33 @@ function nearestVisibleRects(rect: SnapRect, candidates: SnapRect[]): SnapRect[]
     }
 
     if (edges.right <= moving.left && verticalOverlap) {
-      left.push({ rect: candidate, gap: moving.left - edges.right, spanStart: edges.top, spanEnd: edges.bottom });
+      left.push({
+        rect: candidate,
+        gap: moving.left - edges.right,
+        spanStart: edges.top,
+        spanEnd: edges.bottom,
+      });
     } else if (edges.left >= moving.right && verticalOverlap) {
-      right.push({ rect: candidate, gap: edges.left - moving.right, spanStart: edges.top, spanEnd: edges.bottom });
+      right.push({
+        rect: candidate,
+        gap: edges.left - moving.right,
+        spanStart: edges.top,
+        spanEnd: edges.bottom,
+      });
     } else if (edges.bottom <= moving.top && horizontalOverlap) {
-      above.push({ rect: candidate, gap: moving.top - edges.bottom, spanStart: edges.left, spanEnd: edges.right });
+      above.push({
+        rect: candidate,
+        gap: moving.top - edges.bottom,
+        spanStart: edges.left,
+        spanEnd: edges.right,
+      });
     } else if (edges.top >= moving.bottom && horizontalOverlap) {
-      below.push({ rect: candidate, gap: edges.top - moving.bottom, spanStart: edges.left, spanEnd: edges.right });
+      below.push({
+        rect: candidate,
+        gap: edges.top - moving.bottom,
+        spanStart: edges.left,
+        spanEnd: edges.right,
+      });
     }
     // Neither span overlaps (a purely diagonal candidate) — no line of sight, excluded.
   }

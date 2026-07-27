@@ -649,7 +649,9 @@ describe('automatic placement', () => {
       widthIn: 4,
       heightIn: 4,
     }));
-    const generousWall: WallSection[] = [{ id: 'main', name: 'Main wall', widthIn: 300, heightIn: 200 }];
+    const generousWall: WallSection[] = [
+      { id: 'main', name: 'Main wall', widthIn: 300, heightIn: 200 },
+    ];
 
     const result = autoPlacePieces(generousWall, pieces, { settings: blankSettings });
 
@@ -683,33 +685,45 @@ describe('automatic placement', () => {
     });
   });
 
-  it('never overlaps placements across randomized piece dimensions and never throws', { timeout: 15000 }, () => {
-    const random = mulberry32(20260723);
-    const randomWall: WallSection[] = [{ id: 'main', name: 'Main wall', widthIn: 240, heightIn: 180 }];
+  it(
+    'never overlaps placements across randomized piece dimensions and never throws',
+    { timeout: 15000 },
+    () => {
+      const random = mulberry32(20260723);
+      const randomWall: WallSection[] = [
+        { id: 'main', name: 'Main wall', widthIn: 240, heightIn: 180 },
+      ];
 
-    for (let trial = 0; trial < 25; trial += 1) {
-      const pieceCount = 2 + Math.floor(random() * 8);
-      const pieces: ArtPiece[] = Array.from({ length: pieceCount }, (_, index) => ({
-        id: `piece-${index}`,
-        label: `Piece ${index}`,
-        widthIn: 6 + Math.floor(random() * 24),
-        heightIn: 6 + Math.floor(random() * 24),
-      }));
+      for (let trial = 0; trial < 25; trial += 1) {
+        const pieceCount = 2 + Math.floor(random() * 8);
+        const pieces: ArtPiece[] = Array.from({ length: pieceCount }, (_, index) => ({
+          id: `piece-${index}`,
+          label: `Piece ${index}`,
+          widthIn: 6 + Math.floor(random() * 24),
+          heightIn: 6 + Math.floor(random() * 24),
+        }));
 
-      const result = autoPlacePieces(randomWall, pieces, { settings: blankSettings });
+        const result = autoPlacePieces(randomWall, pieces, { settings: blankSettings });
 
-      expect(result.ok === true || result.ok === false).toBe(true);
-      if (!result.ok) continue;
+        if (!result.ok) {
+          // A failure is an acceptable outcome for random geometry, but it must be
+          // an actionable one rather than an empty or malformed rejection.
+          expect(result.message.length).toBeGreaterThan(0);
+          continue;
+        }
 
-      for (let i = 0; i < result.placements.length; i += 1) {
-        for (let j = i + 1; j < result.placements.length; j += 1) {
-          const pieceA = pieces.find((piece) => piece.id === result.placements[i].pieceId)!;
-          const pieceB = pieces.find((piece) => piece.id === result.placements[j].pieceId)!;
-          expect(
-            placementsOverlapOrTouch(result.placements[i], pieceA, result.placements[j], pieceB),
-          ).toBe(false);
+        expect(result.placements).toHaveLength(pieceCount);
+
+        for (let i = 0; i < result.placements.length; i += 1) {
+          for (let j = i + 1; j < result.placements.length; j += 1) {
+            const pieceA = pieces.find((piece) => piece.id === result.placements[i].pieceId)!;
+            const pieceB = pieces.find((piece) => piece.id === result.placements[j].pieceId)!;
+            expect(
+              placementsOverlapOrTouch(result.placements[i], pieceA, result.placements[j], pieceB),
+            ).toBe(false);
+          }
         }
       }
-    }
-  });
+    },
+  );
 });

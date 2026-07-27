@@ -909,7 +909,10 @@ export default function App() {
     }
     setState((current) => {
       if (current.sections.length === 1) {
-        return { ...current, ...withMessage(current, 'At least one wall section is required.', 'error') };
+        return {
+          ...current,
+          ...withMessage(current, 'At least one wall section is required.', 'error'),
+        };
       }
       const nextSections = normalizeWallSections(current.sections).filter(
         (section) => section.id !== sectionId,
@@ -1195,7 +1198,10 @@ export default function App() {
           ),
           proposedPlacement,
         ],
-        ...withMessage(current, `Moved ${getPieceLabel(current, proposedPlacement.pieceId)} on the wall.`),
+        ...withMessage(
+          current,
+          `Moved ${getPieceLabel(current, proposedPlacement.pieceId)} on the wall.`,
+        ),
       }));
       if (guides.length > 0) {
         showAlignmentGuides(guides);
@@ -1307,7 +1313,10 @@ export default function App() {
       ...current,
       sections: [],
       placements: [],
-      ...withMessage(current, 'Cleared wall sections. Add at least one wall section before placing art.'),
+      ...withMessage(
+        current,
+        'Cleared wall sections. Add at least one wall section before placing art.',
+      ),
     }));
   }
 
@@ -1334,7 +1343,7 @@ export default function App() {
 
     recordUndoSnapshot();
     setSelectedSectionId('');
-    setState({
+    setState((current) => ({
       ...defaultState,
       sections: [],
       pieces: [],
@@ -1346,8 +1355,11 @@ export default function App() {
         wallFeatures: [],
       },
       selectedPieceIds: [],
-      ...withMessage(state, 'Reset the entire design. Add wall sections and art pieces to start over.'),
-    });
+      ...withMessage(
+        current,
+        'Reset the entire design. Add wall sections and art pieces to start over.',
+      ),
+    }));
     setWallZoom(getDefaultWallZoomState(getWallCanvasBaseViewBox([])));
   }
 
@@ -1846,10 +1858,14 @@ export default function App() {
     });
 
     if (!result.ok) {
+      setAutoPlacementFailure(
+        result.diagnostics ? { message: result.message, diagnostics: result.diagnostics } : null,
+      );
       setState((current) => ({ ...current, ...withMessage(current, result.message, 'error') }));
       return;
     }
 
+    setAutoPlacementFailure(null);
     recordUndoSnapshot();
     setSelectedFeatureId('');
     setState((current) => ({
@@ -1864,7 +1880,14 @@ export default function App() {
     if (!undoState) {
       return;
     }
-    setState({ ...undoState, ...withMessage(undoState, 'Restored the previous change.') });
+    // Derive the revision from the live state, not the snapshot: undoState is an
+    // older snapshot whose revision is behind current, so basing it on the
+    // snapshot could reuse (or move backwards past) a revision already shown and
+    // silently suppress the toast.
+    setState((current) => ({
+      ...undoState,
+      ...withMessage(current, 'Restored the previous change.'),
+    }));
     setUndoState(null);
   }
 
@@ -2887,7 +2910,10 @@ export default function App() {
       setState((current) => ({ ...current, ...withMessage(current, 'PNG export generated.') }));
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'Unknown export error.';
-      setState((current) => ({ ...current, ...withMessage(current, `PNG export failed: ${reason}`, 'error') }));
+      setState((current) => ({
+        ...current,
+        ...withMessage(current, `PNG export failed: ${reason}`, 'error'),
+      }));
     } finally {
       setExporting(null);
     }
@@ -2904,7 +2930,10 @@ export default function App() {
       setState((current) => ({ ...current, ...withMessage(current, 'PDF export generated.') }));
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'Unknown export error.';
-      setState((current) => ({ ...current, ...withMessage(current, `PDF export failed: ${reason}`, 'error') }));
+      setState((current) => ({
+        ...current,
+        ...withMessage(current, `PDF export failed: ${reason}`, 'error'),
+      }));
     } finally {
       setExporting(null);
     }
@@ -2934,11 +2963,11 @@ export default function App() {
     try {
       const imported = parseDesignFile(await file.text());
       recordUndoSnapshot();
-      setState({
+      setState((current) => ({
         ...defaultState,
         ...imported,
-        ...withMessage(state, 'JSON design file imported.'),
-      });
+        ...withMessage(current, 'JSON design file imported.'),
+      }));
       setSelectedSectionId('');
       setSelectedFeatureId('');
     } catch (error) {
@@ -2953,13 +2982,17 @@ export default function App() {
     }
   }
 
-  const isFirstMessageRender = useRef(true);
+  // Tracks the revision already shown so the effect is idempotent: StrictMode
+  // double-invokes effects on mount, and a boolean "first render" guard would be
+  // consumed by the first invocation and let the second one raise a toast for the
+  // initial message.
+  const lastToastedRevision = useRef(state.messageRevision);
   const [toastVisible, setToastVisible] = useState(false);
   useEffect(() => {
-    if (isFirstMessageRender.current) {
-      isFirstMessageRender.current = false;
+    if (state.messageRevision === lastToastedRevision.current) {
       return;
     }
+    lastToastedRevision.current = state.messageRevision;
     setToastVisible(true);
     const timeout = window.setTimeout(
       () => setToastVisible(false),
