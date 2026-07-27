@@ -98,7 +98,9 @@ describe('Gallery Designer app', () => {
       </StrictMode>,
     );
 
-    expect(document.querySelector('.message-toast')).not.toHaveClass('is-visible');
+    expect(document.querySelector('.message-toast')).not.toBeInTheDocument();
+    // The live region itself must stay mounted so announcements are reliable.
+    expect(document.querySelector('.message-toast-region')).toBeInTheDocument();
   });
 
   it('shows an error toast when auto-place fails, and it can be dismissed', async () => {
@@ -118,13 +120,50 @@ describe('Gallery Designer app', () => {
 
     const toast = document.querySelector('.message-toast');
     expect(toast).toHaveClass('error');
-    expect(toast).toHaveClass('is-visible');
+    expect(toast).toBeInTheDocument();
     expect(
       within(toast as HTMLElement).getByText(/cannot fit within the wall margin/i),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Dismiss notification/i }));
-    expect(toast).not.toHaveClass('is-visible');
+    expect(document.querySelector('.message-toast')).not.toBeInTheDocument();
+  });
+
+  // The toast is the live region now, so failure diagnostics ride along inside it
+  // as visually hidden text instead of living in a parallel hidden node.
+  it('announces auto-placement diagnostics as visually hidden text inside the toast', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.clear(screen.getByLabelText('Section 1 width'));
+    await user.type(screen.getByLabelText('Section 1 width'), '40');
+    await user.clear(screen.getByLabelText('Section 1 height'));
+    await user.type(screen.getByLabelText('Section 1 height'), '30');
+
+    await user.clear(screen.getByLabelText('Piece 1 width'));
+    await user.type(screen.getByLabelText('Piece 1 width'), '12');
+    await user.clear(screen.getByLabelText('Piece 1 height'));
+    await user.type(screen.getByLabelText('Piece 1 height'), '12');
+
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    await user.clear(screen.getByLabelText('Piece 2 width'));
+    await user.type(screen.getByLabelText('Piece 2 width'), '13');
+    await user.clear(screen.getByLabelText('Piece 2 height'));
+    await user.type(screen.getByLabelText('Piece 2 height'), '12');
+
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    await user.clear(screen.getByLabelText('Piece 3 width'));
+    await user.type(screen.getByLabelText('Piece 3 width'), '12');
+    await user.clear(screen.getByLabelText('Piece 3 height'));
+    await user.type(screen.getByLabelText('Piece 3 height'), '13');
+
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    const toast = document.querySelector('.message-toast');
+    expect(toast).toBeInTheDocument();
+    expect(within(toast as HTMLElement).getByText(/Tried \d+ layout strategies/i)).toHaveClass(
+      'visually-hidden',
+    );
   });
 
   it('shows an info toast after a successful action, matching the Advanced drawer history', async () => {
@@ -135,7 +174,7 @@ describe('Gallery Designer app', () => {
 
     const toast = document.querySelector('.message-toast');
     expect(toast).toHaveClass('info');
-    expect(toast).toHaveClass('is-visible');
+    expect(toast).toBeInTheDocument();
     expect(within(toast as HTMLElement).getByText(/Duplicated Piece 1\./i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^Advanced$/i }));
@@ -152,12 +191,12 @@ describe('Gallery Designer app', () => {
 
     await user.click(screen.getByRole('button', { name: /Duplicate Piece 1/i }));
     await user.click(screen.getByRole('button', { name: /Dismiss notification/i }));
-    expect(document.querySelector('.message-toast')).not.toHaveClass('is-visible');
+    expect(document.querySelector('.message-toast')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Undo last change/i }));
 
     const toast = document.querySelector('.message-toast');
-    expect(toast).toHaveClass('is-visible');
+    expect(toast).toBeInTheDocument();
     expect(
       within(toast as HTMLElement).getByText(/Restored the previous change\./i),
     ).toBeInTheDocument();
@@ -3041,9 +3080,17 @@ describe('Gallery Designer app', () => {
       screen.getByRole('button', { name: /Zoom in/i }),
     );
     expect(canvasCard).toContainElement(screen.getByRole('group', { name: /Wall zoom controls/i }));
-    expect(screen.getByRole('status')).toHaveTextContent(/Enter wall and art dimensions/i);
+    // The live region is mounted but empty at rest: it announces messages as they
+    // arrive rather than persistently mirroring the current one. The Advanced
+    // drawer's "Latest update" panel is the durable view, asserted below.
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
     await openAdvancedDrawer(user);
     const exportPanel = screen.getByRole('dialog', { name: /Advanced/i });
+    expect(
+      within(screen.getByRole('region', { name: /Latest update/i })).getByText(
+        /Enter wall and art dimensions/i,
+      ),
+    ).toBeInTheDocument();
     const exportTitle = within(exportPanel).getByRole('heading', { name: /^Design files$/i });
     expect(exportTitle.closest('.panel-title')).toBeInTheDocument();
     expect(within(exportPanel).queryByText(/Ready to export/i)).not.toBeInTheDocument();

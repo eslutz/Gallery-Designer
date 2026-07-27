@@ -45,7 +45,7 @@ export function getPieceIdsIntersectingRect(
 export function getGroupBounds(
   sections: WallSection[],
   pieces: ArtPiece[],
-  placements: Placement[],
+  placements: readonly Placement[],
   pieceIds: Iterable<string>,
 ): Rect | null {
   const selectedIds = new Set(pieceIds);

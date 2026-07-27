@@ -223,14 +223,16 @@ interface DragPreviewPiece {
 
 interface DragPreviewState {
   wallDragPreview: WallDragPreview | null;
-  groupDragPreview: Placement[];
+  groupDragPreview: readonly Placement[];
 }
 
 type DragPreviewAction =
   | { type: 'set-wall-preview'; preview: WallDragPreview | null }
-  | { type: 'set-group-preview'; placements: Placement[] };
+  | { type: 'set-group-preview'; placements: readonly Placement[] };
 
-const EMPTY_PLACEMENTS: Placement[] = [];
+// Shared idle sentinel: frozen so a stray mutation can't corrupt every consumer
+// that holds this same instance.
+const EMPTY_PLACEMENTS: readonly Placement[] = Object.freeze([]);
 const DRAG_PREVIEW_IDLE: DragPreviewState = {
   wallDragPreview: null,
   groupDragPreview: EMPTY_PLACEMENTS,
@@ -3001,6 +3003,21 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [state.messageRevision, state.messageTone]);
 
+  // Announced alongside the toast message but not shown visually: the toast
+  // stays scannable while assistive tech still gets the full failure detail.
+  const toastDetails =
+    autoPlacementFailure?.message === state.message
+      ? `Tried ${autoPlacementFailure.diagnostics.attempts.length} layout strategies with ${formatMeasurement(
+          autoPlacementFailure.diagnostics.resolvedGapIn,
+          state.unit,
+        )} spacing and a ${formatMeasurement(
+          autoPlacementFailure.diagnostics.resolvedOuterMarginIn,
+          state.unit,
+        )} wall margin. ${autoPlacementFailure.diagnostics.attempts
+          .map((attempt) => `${attempt.family}: ${attempt.reason}`)
+          .join(' ')}`
+      : undefined;
+
   const appShellClassName = [
     'app-shell',
     wallZoom.scale > 1 ? 'is-wall-pannable' : '',
@@ -3015,6 +3032,7 @@ export default function App() {
     <main className={appShellClassName} onPointerDown={handlePagePointerDown}>
       <MessageToast
         message={state.message}
+        details={toastDetails}
         tone={state.messageTone}
         visible={toastVisible}
         onDismiss={() => setToastVisible(false)}
@@ -3451,20 +3469,6 @@ export default function App() {
         aria-label="Import JSON design file"
         onChange={importJson}
       />
-      <div className="visually-hidden" role="status" aria-live="polite">
-        {state.message}
-        {autoPlacementFailure?.message === state.message
-          ? ` Tried ${autoPlacementFailure.diagnostics.attempts.length} layout strategies with ${formatMeasurement(
-              autoPlacementFailure.diagnostics.resolvedGapIn,
-              state.unit,
-            )} spacing and a ${formatMeasurement(
-              autoPlacementFailure.diagnostics.resolvedOuterMarginIn,
-              state.unit,
-            )} wall margin. ${autoPlacementFailure.diagnostics.attempts
-              .map((attempt) => `${attempt.family}: ${attempt.reason}`)
-              .join(' ')}`
-          : ''}
-      </div>
       <AdvancedDrawer
         open={advancedDrawerOpen}
         themeMode={state.themeMode}
@@ -4587,31 +4591,42 @@ function InfoTooltipButton({ label, info }: { label: string; info: string }) {
 
 function MessageToast({
   message,
+  details,
   tone,
   visible,
   onDismiss,
 }: {
   message: string;
+  details?: string;
   tone: MessageTone;
   visible: boolean;
   onDismiss: () => void;
 }) {
+  // The region stays mounted so assistive tech is already observing it; the
+  // toast itself mounts and unmounts, and that insertion is what triggers the
+  // announcement. Toggling visibility on the region instead would take it out
+  // of the accessibility tree, which is the unreliable case for live regions.
   return (
-    <div className={`message-toast ${tone} ${visible ? 'is-visible' : ''}`}>
-      {tone === 'error' ? (
-        <AlertTriangle size={16} className="message-toast-icon" aria-hidden="true" />
-      ) : (
-        <Info size={16} className="message-toast-icon" aria-hidden="true" />
-      )}
-      <p className="message-toast-text">{message}</p>
-      <button
-        type="button"
-        className="message-toast-dismiss"
-        aria-label="Dismiss notification"
-        onClick={onDismiss}
-      >
-        <X size={14} />
-      </button>
+    <div className="message-toast-region" role="status" aria-live="polite">
+      {visible ? (
+        <div className={`message-toast ${tone}`}>
+          {tone === 'error' ? (
+            <AlertTriangle size={16} className="message-toast-icon" aria-hidden="true" />
+          ) : (
+            <Info size={16} className="message-toast-icon" aria-hidden="true" />
+          )}
+          <p className="message-toast-text">{message}</p>
+          {details ? <span className="visually-hidden">{details}</span> : null}
+          <button
+            type="button"
+            className="message-toast-dismiss"
+            aria-label={`Dismiss notification: ${message}`}
+            onClick={onDismiss}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -5608,7 +5623,7 @@ function WallCanvas({
   selectedFeatureId: string;
   selectedSectionId: string;
   selectionMarquee: Rect | null;
-  groupDragPreview: Placement[];
+  groupDragPreview: readonly Placement[];
   autoPlacementSettings: AutoPlacementSettings;
   features: EditorFeatures;
   alignmentGuides: VisibleAlignmentGuides;

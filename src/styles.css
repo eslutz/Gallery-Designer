@@ -1856,15 +1856,27 @@ select:focus,
   text-transform: uppercase;
 }
 
-.message-toast {
+/*
+ * Stays mounted and in the accessibility tree so it can act as a live region;
+ * the toast inside mounts and unmounts. Never given visibility:hidden or
+ * aria-hidden, both of which would take it out of the tree and make
+ * announcements unreliable.
+ */
+.message-toast-region {
   position: fixed;
   left: 50%;
   bottom: 24px;
-  transform: translate(-50%, 12px);
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(480px, calc(100vw - 32px));
+  pointer-events: none;
+  z-index: 60;
+}
+
+.message-toast {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  max-width: min(480px, calc(100vw - 32px));
   padding: 12px 14px;
   background: var(--panel-solid);
   border: 1px solid var(--panel-border);
@@ -1873,25 +1885,26 @@ select:focus,
   color: var(--text-primary);
   font-size: 0.88rem;
   line-height: 1.35;
-  visibility: hidden;
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    opacity 160ms ease,
-    transform 160ms ease,
-    visibility 0s linear 160ms;
-  z-index: 60;
+  pointer-events: auto;
+  animation: message-toast-in 160ms ease;
 }
 
-.message-toast.is-visible {
-  visibility: visible;
-  opacity: 1;
-  transform: translate(-50%, 0);
-  pointer-events: auto;
-  transition:
-    opacity 160ms ease,
-    transform 160ms ease,
-    visibility 0s linear 0s;
+@keyframes message-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-toast {
+    animation: none;
+  }
 }
 
 .message-toast.error {

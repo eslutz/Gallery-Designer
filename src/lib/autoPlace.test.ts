@@ -252,7 +252,9 @@ describe('automatic placement', () => {
     expect(getAutoPlacementIssues(wall, pieces, result.placements)).toEqual([]);
   });
 
-  it('packs mixed-size pieces into a stepped available wall', () => {
+  // Beam search over a stepped wall takes ~3s on its own, which exceeds the 5s
+  // default once the suite runs in parallel under load.
+  it('packs mixed-size pieces into a stepped available wall', { timeout: 15000 }, () => {
     const steppedWall: WallSection[] = [
       {
         id: 'left',
