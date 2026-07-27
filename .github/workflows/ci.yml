@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
 
+# Both jobs only read the repo; artifact upload does not need broader scope.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
