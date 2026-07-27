@@ -282,3 +282,20 @@ export function isPlacementValid(
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
+
+export function getUnplacedPieceIssues(pieces: ArtPiece[], placements: Placement[]): string[] {
+  const placedPieceIds = new Set(placements.map((placement) => placement.pieceId));
+  const countsByLabel = new Map<string, number>();
+
+  for (const piece of pieces) {
+    if (!placedPieceIds.has(piece.id)) {
+      countsByLabel.set(piece.label, (countsByLabel.get(piece.label) ?? 0) + 1);
+    }
+  }
+
+  return [...countsByLabel.entries()].map(([label, count]) =>
+    count === 1
+      ? `${label} has not been placed.`
+      : `${count} pieces named ${label} have not been placed.`,
+  );
+}

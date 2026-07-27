@@ -4,6 +4,7 @@ import {
   getGroupBounds,
   getPieceIdsIntersectingRect,
   normalizeSelectionRect,
+  shouldKeepSelection,
   translatePlacementGroup,
 } from './multiSelection';
 
@@ -97,5 +98,30 @@ describe('multi-selection geometry', () => {
       right: 103,
       bottom: 37,
     });
+  });
+});
+
+describe('shouldKeepSelection', () => {
+  it('keeps the selection when the pointer lands inside an interactive or selectable element', () => {
+    const button = document.createElement('button');
+    document.body.append(button);
+    expect(shouldKeepSelection(button)).toBe(true);
+
+    const row = document.createElement('div');
+    row.className = 'setup-row';
+    const child = document.createElement('span');
+    row.append(child);
+    document.body.append(row);
+    expect(shouldKeepSelection(child)).toBe(true);
+  });
+
+  it('clears the selection when the pointer lands on empty page space', () => {
+    const background = document.createElement('div');
+    document.body.append(background);
+    expect(shouldKeepSelection(background)).toBe(false);
+  });
+
+  it('returns false for a non-Element event target', () => {
+    expect(shouldKeepSelection(window)).toBe(false);
   });
 });

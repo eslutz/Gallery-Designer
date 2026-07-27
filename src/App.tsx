@@ -82,10 +82,12 @@ import {
   getGroupBounds,
   getPieceIdsIntersectingRect,
   normalizeSelectionRect,
+  shouldKeepSelection,
   translatePlacementGroup,
 } from './lib/multiSelection';
 import {
   getPlacementIssues,
+  getUnplacedPieceIssues,
   reassignPlacementsToContainingSections,
   reassignPlacementToContainingSection,
   type Rect,
@@ -99,6 +101,8 @@ import {
 import {
   avoidTooltipCollisions,
   calculateTooltipPosition,
+  getStagedPreviewObstacles,
+  getTooltipElementSize,
   type TooltipPosition,
 } from './lib/tooltipPosition';
 import {
@@ -121,6 +125,7 @@ import {
   getWallLayout,
   moveWallSection,
   normalizeWallSections,
+  toClosedSvgPath,
   validateWallSections,
 } from './lib/wall';
 import {
@@ -3578,28 +3583,6 @@ function isPlacedWallFeature(feature: WallFeature): boolean {
   return feature.placed !== false;
 }
 
-function shouldKeepSelection(target: EventTarget): boolean {
-  if (!(target instanceof Element)) {
-    return false;
-  }
-
-  return Boolean(
-    target.closest(
-      [
-        'button',
-        'input',
-        'select',
-        'textarea',
-        '.setup-row',
-        '.wall-section',
-        '.piece rect',
-        '.wall-feature-block',
-        '.staged-piece',
-      ].join(','),
-    ),
-  );
-}
-
 function WallDragPreviewOverlay({
   preview,
   artPieceBufferEnabled,
@@ -3719,23 +3702,6 @@ function startSuppressingTextSelection() {
 
 function stopSuppressingTextSelection() {
   document.body.classList.remove(SUPPRESS_TEXT_SELECTION_CLASS);
-}
-
-function getUnplacedPieceIssues(pieces: ArtPiece[], placements: Placement[]): string[] {
-  const placedPieceIds = new Set(placements.map((placement) => placement.pieceId));
-  const countsByLabel = new Map<string, number>();
-
-  for (const piece of pieces) {
-    if (!placedPieceIds.has(piece.id)) {
-      countsByLabel.set(piece.label, (countsByLabel.get(piece.label) ?? 0) + 1);
-    }
-  }
-
-  return [...countsByLabel.entries()].map(([label, count]) =>
-    count === 1
-      ? `${label} has not been placed.`
-      : `${count} pieces named ${label} have not been placed.`,
-  );
 }
 
 function CollapsiblePanel({
@@ -4603,37 +4569,6 @@ function HeadingWithInfo({ label, info }: { label: string; info: string }) {
       <InfoTooltipButton label={label} info={info} />
     </div>
   );
-}
-
-function getTooltipElementSize(element: HTMLElement) {
-  const rect = element.getBoundingClientRect();
-
-  return {
-    width: Math.max(rect.width, element.scrollWidth),
-    height: Math.max(rect.height, element.scrollHeight),
-  };
-}
-
-function getStagedPreviewObstacles(
-  button: HTMLButtonElement,
-  viewportOffsetLeft: number,
-  viewportOffsetTop: number,
-) {
-  const ownPreviewShell = button.closest('.staged-piece-preview-shell');
-
-  return Array.from(document.querySelectorAll<HTMLElement>('.staged-piece-preview'))
-    .filter((preview) => !ownPreviewShell?.contains(preview))
-    .map((preview) => {
-      const rect = preview.getBoundingClientRect();
-
-      return {
-        left: rect.left - viewportOffsetLeft,
-        top: rect.top - viewportOffsetTop,
-        width: rect.width,
-        height: rect.height,
-      };
-    })
-    .filter((rect) => rect.width > 0 && rect.height > 0);
 }
 
 function AutoPlacementControls({
@@ -5825,14 +5760,6 @@ function WallCanvas({
       })}
     </>
   );
-}
-
-function toClosedSvgPath(points: Array<{ x: number; y: number }>): string {
-  if (points.length === 0) {
-    return '';
-  }
-
-  return `M ${points.map(({ x, y }) => `${x} ${y}`).join(' L ')} Z`;
 }
 
 function ExportPanel({

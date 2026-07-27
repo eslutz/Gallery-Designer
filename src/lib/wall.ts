@@ -576,3 +576,11 @@ function clamp(value: number, min: number, max: number): number {
 function nearlyEqual(first: number, second: number): boolean {
   return Math.abs(first - second) < 0.001;
 }
+
+export function toClosedSvgPath(points: Array<{ x: number; y: number }>): string {
+  if (points.length === 0) {
+    return '';
+  }
+
+  return `M ${points.map(({ x, y }) => `${x} ${y}`).join(' L ')} Z`;
+}

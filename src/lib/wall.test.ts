@@ -8,6 +8,7 @@ import {
   getWallLayout,
   moveWallSection,
   sectionsShareEdge,
+  toClosedSvgPath,
   validateWallSections,
 } from './wall';
 import type { EditorFeatures, WallSection } from '../types';
@@ -184,5 +185,21 @@ describe('wall section geometry', () => {
         { x: 2, y: 78 },
       ]),
     );
+  });
+});
+
+describe('toClosedSvgPath', () => {
+  it('returns an empty string for no points', () => {
+    expect(toClosedSvgPath([])).toBe('');
+  });
+
+  it('builds a closed SVG path through the given points', () => {
+    expect(
+      toClosedSvgPath([
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 10, y: 10 },
+      ]),
+    ).toBe('M 0 0 L 10 0 L 10 10 Z');
   });
 });

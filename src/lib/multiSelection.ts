@@ -109,3 +109,25 @@ function rectsHavePositiveAreaOverlap(first: Rect, second: Rect): boolean {
     Math.min(first.bottom, second.bottom) > Math.max(first.top, second.top)
   );
 }
+
+export function shouldKeepSelection(target: EventTarget): boolean {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+
+  return Boolean(
+    target.closest(
+      [
+        'button',
+        'input',
+        'select',
+        'textarea',
+        '.setup-row',
+        '.wall-section',
+        '.piece rect',
+        '.wall-feature-block',
+        '.staged-piece',
+      ].join(','),
+    ),
+  );
+}

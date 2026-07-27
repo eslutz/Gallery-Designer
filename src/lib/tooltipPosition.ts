@@ -97,3 +97,34 @@ function clamp(value: number, min: number, max: number): number {
 
   return Math.min(Math.max(value, min), max);
 }
+
+export function getTooltipElementSize(element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+
+  return {
+    width: Math.max(rect.width, element.scrollWidth),
+    height: Math.max(rect.height, element.scrollHeight),
+  };
+}
+
+export function getStagedPreviewObstacles(
+  button: HTMLButtonElement,
+  viewportOffsetLeft: number,
+  viewportOffsetTop: number,
+) {
+  const ownPreviewShell = button.closest('.staged-piece-preview-shell');
+
+  return Array.from(document.querySelectorAll<HTMLElement>('.staged-piece-preview'))
+    .filter((preview) => !ownPreviewShell?.contains(preview))
+    .map((preview) => {
+      const rect = preview.getBoundingClientRect();
+
+      return {
+        left: rect.left - viewportOffsetLeft,
+        top: rect.top - viewportOffsetTop,
+        width: rect.width,
+        height: rect.height,
+      };
+    })
+    .filter((rect) => rect.width > 0 && rect.height > 0);
+}
