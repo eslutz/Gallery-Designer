@@ -130,6 +130,10 @@ const FEATURE_RULES: Record<WallFeatureType, WallFeatureRuleDefaults> = {
   },
 };
 
+export function isPlacedWallFeature(feature: WallFeature): boolean {
+  return feature.placed !== false;
+}
+
 export function getWallFeatureDefaults(type: WallFeatureType): WallFeatureDefaults {
   const defaults = FEATURE_RULES[type] ?? FEATURE_RULES.custom;
   return {

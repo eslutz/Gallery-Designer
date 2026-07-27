@@ -45,7 +45,7 @@ export function getPieceIdsIntersectingRect(
 export function getGroupBounds(
   sections: WallSection[],
   pieces: ArtPiece[],
-  placements: Placement[],
+  placements: readonly Placement[],
   pieceIds: Iterable<string>,
 ): Rect | null {
   const selectedIds = new Set(pieceIds);
@@ -107,5 +107,27 @@ function rectsHavePositiveAreaOverlap(first: Rect, second: Rect): boolean {
   return (
     Math.min(first.right, second.right) > Math.max(first.left, second.left) &&
     Math.min(first.bottom, second.bottom) > Math.max(first.top, second.top)
+  );
+}
+
+export function shouldKeepSelection(target: EventTarget): boolean {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+
+  return Boolean(
+    target.closest(
+      [
+        'button',
+        'input',
+        'select',
+        'textarea',
+        '.setup-row',
+        '.wall-section',
+        '.piece rect',
+        '.wall-feature-block',
+        '.staged-piece',
+      ].join(','),
+    ),
   );
 }

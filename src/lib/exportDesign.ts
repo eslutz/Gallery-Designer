@@ -1,4 +1,4 @@
-import jsPDF from 'jspdf';
+import type jsPDF from 'jspdf';
 import type {
   ArtPiece,
   AutoPlacementSettings,
@@ -91,7 +91,8 @@ export async function downloadPdf(
   const diagram = buildDiagramSvg(input, 1600, 600);
   const diagramBlob = await renderSvgToPngBlob(diagram);
   const diagramBytes = new Uint8Array(await diagramBlob.arrayBuffer());
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
+  const { default: JsPDF } = await import('jspdf');
+  const doc = new JsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(20);

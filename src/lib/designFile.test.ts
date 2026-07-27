@@ -132,6 +132,10 @@ describe('design JSON files', () => {
     expect(() => parseDesignFile('{"unit":"yards"}')).toThrow('Design file is missing sections.');
   });
 
+  it('rejects a top-level JSON array instead of silently defaulting its fields', () => {
+    expect(() => parseDesignFile('[{"sections":[]}]')).toThrow('Design file is not an object.');
+  });
+
   it('defaults missing theme settings to system and slate', () => {
     const parsed = parseDesignFile(
       JSON.stringify({

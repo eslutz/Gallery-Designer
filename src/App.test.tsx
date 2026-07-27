@@ -1,3 +1,4 @@
+import { StrictMode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -85,6 +86,141 @@ describe('Gallery Designer app', () => {
     const table = screen.getByRole('table', { name: /Installation measurements/i });
     expect(within(table).getAllByRole('row')).toHaveLength(4);
     expect(screen.getByRole('button', { name: /Export PDF/i })).toBeEnabled();
+  });
+
+  // Rendered through StrictMode to match main.tsx: StrictMode double-invokes
+  // effects on mount, which previously slipped past the toast's first-render
+  // guard and raised a toast for the initial message.
+  it('does not show a toast on initial load, including under StrictMode', () => {
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+
+    expect(document.querySelector('.message-toast')).not.toBeInTheDocument();
+    // The live region itself must stay mounted so announcements are reliable.
+    expect(document.querySelector('.message-toast-region')).toBeInTheDocument();
+  });
+
+  it('shows an error toast when auto-place fails, and it can be dismissed', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.clear(screen.getByLabelText('Section 1 width'));
+    await user.type(screen.getByLabelText('Section 1 width'), '10');
+    await user.clear(screen.getByLabelText('Section 1 height'));
+    await user.type(screen.getByLabelText('Section 1 height'), '10');
+    await user.clear(screen.getByLabelText('Piece 1 width'));
+    await user.type(screen.getByLabelText('Piece 1 width'), '40');
+    await user.clear(screen.getByLabelText('Piece 1 height'));
+    await user.type(screen.getByLabelText('Piece 1 height'), '40');
+
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    const toast = document.querySelector('.message-toast');
+    expect(toast).toHaveClass('error');
+    expect(toast).toBeInTheDocument();
+    expect(
+      within(toast as HTMLElement).getByText(/cannot fit within the wall margin/i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Dismiss notification/i }));
+    expect(document.querySelector('.message-toast')).not.toBeInTheDocument();
+  });
+
+  // The toast is the live region now, so failure diagnostics ride along inside it
+  // as visually hidden text instead of living in a parallel hidden node.
+  it('announces auto-placement diagnostics as visually hidden text inside the toast', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.clear(screen.getByLabelText('Section 1 width'));
+    await user.type(screen.getByLabelText('Section 1 width'), '40');
+    await user.clear(screen.getByLabelText('Section 1 height'));
+    await user.type(screen.getByLabelText('Section 1 height'), '30');
+
+    await user.clear(screen.getByLabelText('Piece 1 width'));
+    await user.type(screen.getByLabelText('Piece 1 width'), '12');
+    await user.clear(screen.getByLabelText('Piece 1 height'));
+    await user.type(screen.getByLabelText('Piece 1 height'), '12');
+
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    await user.clear(screen.getByLabelText('Piece 2 width'));
+    await user.type(screen.getByLabelText('Piece 2 width'), '13');
+    await user.clear(screen.getByLabelText('Piece 2 height'));
+    await user.type(screen.getByLabelText('Piece 2 height'), '12');
+
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    await user.clear(screen.getByLabelText('Piece 3 width'));
+    await user.type(screen.getByLabelText('Piece 3 width'), '12');
+    await user.clear(screen.getByLabelText('Piece 3 height'));
+    await user.type(screen.getByLabelText('Piece 3 height'), '13');
+
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    const toast = document.querySelector('.message-toast');
+    expect(toast).toBeInTheDocument();
+    expect(within(toast as HTMLElement).getByText(/Tried \d+ layout strategies/i)).toHaveClass(
+      'visually-hidden',
+    );
+  });
+
+  it('shows an info toast after a successful action, matching the Advanced drawer history', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /Duplicate Piece 1/i }));
+
+    const toast = document.querySelector('.message-toast');
+    expect(toast).toHaveClass('info');
+    expect(toast).toBeInTheDocument();
+    expect(within(toast as HTMLElement).getByText(/Duplicated Piece 1\./i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Advanced$/i }));
+    const statusPanel = screen.getByRole('region', { name: /Latest update/i });
+    expect(within(statusPanel).getByText('Duplicated Piece 1.')).toBeInTheDocument();
+  });
+
+  // The undo snapshot predates the current message, so deriving the toast
+  // revision from the snapshot rather than live state reused an already-shown
+  // revision and silently suppressed this toast.
+  it('shows a toast when undoing a change', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /Duplicate Piece 1/i }));
+    await user.click(screen.getByRole('button', { name: /Dismiss notification/i }));
+    expect(document.querySelector('.message-toast')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Undo last change/i }));
+
+    const toast = document.querySelector('.message-toast');
+    expect(toast).toBeInTheDocument();
+    expect(
+      within(toast as HTMLElement).getByText(/Restored the previous change\./i),
+    ).toBeInTheDocument();
+  });
+
+  it('places a staged piece onto the wall via the keyboard-accessible Place button', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+
+    expect(screen.getByRole('button', { name: /Drag Piece 1 from staging/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Drag Piece 2 from staging/i })).toBeInTheDocument();
+
+    const placeButton = screen.getByRole('button', { name: /Place Piece 1 on the wall/i });
+    await user.click(placeButton);
+
+    expect(
+      screen.queryByRole('button', { name: /Drag Piece 1 from staging/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Drag Piece 2 from staging/i })).toBeInTheDocument();
+
+    const table = screen.getByRole('table', { name: /Installation measurements/i });
+    expect(within(table).getAllByRole('row')).toHaveLength(2);
   });
 
   it('shows PNG export progress and prevents concurrent print exports', async () => {
@@ -210,6 +346,49 @@ describe('Gallery Designer app', () => {
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('imported'));
     expect(screen.getByLabelText('Section 1 width unit')).toHaveValue('in');
     expect(screen.getByLabelText('Piece 1 width unit')).toHaveValue('in');
+  });
+
+  // recordUndoSnapshot()'s default parameter closes over the state from the
+  // render that created the importJson callback, which goes stale once the
+  // async file read resolves. Undo must restore the state from immediately
+  // before the import applied — including an edit made while the file was
+  // still being read — not an earlier, pre-edit snapshot.
+  it('preserves an edit made while a design file is still being read', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    let resolveFileText: (value: string) => void = () => {};
+    const importedDesign = {
+      text: vi.fn(
+        () =>
+          new Promise<string>((resolve) => {
+            resolveFileText = resolve;
+          }),
+      ),
+    } as unknown as File;
+
+    fireEvent.change(screen.getByLabelText('Import JSON design file'), {
+      target: { files: [importedDesign] },
+    });
+
+    await user.click(screen.getByRole('button', { name: /Duplicate Piece 1/i }));
+    expect(screen.getByDisplayValue('Piece 1 copy')).toBeInTheDocument();
+
+    resolveFileText(
+      JSON.stringify({
+        unit: 'in',
+        sections: [{ id: 'section-1', name: 'Section 1', widthIn: 96, heightIn: 84 }],
+        pieces: [{ id: 'piece-1', label: 'Imported piece', widthIn: 16, heightIn: 20 }],
+        placements: [],
+      }),
+    );
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('imported'));
+    expect(screen.queryByDisplayValue('Piece 1 copy')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Undo last change/i }));
+
+    expect(screen.getByDisplayValue('Piece 1 copy')).toBeInTheDocument();
   });
 
   it('uses a staging tray for unplaced pieces and no longer renders a place-on-first-wall action', async () => {
@@ -1821,7 +2000,7 @@ describe('Gallery Designer app', () => {
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Snap to alignment information' }),
-    ).toHaveAccessibleDescription(/nearby artwork and wall alignment.*how close/i);
+    ).toHaveAccessibleDescription(/line of sight.*not to the wall's own edges.*how close/i);
     expect(
       screen.getByRole('button', { name: 'Show alignment guides information' }),
     ).toHaveAccessibleDescription(/dotted guide lines.*snapping engages/i);
@@ -2944,9 +3123,17 @@ describe('Gallery Designer app', () => {
       screen.getByRole('button', { name: /Zoom in/i }),
     );
     expect(canvasCard).toContainElement(screen.getByRole('group', { name: /Wall zoom controls/i }));
-    expect(screen.getByRole('status')).toHaveTextContent(/Enter wall and art dimensions/i);
+    // The live region is mounted but empty at rest: it announces messages as they
+    // arrive rather than persistently mirroring the current one. The Advanced
+    // drawer's "Latest update" panel is the durable view, asserted below.
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
     await openAdvancedDrawer(user);
     const exportPanel = screen.getByRole('dialog', { name: /Advanced/i });
+    expect(
+      within(screen.getByRole('region', { name: /Latest update/i })).getByText(
+        /Enter wall and art dimensions/i,
+      ),
+    ).toBeInTheDocument();
     const exportTitle = within(exportPanel).getByRole('heading', { name: /^Design files$/i });
     expect(exportTitle.closest('.panel-title')).toBeInTheDocument();
     expect(within(exportPanel).queryByText(/Ready to export/i)).not.toBeInTheDocument();

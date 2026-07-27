@@ -204,7 +204,16 @@ export function autoPlacePieces(
     return { ok: false, message: 'Add at least one wall section before auto-placing pieces.' };
   }
 
-  if (pieces.length > DEFAULT_MAX_PIECES) {
+  const existingPlacements = options.existingPlacements ?? [];
+  const existingPieceIds = new Set(existingPlacements.map((placement) => placement.pieceId));
+  const remainingPieces = pieces.filter((piece) => !existingPieceIds.has(piece.id));
+
+  // The cap bounds the packing search, which only ever runs over the pieces
+  // still needing a placement decision — already-placed pieces are fixed
+  // obstacles, not something the algorithm re-solves for. Capping on the full
+  // `pieces` count would reject placing a single new piece once the wall
+  // already holds DEFAULT_MAX_PIECES placed pieces.
+  if (remainingPieces.length > DEFAULT_MAX_PIECES) {
     return {
       ok: false,
       message: `Auto-placement supports up to ${DEFAULT_MAX_PIECES} pieces at a time.`,
@@ -214,10 +223,7 @@ export function autoPlacePieces(
   const normalizedSections = normalizeWallSections(sections);
   const settings = resolveSettings(options);
   const bounds = getWallBounds(normalizedSections);
-  const existingPlacements = options.existingPlacements ?? [];
   const existingIssue = getExistingPlacementIssue(normalizedSections, pieces, existingPlacements);
-  const existingPieceIds = new Set(existingPlacements.map((placement) => placement.pieceId));
-  const remainingPieces = pieces.filter((piece) => !existingPieceIds.has(piece.id));
 
   if (existingIssue) {
     return {

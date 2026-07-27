@@ -187,7 +187,7 @@ describe('placement snapping features', () => {
       widthIn: 20,
       heightIn: 10,
     };
-    const placement: Placement = { pieceId: 'wide-moving', sectionId: 'wall', xIn: -11, yIn: 40 };
+    const placement: Placement = { pieceId: 'wide-moving', sectionId: 'wall', xIn: -11, yIn: 10 };
     const fixedPlacement: Placement = { pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 10 };
 
     const snapped = applyPlacementFeaturesWithMetadata({
@@ -201,6 +201,87 @@ describe('placement snapping features', () => {
 
     expect(snapped.value.xIn).toBe(-10);
     expect(snapped.guides).toContainEqual({ axis: 'x', coordinateIn: 10, kind: 'edge' });
+  });
+
+  it('ignores a piece with no line of sight to the moving piece (diagonal, no shared row or column)', () => {
+    const placement: Placement = { pieceId: 'moving', sectionId: 'wall', xIn: 50, yIn: 40 };
+    const fixedPlacement: Placement = { pieceId: 'fixed', sectionId: 'wall', xIn: 10, yIn: 10 };
+
+    const snapped = applyPlacementFeaturesWithMetadata({
+      placement,
+      piece: pieces[0],
+      sections,
+      pieces,
+      placements: [fixedPlacement],
+      features: { ...baseFeatures, snapToAlignment: true, alignmentToleranceIn: 1 },
+    });
+
+    expect(snapped.value).toEqual(placement);
+    expect(snapped.guides).toEqual([]);
+  });
+
+  it('occludes a farther piece behind a nearer one sharing the same lane', () => {
+    // near: right edge at 30, far: right edge at 52 — both in the moving piece's row,
+    // so near sits directly between far and the moving piece approaching from the right.
+    const near: ArtPiece = { id: 'near', label: 'Near', widthIn: 20, heightIn: 16 };
+    const far: ArtPiece = { id: 'far', label: 'Far', widthIn: 20, heightIn: 16 };
+    const placement: Placement = { pieceId: 'moving', sectionId: 'wall', xIn: 53, yIn: 10 };
+    const nearPlacement: Placement = { pieceId: 'near', sectionId: 'wall', xIn: 10, yIn: 10 };
+    const farPlacement: Placement = { pieceId: 'far', sectionId: 'wall', xIn: 32, yIn: 10 };
+
+    const snapped = applyPlacementFeaturesWithMetadata({
+      placement,
+      piece: pieces[0],
+      sections,
+      pieces: [...pieces, near, far],
+      placements: [nearPlacement, farPlacement],
+      features: { ...baseFeatures, snapToAlignment: true, alignmentToleranceIn: 2 },
+    });
+
+    // Snaps to "far"'s edge (52), not "near"'s (30) — far is the nearer neighbor from
+    // the moving piece's side, so it occludes near, the piece further behind it.
+    expect(snapped.value.xIn).toBe(52);
+    expect(snapped.guides).toContainEqual({ axis: 'x', coordinateIn: 52, kind: 'edge' });
+    expect(snapped.guides).not.toContainEqual({ axis: 'x', coordinateIn: 30, kind: 'edge' });
+  });
+
+  it("lets a wall feature occlude a farther piece's center guide, not just its edges", () => {
+    // Feature (sofa, X gap 30) sits nearer to the moving piece than "far" (X gap 60)
+    // and its span overlaps far's, so it occludes far entirely on the Y axis too —
+    // both far's edges (already excluded via edgeRects before this fix) and its
+    // center (the bug: center occlusion was computed against centerRects alone,
+    // which never includes static features, so a feature couldn't block a center).
+    const movingPiece: ArtPiece = { id: 'moving-tall', label: 'Moving', widthIn: 12, heightIn: 20 };
+    const far: ArtPiece = { id: 'far', label: 'Far', widthIn: 20, heightIn: 4 };
+    const placement: Placement = { pieceId: 'moving-tall', sectionId: 'wall', xIn: 90, yIn: 0 };
+    const farPlacement: Placement = { pieceId: 'far', sectionId: 'wall', xIn: 10, yIn: 8 };
+    const feature: WallFeature = {
+      id: 'sofa',
+      type: 'sofa',
+      name: 'Sofa',
+      xIn: 50,
+      yIn: 8,
+      widthIn: 10,
+      heightIn: 4,
+      placed: true,
+    };
+
+    const snapped = applyPlacementFeaturesWithMetadata({
+      placement,
+      piece: movingPiece,
+      sections,
+      pieces: [movingPiece, far],
+      placements: [farPlacement],
+      featureRects: [feature],
+      features: { ...baseFeatures, snapToAlignment: true, alignmentToleranceIn: 15 },
+    });
+
+    // With far correctly occluded, the sofa's near edge (12) wins the Y axis.
+    expect(snapped.guides).toContainEqual({ axis: 'y', coordinateIn: 12, kind: 'edge' });
+    // Far's Y-center (10) exactly matches the moving piece's Y-center (distance 0),
+    // so if it were still visible it would win over every edge candidate outright —
+    // this is the assertion that catches the bug.
+    expect(snapped.guides).not.toContainEqual({ axis: 'y', coordinateIn: 10, kind: 'center' });
   });
 
   it('leaves placement unchanged when snapping features are disabled', () => {

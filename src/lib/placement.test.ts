@@ -3,6 +3,7 @@ import {
   clampPlacement,
   getAutoPlacementIssues,
   getPlacementIssues,
+  getUnplacedPieceIssues,
   isPlacementWithinWall,
   placementsOverlapOrTouch,
   reassignPlacementToContainingSection,
@@ -146,5 +147,33 @@ describe('placement constraints', () => {
         yIn: 10,
       },
     );
+  });
+});
+
+describe('getUnplacedPieceIssues', () => {
+  const pieces: ArtPiece[] = [
+    { id: 'p1', label: 'Poster', widthIn: 10, heightIn: 10 },
+    { id: 'p2', label: 'Poster', widthIn: 10, heightIn: 10 },
+    { id: 'p3', label: 'Print', widthIn: 8, heightIn: 8 },
+  ];
+
+  it('returns no issues when every piece is placed', () => {
+    const placements: Placement[] = [
+      { pieceId: 'p1', sectionId: 'a', xIn: 0, yIn: 0 },
+      { pieceId: 'p2', sectionId: 'a', xIn: 20, yIn: 0 },
+      { pieceId: 'p3', sectionId: 'a', xIn: 40, yIn: 0 },
+    ];
+    expect(getUnplacedPieceIssues(pieces, placements)).toEqual([]);
+  });
+
+  it('reports a singular message for one unplaced piece', () => {
+    expect(getUnplacedPieceIssues([pieces[2]], [])).toEqual(['Print has not been placed.']);
+  });
+
+  it('groups unplaced pieces sharing a label into one plural message', () => {
+    expect(getUnplacedPieceIssues(pieces, [])).toEqual([
+      '2 pieces named Poster have not been placed.',
+      'Print has not been placed.',
+    ]);
   });
 });

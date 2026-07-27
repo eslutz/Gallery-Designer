@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { avoidTooltipCollisions, calculateTooltipPosition } from './tooltipPosition';
+import {
+  avoidTooltipCollisions,
+  calculateTooltipPosition,
+  getStagedPreviewObstacles,
+  getTooltipElementSize,
+} from './tooltipPosition';
 
 describe('tooltip positioning', () => {
   it('clamps tooltips near the right viewport edge', () => {
@@ -76,5 +81,45 @@ describe('tooltip positioning', () => {
 
     expect(position.left).toBe(393);
     expect(position.left + 206).toBeLessThan(607);
+  });
+});
+
+describe('getTooltipElementSize', () => {
+  it('uses whichever is larger of the bounding rect and scroll size', () => {
+    const element = document.createElement('div');
+    element.getBoundingClientRect = () => ({ width: 100, height: 40 }) as DOMRect;
+    Object.defineProperty(element, 'scrollWidth', { value: 120, configurable: true });
+    Object.defineProperty(element, 'scrollHeight', { value: 30, configurable: true });
+
+    expect(getTooltipElementSize(element)).toEqual({ width: 120, height: 40 });
+  });
+});
+
+describe('getStagedPreviewObstacles', () => {
+  it("excludes the button's own preview and previews with no area", () => {
+    const ownShell = document.createElement('div');
+    ownShell.className = 'staged-piece-preview-shell';
+    const button = document.createElement('button');
+    ownShell.append(button);
+    const ownPreview = document.createElement('div');
+    ownPreview.className = 'staged-piece-preview';
+    ownShell.append(ownPreview);
+    document.body.append(ownShell);
+
+    const otherPreview = document.createElement('div');
+    otherPreview.className = 'staged-piece-preview';
+    otherPreview.getBoundingClientRect = () =>
+      ({ left: 50, top: 60, width: 20, height: 10 }) as DOMRect;
+    document.body.append(otherPreview);
+
+    const zeroSizePreview = document.createElement('div');
+    zeroSizePreview.className = 'staged-piece-preview';
+    zeroSizePreview.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 0, height: 0 }) as DOMRect;
+    document.body.append(zeroSizePreview);
+
+    const obstacles = getStagedPreviewObstacles(button, 5, 10);
+
+    expect(obstacles).toEqual([{ left: 45, top: 50, width: 20, height: 10 }]);
   });
 });
