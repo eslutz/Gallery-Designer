@@ -1,5 +1,4 @@
 import {
-  AlertTriangle,
   ChevronDown,
   Copy,
   Download,
@@ -38,6 +37,10 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { RenderableItem } from './components/RenderableItem';
+import { AutoPlacementFailureDetails, formatCount } from './components/AutoPlacementFailureDetails';
+import { BrandLogo } from './components/BrandLogo';
+import { CollapsiblePanel } from './components/CollapsiblePanel';
+import { MessageToast } from './components/MessageToast';
 import { fitArtworkLabel } from './lib/artworkLabel';
 import { autoPlacePieces, type AutoPlacementDiagnostics } from './lib/autoPlace';
 import {
@@ -53,7 +56,6 @@ import {
   STORAGE_KEY,
   withMessage,
   type GalleryState,
-  type MessageTone,
 } from './lib/galleryState';
 import {
   distanceBetween,
@@ -3479,102 +3481,6 @@ export default function App() {
   );
 }
 
-function AutoPlacementFailureDetails({
-  diagnostics,
-  unit,
-}: {
-  diagnostics: AutoPlacementDiagnostics;
-  unit: Unit;
-}) {
-  return (
-    <div className="auto-placement-diagnostics">
-      {diagnostics.preservedPlacementCount > 0 ? (
-        <p>
-          {formatCount(diagnostics.preservedPlacementCount, 'fixed piece')} reduced the space
-          available for {formatCount(diagnostics.remainingPieceCount, 'remaining piece')}.
-        </p>
-      ) : null}
-      {diagnostics.attempts.length > 0 ? (
-        <>
-          <p>
-            Tried {diagnostics.attempts.length} layout strategies with{' '}
-            {formatMeasurement(diagnostics.resolvedGapIn, unit)} spacing and a{' '}
-            {formatMeasurement(diagnostics.resolvedOuterMarginIn, unit)} wall margin.
-          </p>
-          <ul>
-            {diagnostics.attempts.map((attempt) => (
-              <li key={attempt.family}>
-                <strong>{capitalize(attempt.family)}:</strong> {attempt.reason}
-                {attempt.requiredWidthIn !== undefined && attempt.requiredHeightIn !== undefined ? (
-                  <span>
-                    {' '}
-                    Needs {formatMeasurement(attempt.requiredWidthIn, unit)} wide x{' '}
-                    {formatMeasurement(attempt.requiredHeightIn, unit)} tall including margins; wall
-                    bounds are {formatMeasurement(diagnostics.wallWidthIn, unit)} x{' '}
-                    {formatMeasurement(diagnostics.wallHeightIn, unit)}.
-                  </span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-function formatCount(count: number, singular: string): string {
-  return `${count} ${count === 1 ? singular : `${singular}s`}`;
-}
-
-function capitalize(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-function BrandLogo() {
-  return (
-    <svg className="brand-logo" viewBox="0 0 56 48" aria-hidden="true" focusable="false">
-      <path
-        d="M3 3h50v25H31v17H3z"
-        fill="var(--piece-selected-fill)"
-        stroke="var(--wall-edge)"
-        strokeLinejoin="round"
-        strokeWidth="3"
-      />
-      <rect
-        x="9"
-        y="9"
-        width="11"
-        height="13"
-        rx="1.5"
-        fill="var(--piece-fill)"
-        stroke="var(--primary-background)"
-        strokeWidth="2.5"
-      />
-      <rect
-        x="26"
-        y="9"
-        width="19"
-        height="11"
-        rx="1.5"
-        fill="var(--piece-fill)"
-        stroke="var(--primary-background)"
-        strokeWidth="2.5"
-      />
-      <rect
-        x="9"
-        y="28"
-        width="15"
-        height="10"
-        rx="1.5"
-        fill="var(--piece-fill)"
-        stroke="var(--primary-background)"
-        strokeWidth="2.5"
-      />
-    </svg>
-  );
-}
-
 function getPieceLabel(state: GalleryState, pieceId: string): string {
   return state.pieces.find((piece) => piece.id === pieceId)?.label ?? 'Piece';
 }
@@ -3702,63 +3608,6 @@ function startSuppressingTextSelection() {
 
 function stopSuppressingTextSelection() {
   document.body.classList.remove(SUPPRESS_TEXT_SELECTION_CLASS);
-}
-
-function CollapsiblePanel({
-  icon,
-  title,
-  badge,
-  ariaLabel,
-  defaultExpanded = true,
-  className = '',
-  contentClassName = '',
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  badge?: string | number;
-  ariaLabel: string;
-  defaultExpanded?: boolean;
-  className?: string;
-  contentClassName?: string;
-  children: React.ReactNode;
-}) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
-  const contentId = useId();
-
-  return (
-    <section
-      className={`utility-panel feature-panel collapsible-panel ${className}`.trim()}
-      aria-label={ariaLabel}
-    >
-      <button
-        type="button"
-        className="collapsible-panel-trigger"
-        aria-expanded={expanded}
-        aria-controls={contentId}
-        onClick={() => setExpanded((current) => !current)}
-      >
-        <span className="panel-title">
-          {icon}
-          <h2>{title}</h2>
-          {badge !== undefined ? <span className="count-badge">{badge}</span> : null}
-        </span>
-        <ChevronDown
-          size={16}
-          aria-hidden="true"
-          focusable="false"
-          className={expanded ? 'collapsible-panel-caret' : 'collapsible-panel-caret collapsed'}
-        />
-      </button>
-      <div
-        id={contentId}
-        className={`collapsible-panel-content ${contentClassName}`.trim()}
-        hidden={!expanded}
-      >
-        {children}
-      </div>
-    </section>
-  );
 }
 
 function AdvancedDrawer({
@@ -4348,48 +4197,6 @@ function InfoTooltipButton({ label, info }: { label: string; info: string }) {
         document.body,
       )}
     </span>
-  );
-}
-
-function MessageToast({
-  message,
-  details,
-  tone,
-  visible,
-  onDismiss,
-}: {
-  message: string;
-  details?: string;
-  tone: MessageTone;
-  visible: boolean;
-  onDismiss: () => void;
-}) {
-  // The region stays mounted so assistive tech is already observing it; the
-  // toast itself mounts and unmounts, and that insertion is what triggers the
-  // announcement. Toggling visibility on the region instead would take it out
-  // of the accessibility tree, which is the unreliable case for live regions.
-  return (
-    <div className="message-toast-region" role="status" aria-live="polite">
-      {visible ? (
-        <div className={`message-toast ${tone}`}>
-          {tone === 'error' ? (
-            <AlertTriangle size={16} className="message-toast-icon" aria-hidden="true" />
-          ) : (
-            <Info size={16} className="message-toast-icon" aria-hidden="true" />
-          )}
-          <p className="message-toast-text">{message}</p>
-          {details ? <span className="visually-hidden">{details}</span> : null}
-          <button
-            type="button"
-            className="message-toast-dismiss"
-            aria-label={`Dismiss notification: ${message}`}
-            onClick={onDismiss}
-          >
-            <X size={14} />
-          </button>
-        </div>
-      ) : null}
-    </div>
   );
 }
 
