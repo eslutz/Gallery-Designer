@@ -688,6 +688,83 @@ button:not(:disabled):active {
   background: var(--panel-border);
 }
 
+.design-manager-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.design-manager-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+}
+
+.design-manager-row-active {
+  border-color: var(--secondary-text);
+}
+
+.design-manager-info {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.design-manager-name {
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.design-manager-current {
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.design-manager-meta {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.design-manager-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.design-manager-rename-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 180px;
+}
+
+.design-manager-rename-form input {
+  flex: 1;
+  min-width: 0;
+}
+
+.design-manager-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.design-manager-delete-confirm {
+  border-color: var(--issue-text);
+  color: var(--issue-text);
+}
+
 .shortcut-group + .shortcut-group {
   margin-top: 4px;
 }

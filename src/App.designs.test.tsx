@@ -130,3 +130,68 @@ describe('multi-design switching', () => {
     );
   });
 });
+
+describe('manage designs dialog', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 768 });
+    window.matchMedia = vi.fn(
+      (query: string) =>
+        ({
+          matches: query.includes('prefers-color-scheme: dark'),
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        }) as unknown as MediaQueryList,
+    );
+  });
+
+  it('opens from the switcher, renames the active design, and reflects the new name in the trigger', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(switcherTrigger());
+    await user.click(screen.getByRole('menuitem', { name: /Manage designs/i }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Manage designs' });
+    await user.click(within(dialog).getByRole('button', { name: 'Rename My design' }));
+    const input = within(dialog).getByLabelText('Design name');
+    await user.clear(input);
+    await user.type(input, 'Living room wall');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    expect(within(dialog).getByText('Living room wall')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Close Manage designs' }));
+    expect(switcherTrigger()).toHaveTextContent('Living room wall');
+  });
+
+  it('deletes the active design and switches into the design it was replaced by', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(switcherTrigger());
+    await user.click(screen.getByRole('menuitem', { name: 'New design' }));
+    await waitFor(() => {
+      expect(switcherTrigger()).toHaveTextContent('Design 2');
+    });
+
+    await user.click(switcherTrigger());
+    await user.click(screen.getByRole('menuitem', { name: /Manage designs/i }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Manage designs' });
+    await user.click(within(dialog).getByRole('button', { name: 'Delete Design 2' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    // Deleting the active design must fall back to a remaining one, and undo
+    // must not carry the deleted design's history along with it.
+    await waitFor(() => {
+      expect(switcherTrigger()).toHaveTextContent('My design');
+    });
+    expect(screen.getByRole('button', { name: 'Undo last change' })).toBeDisabled();
+  });
+});

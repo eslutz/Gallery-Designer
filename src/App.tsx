@@ -28,6 +28,7 @@ import { CollapsiblePanel } from './components/CollapsiblePanel';
 import { DesignSwitcher } from './components/DesignSwitcher';
 import { HookControls } from './components/HookControls';
 import { TooltipIconButton } from './components/InfoTooltip';
+import { ManageDesignsDialog } from './components/ManageDesignsDialog';
 import { MeasurementsTable } from './components/MeasurementsTable';
 import { MessageToast } from './components/MessageToast';
 import { NumberField } from './components/NumberField';
@@ -47,8 +48,11 @@ import { useWallZoomPan, type CursorInteraction } from './hooks/useWallZoomPan';
 import { autoPlacePieces } from './lib/autoPlace';
 import {
   createDesign,
+  deleteDesign,
+  duplicateDesign,
   loadDesignState,
   loadLibrary,
+  renameDesign,
   saveDesignState,
   setActiveDesign,
   touchDesign,
@@ -225,10 +229,7 @@ export default function App() {
   const [advancedDrawerOpen, setAdvancedDrawerOpen] = useState(false);
   const [settingsDrawerOpen, setSettingsDrawerOpen] = useState(false);
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
-  // Consumed once ManageDesignsDialog lands (Phase 5); the switcher's
-  // "Manage designs…" entry already sets it so that wiring is a pure addition.
   const [manageDesignsOpen, setManageDesignsOpen] = useState(false);
-  void manageDesignsOpen;
   const [expandedSectionId, setExpandedSectionId] = useState(defaultState.sections[0]?.id ?? '');
   const [autoPlacementVariantIndex, setAutoPlacementVariantIndex] = useState(0);
   const [cursorInteraction, setCursorInteraction] = useState<CursorInteraction>('idle');
@@ -1085,6 +1086,27 @@ export default function App() {
     saveDesignState(library.activeId, latestStateRef.current);
     const { library: nextLibrary, id } = createDesign(library);
     applyDesignSwitch(nextLibrary, id);
+  }
+
+  function renameDesignById(id: string, name: string) {
+    setLibrary((current) => renameDesign(current, id, name));
+  }
+
+  function duplicateDesignById(id: string) {
+    setLibrary((current) => duplicateDesign(current, id).library);
+  }
+
+  function deleteDesignById(id: string) {
+    const nextLibrary = deleteDesign(library, id);
+    // Deleting the active design leaves everything in memory pointing at a
+    // design that no longer has a storage entry — switch into whichever
+    // design deleteDesign() promoted, resetting undo/selection/zoom exactly
+    // like a normal switch would.
+    if (id === library.activeId) {
+      applyDesignSwitch(nextLibrary, nextLibrary.activeId);
+    } else {
+      setLibrary(nextLibrary);
+    }
   }
 
   function resetEntireDesign() {
@@ -2983,6 +3005,18 @@ export default function App() {
         open={shortcutsDialogOpen}
         onClose={() => setShortcutsDialogOpen(false)}
         onShowWelcomeGuide={() => {}}
+      />
+      <ManageDesignsDialog
+        open={manageDesignsOpen}
+        onClose={() => setManageDesignsOpen(false)}
+        library={library}
+        onRename={renameDesignById}
+        onDuplicate={duplicateDesignById}
+        onDelete={deleteDesignById}
+        onNewDesign={() => {
+          setManageDesignsOpen(false);
+          createNewDesign();
+        }}
       />
     </main>
   );

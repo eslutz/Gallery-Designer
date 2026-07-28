@@ -842,6 +842,51 @@ test('creates and switches designs, persisting each one independently across a r
   await expect(page.locator('input[value="Piece 1 copy"]')).not.toBeVisible();
 });
 
+test('manages designs through the manager dialog: rename, duplicate, and delete', async ({
+  page,
+}) => {
+  await page.goto('/');
+
+  const switcherTrigger = page.locator('.design-switcher-trigger');
+  await switcherTrigger.click();
+  await page.getByRole('menuitem', { name: /Manage designs/i }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Manage designs' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('My design')).toBeVisible();
+  await expect(dialog.getByText(/current/i)).toBeVisible();
+
+  // Rename the only design in place.
+  await dialog.getByRole('button', { name: 'Rename My design' }).click();
+  const renameInput = dialog.getByLabel('Design name');
+  await renameInput.fill('Living room wall');
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(dialog.getByText('Living room wall')).toBeVisible();
+
+  // Duplicate it, which shows up as a second row without switching away.
+  await dialog.getByRole('button', { name: 'Duplicate Living room wall' }).click();
+  await expect(dialog.getByText('Living room wall copy')).toBeVisible();
+  await expect(switcherTrigger).toContainText('Living room wall');
+  await expect(switcherTrigger).not.toContainText('copy');
+
+  // Deleting requires an explicit confirm.
+  await dialog.getByRole('button', { name: 'Delete Living room wall copy' }).click();
+  await expect(dialog.getByText('Delete “Living room wall copy”?')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog.getByText('Living room wall copy')).toBeVisible();
+
+  await dialog.getByRole('button', { name: 'Delete Living room wall copy' }).click();
+  await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(dialog.getByText('Living room wall copy')).not.toBeVisible();
+
+  // The last remaining design can't be deleted.
+  await expect(dialog.getByRole('button', { name: 'Delete Living room wall' })).toBeDisabled();
+
+  await dialog.getByRole('button', { name: 'Close Manage designs' }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(switcherTrigger).toContainText('Living room wall');
+});
+
 async function piecePositions(locators: import('@playwright/test').Locator[]) {
   return Promise.all(
     locators.map(async (piece) => ({
