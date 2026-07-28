@@ -2853,7 +2853,6 @@ export default function App() {
           </div>
           <div className="canvas-card" ref={wallDisplayRef}>
             <div className="wall-canvas-shell">
-              {showWelcomeCard ? <WelcomeCard onDismiss={dismissWelcomeCard} /> : null}
               <WallCanvas
                 svgRef={svgRef}
                 sections={state.sections}
@@ -3029,6 +3028,7 @@ export default function App() {
           createNewDesign();
         }}
       />
+      <WelcomeCard open={showWelcomeCard} onDismiss={dismissWelcomeCard} />
     </main>
   );
 }

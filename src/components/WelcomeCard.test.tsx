@@ -4,19 +4,23 @@ import { describe, expect, it, vi } from 'vitest';
 import { WelcomeCard } from './WelcomeCard';
 
 describe('WelcomeCard', () => {
-  it('renders the orienting steps and starts with "Don\'t show this again" checked', () => {
-    render(<WelcomeCard onDismiss={vi.fn()} />);
+  it('renders nothing when closed', () => {
+    render(<WelcomeCard open={false} onDismiss={vi.fn()} />);
 
-    expect(
-      screen.getByRole('heading', { name: 'Welcome to Gallery Designer' }),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('renders the orienting steps and starts with "Don\'t show this again" checked', () => {
+    render(<WelcomeCard open onDismiss={vi.fn()} />);
+
+    expect(screen.getByRole('dialog', { name: 'Welcome to Gallery Designer' })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: /Don.t show this again/i })).toBeChecked();
   });
 
   it('dismisses with dontShowAgain=true when "Start designing" is clicked with the default checkbox state', async () => {
     const user = userEvent.setup();
     const onDismiss = vi.fn();
-    render(<WelcomeCard onDismiss={onDismiss} />);
+    render(<WelcomeCard open onDismiss={onDismiss} />);
 
     await user.click(screen.getByRole('button', { name: 'Start designing' }));
 
@@ -26,7 +30,7 @@ describe('WelcomeCard', () => {
   it('dismisses with dontShowAgain=false once the checkbox is unchecked', async () => {
     const user = userEvent.setup();
     const onDismiss = vi.fn();
-    render(<WelcomeCard onDismiss={onDismiss} />);
+    render(<WelcomeCard open onDismiss={onDismiss} />);
 
     await user.click(screen.getByRole('checkbox', { name: /Don.t show this again/i }));
     await user.click(screen.getByRole('button', { name: 'Start designing' }));
@@ -34,13 +38,24 @@ describe('WelcomeCard', () => {
     expect(onDismiss).toHaveBeenCalledWith(false);
   });
 
-  it('the close button dismisses using the current checkbox state too', async () => {
+  it('the header close button dismisses using the current checkbox state too', async () => {
     const user = userEvent.setup();
     const onDismiss = vi.fn();
-    render(<WelcomeCard onDismiss={onDismiss} />);
+    render(<WelcomeCard open onDismiss={onDismiss} />);
 
     await user.click(screen.getByRole('checkbox', { name: /Don.t show this again/i }));
-    await user.click(screen.getByRole('button', { name: 'Close welcome guide' }));
+    await user.click(screen.getByRole('button', { name: 'Close Welcome to Gallery Designer' }));
+
+    expect(onDismiss).toHaveBeenCalledWith(false);
+  });
+
+  it('closing via Escape dismisses using the current checkbox state', async () => {
+    const user = userEvent.setup();
+    const onDismiss = vi.fn();
+    render(<WelcomeCard open onDismiss={onDismiss} />);
+
+    await user.click(screen.getByRole('checkbox', { name: /Don.t show this again/i }));
+    await user.keyboard('{Escape}');
 
     expect(onDismiss).toHaveBeenCalledWith(false);
   });

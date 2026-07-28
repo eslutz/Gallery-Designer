@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
+import { setWelcomeSeen } from './lib/welcomeGuide';
 
 // Each test here corresponds to one documented row in
 // src/lib/keyboardShortcuts.ts's "Editing" group and the Delete/Backspace
@@ -10,6 +11,10 @@ import App from './App';
 describe('keyboard shortcuts', () => {
   beforeEach(() => {
     localStorage.clear();
+    // The welcome modal auto-focuses itself and blocks the canvas keydown
+    // handler while open (App.tsx's `[role="dialog"]` bail) — seed it as
+    // already seen so it doesn't compete with the shortcuts under test.
+    setWelcomeSeen(true);
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 });
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 768 });
     window.matchMedia = vi.fn(

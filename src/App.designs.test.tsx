@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import { LIBRARY_KEY, designKey, type DesignLibrary } from './lib/designLibrary';
+import { setWelcomeSeen } from './lib/welcomeGuide';
 
 function readLibrary(): DesignLibrary {
   return JSON.parse(localStorage.getItem(LIBRARY_KEY) ?? '{}') as DesignLibrary;
@@ -23,6 +24,7 @@ function switcherTrigger(): HTMLElement {
 describe('multi-design switching', () => {
   beforeEach(() => {
     localStorage.clear();
+    setWelcomeSeen(true);
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 });
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 768 });
     window.matchMedia = vi.fn(
@@ -134,6 +136,7 @@ describe('multi-design switching', () => {
 describe('manage designs dialog', () => {
   beforeEach(() => {
     localStorage.clear();
+    setWelcomeSeen(true);
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 });
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 768 });
     window.matchMedia = vi.fn(

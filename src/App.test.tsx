@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import { LIBRARY_KEY, designKey, type DesignLibrary } from './lib/designLibrary';
+import { setWelcomeSeen } from './lib/welcomeGuide';
 
 /** Reads back the state of the currently-active design, resolving its id via
  * the design library index rather than assuming a single legacy storage key. */
@@ -35,6 +36,10 @@ describe('Gallery Designer app', () => {
     exportMocks.downloadPdf.mockReset().mockResolvedValue(undefined);
     exportMocks.downloadSvgAsPng.mockReset().mockResolvedValue(undefined);
     localStorage.clear();
+    // The welcome modal auto-focuses itself and blocks the canvas keydown
+    // handler while open — seed it as already seen so it doesn't interfere
+    // with tests that aren't about the welcome flow itself.
+    setWelcomeSeen(true);
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.removeAttribute('data-palette');
     document.documentElement.style.colorScheme = '';
