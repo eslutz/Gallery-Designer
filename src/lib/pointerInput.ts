@@ -8,7 +8,12 @@ export function isWallPanTarget(target: EventTarget | null): boolean {
 }
 
 export function isTextEntryTarget(target: EventTarget | null): boolean {
-  return target instanceof Element && Boolean(target.closest('input, select, textarea'));
+  return (
+    target instanceof Element &&
+    Boolean(
+      target.closest('input, select, textarea, [contenteditable=""], [contenteditable="true"]'),
+    )
+  );
 }
 
 export function normalizeWheelDelta(event: { deltaMode: number; deltaX: number; deltaY: number }): {

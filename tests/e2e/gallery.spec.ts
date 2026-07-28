@@ -777,6 +777,32 @@ test('info tooltips stay inside a narrow viewport', async ({ page }) => {
   await expectTooltipInsideViewport('Print/export layout information');
 });
 
+test('opens the keyboard shortcuts legend with "?" and closes it with Escape', async ({ page }) => {
+  await page.goto('/');
+
+  const helpButton = page.getByRole('button', { name: 'Keyboard shortcuts and help' });
+  const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+  await expect(dialog).not.toBeVisible();
+
+  // Opening via the help button and closing via Escape returns focus to it.
+  // Focus explicitly first (rather than relying on click-to-focus, which
+  // WebKit does not do for buttons) so the restore-on-close assertion below
+  // is meaningful on every browser.
+  await helpButton.focus();
+  await page.keyboard.press('Enter');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('Undo the last change')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).not.toBeVisible();
+  await expect(helpButton).toBeFocused();
+
+  // The "?" shortcut opens it too, and the header close button also works.
+  await page.keyboard.press('?');
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Close Keyboard shortcuts' }).click();
+  await expect(dialog).not.toBeVisible();
+});
+
 async function piecePositions(locators: import('@playwright/test').Locator[]) {
   return Promise.all(
     locators.map(async (piece) => ({

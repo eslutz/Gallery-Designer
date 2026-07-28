@@ -619,6 +619,64 @@ button:not(:disabled):active {
   font-size: 0.98rem;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.shortcut-group + .shortcut-group {
+  margin-top: 4px;
+}
+
+.shortcut-group h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  color: var(--panel-title);
+}
+
+.shortcut-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.shortcut-row {
+  display: grid;
+  grid-template-columns: minmax(140px, auto) 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.shortcut-row dt {
+  margin: 0;
+}
+
+.shortcut-row dd {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.shortcut-keys {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.shortcut-key {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--control-border);
+  border-radius: 6px;
+  background: var(--control-background);
+  color: var(--control-text);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .editor-toolbar {
   display: flex;
   align-items: end;
@@ -2229,6 +2287,10 @@ th {
   .brand-logo {
     width: 46px;
     height: 40px;
+  }
+
+  .topbar-actions {
+    justify-content: flex-start;
   }
 
   .editor-toolbar {

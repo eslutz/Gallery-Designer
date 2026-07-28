@@ -1,6 +1,7 @@
 import {
   ChevronDown,
   Copy,
+  Keyboard,
   Maximize2,
   Move,
   Plus,
@@ -30,6 +31,7 @@ import { MeasurementsTable } from './components/MeasurementsTable';
 import { MessageToast } from './components/MessageToast';
 import { NumberField } from './components/NumberField';
 import { PlacementSettingsDrawer } from './components/PlacementSettingsDrawer';
+import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { StagingTray } from './components/StagingTray';
 import { WallCanvas } from './components/WallCanvas';
 import {
@@ -214,6 +216,7 @@ export default function App() {
   const [clearMenuOpen, setClearMenuOpen] = useState(false);
   const [advancedDrawerOpen, setAdvancedDrawerOpen] = useState(false);
   const [settingsDrawerOpen, setSettingsDrawerOpen] = useState(false);
+  const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
   const [expandedSectionId, setExpandedSectionId] = useState(defaultState.sections[0]?.id ?? '');
   const [autoPlacementVariantIndex, setAutoPlacementVariantIndex] = useState(0);
   const [cursorInteraction, setCursorInteraction] = useState<CursorInteraction>('idle');
@@ -1815,6 +1818,31 @@ export default function App() {
       clearSelection();
       return;
     }
+    if (event.key === '?') {
+      event.preventDefault();
+      setShortcutsDialogOpen(true);
+      return;
+    }
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      undoLastChange();
+      return;
+    }
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      if (selectedFeature) {
+        event.preventDefault();
+        removeFeaturePlacement(selectedFeature.id);
+        return;
+      }
+      const selectedPlacedPieceIdsForDelete = selectedPieceIds.filter((pieceId) =>
+        state.placements.some((placement) => placement.pieceId === pieceId),
+      );
+      if (selectedPlacedPieceIdsForDelete.length > 0) {
+        event.preventDefault();
+        removePlacementGroup(selectedPlacedPieceIdsForDelete);
+      }
+      return;
+    }
     if (event.target instanceof Element && event.target.closest('svg [role="button"]')) {
       return;
     }
@@ -2416,6 +2444,15 @@ export default function App() {
             <p>Plan a continuous wall, place art to scale, and export installation measurements.</p>
           </div>
         </div>
+        <div className="topbar-actions">
+          <TooltipIconButton
+            ariaLabel="Keyboard shortcuts and help"
+            tooltip="Keyboard shortcuts"
+            onClick={() => setShortcutsDialogOpen(true)}
+          >
+            <Keyboard size={18} aria-hidden="true" focusable="false" />
+          </TooltipIconButton>
+        </div>
       </header>
 
       <section className="workspace" ref={workspaceRef}>
@@ -2885,6 +2922,11 @@ export default function App() {
         preview={wallDragPreview}
         artPieceBufferEnabled={state.features.artPieceBuffer}
         artPieceBufferGapIn={state.features.artPieceBufferGapIn}
+      />
+      <ShortcutsDialog
+        open={shortcutsDialogOpen}
+        onClose={() => setShortcutsDialogOpen(false)}
+        onShowWelcomeGuide={() => {}}
       />
     </main>
   );

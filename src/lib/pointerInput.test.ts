@@ -30,6 +30,20 @@ describe('pointer input helpers', () => {
     expect(isTextEntryTarget(document.body)).toBe(false);
   });
 
+  it('treats contenteditable elements as text-entry targets', () => {
+    const editableEmpty = document.createElement('div');
+    editableEmpty.setAttribute('contenteditable', '');
+    const editableTrue = document.createElement('div');
+    editableTrue.setAttribute('contenteditable', 'true');
+    const child = document.createElement('span');
+    editableTrue.append(child);
+    document.body.append(editableEmpty, editableTrue);
+
+    expect(isTextEntryTarget(editableEmpty)).toBe(true);
+    expect(isTextEntryTarget(editableTrue)).toBe(true);
+    expect(isTextEntryTarget(child)).toBe(true);
+  });
+
   it('converts wheel deltas to pixels for line and page delta modes', () => {
     expect(normalizeWheelDelta({ deltaMode: 0, deltaX: 10, deltaY: -5 })).toEqual({
       x: 10,

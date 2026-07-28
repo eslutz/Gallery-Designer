@@ -29,6 +29,22 @@ Gallery Designer is a browser-based tool for planning a gallery wall to scale. Y
 5. Review the measurement table and adjust spacing, margins, or features as needed.
 6. Export the finished plan as JSON, PNG, or PDF.
 
+### Keyboard Shortcuts
+
+Press `?` anywhere in the app to open the full shortcuts legend. The most useful ones:
+
+| Shortcut | Effect |
+| --- | --- |
+| `Enter` / `Space` | Select a focused wall section, piece, or feature |
+| `Escape` | Clear the current selection |
+| Arrow keys | Nudge the selection ¼ in |
+| `Shift` + arrow keys | Nudge the selection 1 in |
+| `Delete` / `Backspace` | Return the selected piece(s) or feature to the staging tray |
+| `Cmd`/`Ctrl` + `Z` | Undo the last change |
+| `Shift`/`Cmd`/`Ctrl` + click or drag | Multi-select pieces additively |
+| `Space` + drag | Pan the wall canvas |
+| `Cmd`/`Ctrl` + wheel | Zoom the wall canvas |
+
 ## Wall Setup Model
 
 Gallery Designer treats the wall as a continuous connected surface, not as disconnected canvases. A design can use one section or multiple linked sections, which lets you model straight walls as well as layouts that wrap around corners.
