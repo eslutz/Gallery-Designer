@@ -1945,6 +1945,28 @@ describe('Gallery Designer app', () => {
     expect(screen.queryByDisplayValue('Section 2')).not.toBeInTheDocument();
   });
 
+  it('keeps the expanded section panel open when clicking inside a modal dialog', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const sectionRow = () =>
+      screen.getByLabelText('Wall section settings').querySelector('.section-row')!;
+    expect(sectionRow()).toHaveClass('expanded');
+
+    await user.click(screen.getByRole('button', { name: 'Keyboard shortcuts and help' }));
+    const dialog = screen.getByRole('dialog', { name: 'Keyboard shortcuts' });
+
+    // ModalDialog portals into document.body, but React still routes this
+    // event up the React tree to the page-level pointerdown handler. Clicking
+    // non-interactive modal content must not clear the selection, or the
+    // section panel visibly collapses behind the open dialog.
+    // fireEvent (not userEvent) because jsdom has no PointerEvent, so
+    // userEvent's synthesized click never reaches React's onPointerDown.
+    fireEvent.pointerDown(within(dialog).getByRole('heading', { name: 'Selection', level: 3 }));
+
+    expect(sectionRow()).toHaveClass('expanded');
+  });
+
   it('shows furniture and feature clearing only in full-wall mode', async () => {
     const user = userEvent.setup();
     render(<App />);

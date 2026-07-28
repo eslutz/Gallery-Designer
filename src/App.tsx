@@ -606,6 +606,14 @@ export default function App() {
     if (event.target instanceof Element && event.target.closest('.wall-canvas')) {
       return;
     }
+    // ModalDialog portals into document.body, but React routes events through
+    // the React tree, so clicks inside a modal still reach this handler. Bail
+    // the same way handleCanvasKeyDown does — otherwise clicking a modal's
+    // text or padding clears the selection and visibly collapses the expanded
+    // section panel behind it.
+    if (event.target instanceof Element && event.target.closest('[role="dialog"]')) {
+      return;
+    }
     if (shouldKeepSelection(event.target)) {
       return;
     }
