@@ -1580,6 +1580,67 @@ select:focus,
   box-shadow: var(--panel-shadow);
 }
 
+.welcome-card {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  z-index: 3;
+  max-width: 420px;
+  padding: 20px 20px 16px;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: var(--panel-background);
+  box-shadow: var(--panel-shadow);
+  /* This overlays the canvas, but it must never block placing/dragging art
+   * underneath it — only its own controls should be clickable. */
+  pointer-events: none;
+}
+
+.welcome-card button,
+.welcome-card input {
+  pointer-events: auto;
+}
+
+.welcome-card h2 {
+  margin: 0 0 4px;
+  padding-right: 28px;
+}
+
+.welcome-card p {
+  margin: 0 0 10px;
+  color: var(--text-secondary);
+}
+
+.welcome-card-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+.welcome-card-steps {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 16px;
+  padding-left: 20px;
+}
+
+.welcome-card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.welcome-card-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
 .canvas-card .staging-tray {
   margin-top: 14px;
   min-height: 130px;

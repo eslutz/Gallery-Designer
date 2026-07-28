@@ -41,6 +41,7 @@ import {
   type DragItemKind,
   type WallDragPreview,
 } from './components/WallDragPreviewOverlay';
+import { WelcomeCard } from './components/WelcomeCard';
 import { useAlignmentGuides } from './hooks/useAlignmentGuides';
 import { useStatusToast } from './hooks/useStatusToast';
 import { useUndoHistory } from './hooks/useUndoHistory';
@@ -112,6 +113,7 @@ import {
   validateWallSections,
 } from './lib/wall';
 import { getDefaultWallZoomState, getWallCanvasBaseViewBox } from './lib/wallZoom';
+import { hasSeenWelcome, setWelcomeSeen } from './lib/welcomeGuide';
 import {
   isPlacedWallFeature,
   movePlacedFeaturesWithWallSection,
@@ -230,6 +232,9 @@ export default function App() {
   const [settingsDrawerOpen, setSettingsDrawerOpen] = useState(false);
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
   const [manageDesignsOpen, setManageDesignsOpen] = useState(false);
+  const [showWelcomeCard, setShowWelcomeCard] = useState(
+    () => !hasSeenWelcome() && state.placements.length === 0,
+  );
   const [expandedSectionId, setExpandedSectionId] = useState(defaultState.sections[0]?.id ?? '');
   const [autoPlacementVariantIndex, setAutoPlacementVariantIndex] = useState(0);
   const [cursorInteraction, setCursorInteraction] = useState<CursorInteraction>('idle');
@@ -1107,6 +1112,11 @@ export default function App() {
     } else {
       setLibrary(nextLibrary);
     }
+  }
+
+  function dismissWelcomeCard(dontShowAgain: boolean) {
+    setWelcomeSeen(dontShowAgain);
+    setShowWelcomeCard(false);
   }
 
   function resetEntireDesign() {
@@ -2843,6 +2853,7 @@ export default function App() {
           </div>
           <div className="canvas-card" ref={wallDisplayRef}>
             <div className="wall-canvas-shell">
+              {showWelcomeCard ? <WelcomeCard onDismiss={dismissWelcomeCard} /> : null}
               <WallCanvas
                 svgRef={svgRef}
                 sections={state.sections}
@@ -3004,7 +3015,7 @@ export default function App() {
       <ShortcutsDialog
         open={shortcutsDialogOpen}
         onClose={() => setShortcutsDialogOpen(false)}
-        onShowWelcomeGuide={() => {}}
+        onShowWelcomeGuide={() => setShowWelcomeCard(true)}
       />
       <ManageDesignsDialog
         open={manageDesignsOpen}

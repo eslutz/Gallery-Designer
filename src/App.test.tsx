@@ -80,7 +80,9 @@ describe('Gallery Designer app', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    expect(screen.getByRole('heading', { name: /Gallery Designer/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: /Gallery Designer/i, level: 1 }),
+    ).toBeInTheDocument();
 
     await user.clear(screen.getByLabelText('Section 1 width'));
     await user.type(screen.getByLabelText('Section 1 width'), '120');

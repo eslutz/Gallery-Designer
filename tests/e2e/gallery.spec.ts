@@ -887,6 +887,35 @@ test('manages designs through the manager dialog: rename, duplicate, and delete'
   await expect(switcherTrigger).toContainText('Living room wall');
 });
 
+test('shows the welcome card once, remembers dismissal across a reload, and can be reopened', async ({
+  page,
+}) => {
+  await page.goto('/');
+
+  const welcomeCard = page.getByRole('region', { name: 'Welcome to Gallery Designer' });
+  await expect(welcomeCard).toBeVisible();
+  await expect(welcomeCard.getByRole('checkbox', { name: /Don.t show this again/i })).toBeChecked();
+
+  // Dismissing with the default (checked) state marks it seen for good.
+  await welcomeCard.getByRole('button', { name: 'Start designing' }).click();
+  await expect(welcomeCard).not.toBeVisible();
+
+  await page.reload();
+  await expect(welcomeCard).not.toBeVisible();
+
+  // The shortcuts legend's footer link brings it back without clearing the
+  // persisted "seen" flag — reloading again keeps it dismissed.
+  await page.getByRole('button', { name: 'Keyboard shortcuts and help' }).click();
+  await page
+    .getByRole('dialog', { name: 'Keyboard shortcuts' })
+    .getByRole('button', { name: 'Show welcome guide' })
+    .click();
+  await expect(welcomeCard).toBeVisible();
+
+  await page.reload();
+  await expect(welcomeCard).not.toBeVisible();
+});
+
 async function piecePositions(locators: import('@playwright/test').Locator[]) {
   return Promise.all(
     locators.map(async (piece) => ({
