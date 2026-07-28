@@ -25,6 +25,7 @@ import { AdvancedDrawer } from './components/AdvancedDrawer';
 import { formatCount } from './components/AutoPlacementFailureDetails';
 import { BrandLogo } from './components/BrandLogo';
 import { CollapsiblePanel } from './components/CollapsiblePanel';
+import { DesignSwitcher } from './components/DesignSwitcher';
 import { HookControls } from './components/HookControls';
 import { TooltipIconButton } from './components/InfoTooltip';
 import { MeasurementsTable } from './components/MeasurementsTable';
@@ -44,16 +45,22 @@ import { useStatusToast } from './hooks/useStatusToast';
 import { useUndoHistory } from './hooks/useUndoHistory';
 import { useWallZoomPan, type CursorInteraction } from './hooks/useWallZoomPan';
 import { autoPlacePieces } from './lib/autoPlace';
+import {
+  createDesign,
+  loadDesignState,
+  loadLibrary,
+  saveDesignState,
+  setActiveDesign,
+  touchDesign,
+  type DesignLibrary,
+} from './lib/designLibrary';
 import { parseDesignFile, serializeDesignFile } from './lib/designFile';
 import { downloadPdf, downloadPng, type ExportDesignInput } from './lib/exportDesign';
 import {
   defaultState,
   getSelectedFeatureId,
   getSelectedPieceIds,
-  loadState,
   pieceSelection,
-  STORAGE_KEY,
-  toPersistedState,
   withMessage,
   type GalleryState,
 } from './lib/galleryState';
@@ -184,7 +191,8 @@ function dragPreviewReducer(state: DragPreviewState, action: DragPreviewAction):
 }
 
 export default function App() {
-  const [state, setState] = useState<GalleryState>(() => loadState());
+  const [library, setLibrary] = useState<DesignLibrary>(() => loadLibrary());
+  const [state, setState] = useState<GalleryState>(() => loadDesignState(library.activeId));
   const {
     autoPlacementFailure,
     setAutoPlacementFailure,
@@ -217,6 +225,10 @@ export default function App() {
   const [advancedDrawerOpen, setAdvancedDrawerOpen] = useState(false);
   const [settingsDrawerOpen, setSettingsDrawerOpen] = useState(false);
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
+  // Consumed once ManageDesignsDialog lands (Phase 5); the switcher's
+  // "Manage designs…" entry already sets it so that wiring is a pure addition.
+  const [manageDesignsOpen, setManageDesignsOpen] = useState(false);
+  void manageDesignsOpen;
   const [expandedSectionId, setExpandedSectionId] = useState(defaultState.sections[0]?.id ?? '');
   const [autoPlacementVariantIndex, setAutoPlacementVariantIndex] = useState(0);
   const [cursorInteraction, setCursorInteraction] = useState<CursorInteraction>('idle');
@@ -234,6 +246,7 @@ export default function App() {
     beginSectionDragUndo,
     finishSectionDragUndo,
     undoLastChange,
+    clearUndoHistory,
   } = useUndoHistory({ state, setState });
   const dragRef = useRef<DragState | null>(null);
   const marqueeRef = useRef<MarqueeState | null>(null);
@@ -388,12 +401,9 @@ export default function App() {
   }, [state]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(toPersistedState(state)));
-    } catch {
-      // Persistence is a convenience; a full or unavailable store must not break editing.
-    }
-  }, [state]);
+    saveDesignState(library.activeId, state);
+    setLibrary((current) => touchDesign(current, current.activeId));
+  }, [state, library.activeId]);
 
   useEffect(() => {
     document.documentElement.dataset.palette = state.applicationTheme;
@@ -1036,6 +1046,45 @@ export default function App() {
       },
       ...withMessage(current, 'Cleared furniture and wall features.'),
     }));
+  }
+
+  // Swaps in a different design's state entirely — everything that's
+  // scoped to "the design currently being edited" must reset here, or it
+  // leaks across designs. Most notably undo: it holds a full GalleryState
+  // snapshot, so without clearUndoHistory(), Undo after a switch would
+  // restore the *previous* design's state into the new one.
+  function applyDesignSwitch(nextLibrary: DesignLibrary, id: string) {
+    const next = loadDesignState(id);
+    const name = nextLibrary.designs.find((design) => design.id === id)?.name ?? 'design';
+    setLibrary(setActiveDesign(nextLibrary, id));
+    setState({ ...next, ...withMessage(state, `Opened "${name}".`) });
+    latestStateRef.current = next;
+    clearUndoHistory();
+    setSelectedSectionId('');
+    setExpandedSectionId(next.sections[0]?.id ?? '');
+    dispatchDragPreview({ type: 'set-wall-preview', preview: null });
+    dispatchDragPreview({ type: 'set-group-preview', placements: [] });
+    setSelectionMarquee(null);
+    setClearMenuOpen(false);
+    setAutoPlacementFailure(null);
+    setWallZoom(getDefaultWallZoomState(getWallCanvasBaseViewBox(next.sections)));
+  }
+
+  function switchDesign(id: string) {
+    if (id === library.activeId) {
+      return;
+    }
+    // Flush the outgoing design's latest state before switching away from
+    // it — the autosave effect would do this anyway, but not until its next
+    // run, and switching reads the design back from storage immediately.
+    saveDesignState(library.activeId, latestStateRef.current);
+    applyDesignSwitch(library, id);
+  }
+
+  function createNewDesign() {
+    saveDesignState(library.activeId, latestStateRef.current);
+    const { library: nextLibrary, id } = createDesign(library);
+    applyDesignSwitch(nextLibrary, id);
   }
 
   function resetEntireDesign() {
@@ -2445,6 +2494,13 @@ export default function App() {
           </div>
         </div>
         <div className="topbar-actions">
+          <DesignSwitcher
+            activeDesignId={library.activeId}
+            designs={library.designs}
+            onSwitch={switchDesign}
+            onNewDesign={createNewDesign}
+            onManage={() => setManageDesignsOpen(true)}
+          />
           <TooltipIconButton
             ariaLabel="Keyboard shortcuts and help"
             tooltip="Keyboard shortcuts"

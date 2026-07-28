@@ -225,7 +225,7 @@ function isWallFeatureType(value: unknown): value is WallFeatureType {
   );
 }
 
-function isPersistedGalleryState(value: unknown): value is Partial<GalleryState> {
+export function isPersistedGalleryState(value: unknown): value is Partial<GalleryState> {
   if (!isRecord(value)) {
     return false;
   }
@@ -283,49 +283,57 @@ export function loadState(): GalleryState {
     if (!isPersistedGalleryState(parsed)) {
       return getDefaultState();
     }
-    const validPieceIds = new Set(parsed.pieces?.map((piece) => piece.id) ?? []);
-    const persistedRecord = parsed as Record<string, unknown>;
-    const persistedSelectedPieceIds = Array.isArray(persistedRecord.selectedPieceIds)
-      ? [
-          ...new Set(
-            (persistedRecord.selectedPieceIds as unknown[]).filter(
-              (pieceId): pieceId is string =>
-                typeof pieceId === 'string' && validPieceIds.has(pieceId),
-            ),
-          ),
-        ]
-      : typeof persistedRecord.selectedPieceId === 'string' &&
-          validPieceIds.has(persistedRecord.selectedPieceId)
-        ? [persistedRecord.selectedPieceId]
-        : [];
-    return {
-      ...defaultState,
-      ...parsed,
-      themeMode:
-        parsed.themeMode === 'light' || parsed.themeMode === 'dark' || parsed.themeMode === 'system'
-          ? parsed.themeMode
-          : defaultState.themeMode,
-      applicationTheme: resolveApplicationTheme(parsed.applicationTheme),
-      sections: normalizeWallSections(parsed.sections ?? defaultState.sections),
-      pieces: (parsed.pieces ?? defaultState.pieces).map((piece) => ({
-        ...piece,
-        hookSpec: normalizeHookSpec(piece.hookSpec),
-      })),
-      unit: parsed.unit === 'cm' ? 'cm' : 'in',
-      features: isEditorFeatures(parsed.features)
-        ? normalizeEditorFeatures(parsed.features)
-        : defaultState.features,
-      autoPlacementSettings: isAutoPlacementSettings(parsed.autoPlacementSettings)
-        ? parsed.autoPlacementSettings
-        : defaultState.autoPlacementSettings,
-      selection: pieceSelection(persistedSelectedPieceIds),
-      message: defaultState.message,
-      messageTone: defaultState.messageTone,
-      messageRevision: defaultState.messageRevision,
-    };
+    return hydratePersistedState(parsed);
   } catch {
     return getDefaultState();
   }
+}
+
+// Shared migration/normalization chain for a validated persisted blob —
+// used by loadState() (the legacy single-design key) and by
+// designLibrary.ts's loadDesignState() (per-design keys), so both readers
+// stay in lockstep instead of drifting apart.
+export function hydratePersistedState(parsed: Partial<GalleryState>): GalleryState {
+  const validPieceIds = new Set(parsed.pieces?.map((piece) => piece.id) ?? []);
+  const persistedRecord = parsed as Record<string, unknown>;
+  const persistedSelectedPieceIds = Array.isArray(persistedRecord.selectedPieceIds)
+    ? [
+        ...new Set(
+          (persistedRecord.selectedPieceIds as unknown[]).filter(
+            (pieceId): pieceId is string =>
+              typeof pieceId === 'string' && validPieceIds.has(pieceId),
+          ),
+        ),
+      ]
+    : typeof persistedRecord.selectedPieceId === 'string' &&
+        validPieceIds.has(persistedRecord.selectedPieceId)
+      ? [persistedRecord.selectedPieceId]
+      : [];
+  return {
+    ...defaultState,
+    ...parsed,
+    themeMode:
+      parsed.themeMode === 'light' || parsed.themeMode === 'dark' || parsed.themeMode === 'system'
+        ? parsed.themeMode
+        : defaultState.themeMode,
+    applicationTheme: resolveApplicationTheme(parsed.applicationTheme),
+    sections: normalizeWallSections(parsed.sections ?? defaultState.sections),
+    pieces: (parsed.pieces ?? defaultState.pieces).map((piece) => ({
+      ...piece,
+      hookSpec: normalizeHookSpec(piece.hookSpec),
+    })),
+    unit: parsed.unit === 'cm' ? 'cm' : 'in',
+    features: isEditorFeatures(parsed.features)
+      ? normalizeEditorFeatures(parsed.features)
+      : defaultState.features,
+    autoPlacementSettings: isAutoPlacementSettings(parsed.autoPlacementSettings)
+      ? parsed.autoPlacementSettings
+      : defaultState.autoPlacementSettings,
+    selection: pieceSelection(persistedSelectedPieceIds),
+    message: defaultState.message,
+    messageTone: defaultState.messageTone,
+    messageRevision: defaultState.messageRevision,
+  };
 }
 
 export function getDefaultState(): GalleryState {

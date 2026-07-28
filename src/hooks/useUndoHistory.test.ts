@@ -95,6 +95,47 @@ describe('useUndoHistory', () => {
     expect(result.current.undoState).toBe(before);
   });
 
+  it('clearUndoHistory nulls the undo snapshot and both in-progress edit brackets', () => {
+    const before = defaultState;
+    const { result, rerender } = setup(before);
+
+    act(() => {
+      result.current.recordUndoSnapshot(withUnit(defaultState, 'cm'));
+    });
+    expect(result.current.undoState).not.toBeNull();
+
+    act(() => {
+      result.current.clearUndoHistory();
+    });
+    expect(result.current.undoState).toBeNull();
+
+    // The field-edit bracket must also be cleared: a begin() before the
+    // clear should not be finish()-able afterward as if it were still open.
+    act(() => {
+      result.current.beginFieldEdit();
+    });
+    act(() => {
+      result.current.clearUndoHistory();
+    });
+    rerender({ state: withUnit(defaultState, 'cm') });
+    act(() => {
+      result.current.finishFieldEdit();
+    });
+    expect(result.current.undoState).toBeNull();
+
+    // Same for the section-drag bracket.
+    act(() => {
+      result.current.beginSectionDragUndo();
+    });
+    act(() => {
+      result.current.clearUndoHistory();
+    });
+    act(() => {
+      result.current.finishSectionDragUndo();
+    });
+    expect(result.current.undoState).toBeNull();
+  });
+
   it('undoLastChange clears the snapshot after applying it', () => {
     const older = defaultState;
     const { result } = setup(withUnit(defaultState, 'cm'));

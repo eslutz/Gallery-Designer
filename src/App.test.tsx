@@ -3,6 +3,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
+import { LIBRARY_KEY, designKey, type DesignLibrary } from './lib/designLibrary';
+
+/** Reads back the state of the currently-active design, resolving its id via
+ * the design library index rather than assuming a single legacy storage key. */
+function readActiveDesign(): Record<string, unknown> {
+  const library = JSON.parse(localStorage.getItem(LIBRARY_KEY) ?? '{}') as Partial<DesignLibrary>;
+  if (!library.activeId) {
+    return {};
+  }
+  return JSON.parse(localStorage.getItem(designKey(library.activeId)) ?? '{}') as Record<
+    string,
+    unknown
+  >;
+}
 
 const exportMocks = vi.hoisted(() => ({
   downloadPng: vi.fn(),
@@ -3229,14 +3243,14 @@ describe('Gallery Designer app', () => {
 
     expect(document.documentElement).toHaveAttribute('data-theme', 'light');
     expect(document.documentElement.style.colorScheme).toBe('light');
-    expect(JSON.parse(localStorage.getItem('gallery-designer-state-v1') ?? '{}')).toMatchObject({
+    expect(readActiveDesign()).toMatchObject({
       themeMode: 'light',
     });
 
     await user.selectOptions(themeSelect, 'coastal-blue');
 
     expect(document.documentElement).toHaveAttribute('data-palette', 'coastal-blue');
-    expect(JSON.parse(localStorage.getItem('gallery-designer-state-v1') ?? '{}')).toMatchObject({
+    expect(readActiveDesign()).toMatchObject({
       applicationTheme: 'coastal-blue',
     });
 

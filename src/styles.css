@@ -626,6 +626,68 @@ button:not(:disabled):active {
   flex: 0 0 auto;
 }
 
+.design-switcher {
+  position: relative;
+}
+
+.design-switcher-trigger {
+  white-space: nowrap;
+}
+
+.design-switcher-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.design-switcher-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 220px;
+  max-width: 280px;
+  padding: 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel-background);
+  box-shadow: var(--panel-shadow);
+}
+
+.design-switcher-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.design-switcher-item:hover:not(:disabled),
+.design-switcher-item:focus-visible {
+  background: var(--icon-background);
+}
+
+.design-switcher-item-active {
+  color: var(--secondary-text);
+  font-weight: 700;
+}
+
+.design-switcher-divider {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--panel-border);
+}
+
 .shortcut-group + .shortcut-group {
   margin-top: 4px;
 }

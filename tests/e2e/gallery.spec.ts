@@ -803,6 +803,45 @@ test('opens the keyboard shortcuts legend with "?" and closes it with Escape', a
   await expect(dialog).not.toBeVisible();
 });
 
+test('creates and switches designs, persisting each one independently across a reload', async ({
+  page,
+}) => {
+  await page.goto('/');
+
+  const switcherTrigger = page.locator('.design-switcher-trigger');
+  await expect(switcherTrigger).toContainText('My design');
+
+  // Make an edit in the first design, then branch off into a new one.
+  await page.getByRole('button', { name: 'Duplicate Piece 1' }).click();
+  await expect(page.locator('input[value="Piece 1 copy"]')).toBeVisible();
+
+  await switcherTrigger.click();
+  await page.getByRole('menuitem', { name: 'New design' }).click();
+  await expect(switcherTrigger).toContainText('Design 2');
+
+  // The new design starts from the default seed, unaffected by the first
+  // design's edit, and undo does not carry across the switch.
+  await expect(page.locator('input[value="Piece 1 copy"]')).not.toBeVisible();
+  await expect(page.getByRole('button', { name: 'Undo last change' })).toBeDisabled();
+
+  await page.getByRole('button', { name: 'Add wall section' }).click();
+
+  // Switch back — the earlier edit survived, and both designs persist across
+  // a full reload, keyed independently.
+  await switcherTrigger.click();
+  await page.getByRole('menuitemradio', { name: 'My design' }).click();
+  await expect(page.locator('input[value="Piece 1 copy"]')).toBeVisible();
+
+  await page.reload();
+  await expect(switcherTrigger).toContainText('My design');
+  await expect(page.locator('input[value="Piece 1 copy"]')).toBeVisible();
+
+  await switcherTrigger.click();
+  await page.getByRole('menuitemradio', { name: 'Design 2' }).click();
+  await expect(switcherTrigger).toContainText('Design 2');
+  await expect(page.locator('input[value="Piece 1 copy"]')).not.toBeVisible();
+});
+
 async function piecePositions(locators: import('@playwright/test').Locator[]) {
   return Promise.all(
     locators.map(async (piece) => ({

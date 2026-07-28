@@ -87,6 +87,16 @@ export function useUndoHistory({ state, setState }: UseUndoHistoryParams) {
     setUndoState(null);
   }
 
+  /** Drops the undo snapshot and both in-progress edit brackets. Must be
+   * called whenever the state being edited is swapped out for an unrelated
+   * one (switching designs, importing a file) — otherwise Undo would
+   * restore state from whatever was being edited before the swap. */
+  function clearUndoHistory() {
+    setUndoState(null);
+    fieldEditUndoSnapshotRef.current = null;
+    sectionDragUndoSnapshotRef.current = null;
+  }
+
   return {
     undoState,
     recordUndoSnapshot,
@@ -96,5 +106,6 @@ export function useUndoHistory({ state, setState }: UseUndoHistoryParams) {
     beginSectionDragUndo,
     finishSectionDragUndo,
     undoLastChange,
+    clearUndoHistory,
   };
 }
