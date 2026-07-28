@@ -1,4 +1,5 @@
 import { SlidersHorizontal, X } from 'lucide-react';
+import { useEffect } from 'react';
 import type { AutoPlacementSettings, Unit, UndoableChangeOptions } from '../types';
 import { AutoPlacementControls } from './AutoPlacementControls';
 
@@ -25,6 +26,19 @@ export function PlacementSettingsDrawer({
   onEditStart: () => void;
   onEditEnd: () => void;
 }) {
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
+
   return (
     <div
       className={`advanced-drawer-layer placement-settings-drawer-layer${open ? ' is-open' : ''}`}

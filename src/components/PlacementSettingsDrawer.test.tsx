@@ -37,6 +37,47 @@ describe('PlacementSettingsDrawer', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('closes on Escape while open, and does nothing while closed', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <PlacementSettingsDrawer
+        open={true}
+        settings={settings}
+        selectedFeatureId=""
+        unit="in"
+        onClose={onClose}
+        onSettingsChange={vi.fn()}
+        onFeatureSelect={vi.fn()}
+        onUnitChange={vi.fn()}
+        onEditStart={vi.fn()}
+        onEditEnd={vi.fn()}
+      />,
+    );
+
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    onClose.mockClear();
+    rerender(
+      <PlacementSettingsDrawer
+        open={false}
+        settings={settings}
+        selectedFeatureId=""
+        unit="in"
+        onClose={onClose}
+        onSettingsChange={vi.fn()}
+        onFeatureSelect={vi.fn()}
+        onUnitChange={vi.fn()}
+        onEditStart={vi.fn()}
+        onEditEnd={vi.fn()}
+      />,
+    );
+
+    await user.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('applies the is-open class only when open', () => {
     const { container } = render(
       <PlacementSettingsDrawer

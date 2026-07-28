@@ -1,4 +1,5 @@
 import { SlidersHorizontal, X } from 'lucide-react';
+import { useEffect } from 'react';
 import {
   applicationThemeOptions,
   resolveApplicationTheme,
@@ -56,6 +57,19 @@ export function AdvancedDrawer({
   onEditStart: () => void;
   onEditEnd: () => void;
 }) {
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
+
   return (
     <div className={`advanced-drawer-layer${open ? ' is-open' : ''}`}>
       <button

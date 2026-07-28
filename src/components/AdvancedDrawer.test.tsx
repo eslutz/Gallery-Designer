@@ -58,6 +58,45 @@ describe('AdvancedDrawer', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('closes on Escape while open, and does nothing while closed', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const { rerender } = renderDrawer({ onClose });
+
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    onClose.mockClear();
+    rerender(
+      <AdvancedDrawer
+        open={false}
+        themeMode="system"
+        applicationTheme="slate"
+        features={features}
+        unit="in"
+        message="Ready to export."
+        autoPlacementFailure={null}
+        readyToExport={true}
+        exportIssues={[]}
+        exporting={null}
+        onClose={onClose}
+        onThemeModeChange={vi.fn()}
+        onApplicationThemeChange={vi.fn()}
+        onFeaturesChange={vi.fn()}
+        onExportPng={vi.fn()}
+        onExportPdf={vi.fn()}
+        onExportJson={vi.fn()}
+        onImportClick={vi.fn()}
+        onUnitChange={vi.fn()}
+        onEditStart={vi.fn()}
+        onEditEnd={vi.fn()}
+      />,
+    );
+
+    await user.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('applies the is-open class only when open', () => {
     const { container, rerender } = render(
       <AdvancedDrawer
