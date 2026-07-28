@@ -1807,6 +1807,9 @@ export default function App() {
     if (isTextEntryTarget(event.target)) {
       return;
     }
+    if (event.target instanceof Element && event.target.closest('[role="dialog"]')) {
+      return;
+    }
     if (event.key === 'Escape') {
       event.preventDefault();
       clearSelection();

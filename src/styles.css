@@ -1269,6 +1269,91 @@ select:focus,
   box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
+.modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-height: 100%;
+  padding: 0;
+  border: 0;
+  background: rgba(0, 0, 0, 0.32);
+}
+
+.modal-dialog {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  width: 100%;
+  max-width: 480px;
+  max-height: calc(100dvh - 40px);
+  box-sizing: border-box;
+  padding: 20px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--page-background);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  box-shadow: var(--panel-shadow);
+}
+
+.modal-dialog-lg {
+  max-width: 640px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-header .icon-button {
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    transform 120ms ease,
+    box-shadow 140ms ease;
+}
+
+.modal-header .icon-button:hover:not(:disabled),
+.modal-header .icon-button:focus-visible {
+  color: var(--secondary-text);
+  background: var(--secondary-background);
+  border-color: var(--focus-color);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.modal-header .icon-button:active:not(:disabled) {
+  transform: translateY(1px) scale(0.96);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.modal-body {
+  display: grid;
+  gap: 12px;
+}
+
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid var(--panel-border);
+}
+
 .canvas-card {
   flex: 0 0 auto;
   min-height: 460px;
