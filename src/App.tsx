@@ -2527,28 +2527,32 @@ export default function App() {
         onDismiss={dismissToast}
       />
       <header className="topbar">
-        <div className="brand-lockup">
-          <BrandLogo />
-          <div className="brand-copy">
-            <h1>Gallery Designer</h1>
-            <p>Plan a continuous wall, place art to scale, and export installation measurements.</p>
+        <div className="topbar-inner">
+          <div className="brand-lockup">
+            <BrandLogo />
+            <div className="brand-copy">
+              <h1>Gallery Designer</h1>
+              <p>
+                Plan a continuous wall, place art to scale, and export installation measurements.
+              </p>
+            </div>
           </div>
-        </div>
-        <div className="topbar-actions">
-          <DesignSwitcher
-            activeDesignId={library.activeId}
-            designs={library.designs}
-            onSwitch={switchDesign}
-            onNewDesign={createNewDesign}
-            onManage={() => setManageDesignsOpen(true)}
-          />
-          <TooltipIconButton
-            ariaLabel="Keyboard shortcuts and help"
-            tooltip="Keyboard shortcuts"
-            onClick={() => setShortcutsDialogOpen(true)}
-          >
-            <Keyboard size={18} aria-hidden="true" focusable="false" />
-          </TooltipIconButton>
+          <div className="topbar-actions">
+            <DesignSwitcher
+              activeDesignId={library.activeId}
+              designs={library.designs}
+              onSwitch={switchDesign}
+              onNewDesign={createNewDesign}
+              onManage={() => setManageDesignsOpen(true)}
+            />
+            <TooltipIconButton
+              ariaLabel="Keyboard shortcuts and help"
+              tooltip="Keyboard shortcuts"
+              onClick={() => setShortcutsDialogOpen(true)}
+            >
+              <Keyboard size={18} aria-hidden="true" focusable="false" />
+            </TooltipIconButton>
+          </div>
         </div>
       </header>
 
