@@ -22,7 +22,7 @@ import {
   useState,
 } from 'react';
 import { AdvancedDrawer } from './components/AdvancedDrawer';
-import { formatCount } from './components/AutoPlacementFailureDetails';
+import { AppFooter } from './components/AppFooter';
 import { BrandLogo } from './components/BrandLogo';
 import { CollapsiblePanel } from './components/CollapsiblePanel';
 import { DesignSwitcher } from './components/DesignSwitcher';
@@ -61,6 +61,7 @@ import {
 } from './lib/designLibrary';
 import { parseDesignFile, serializeDesignFile } from './lib/designFile';
 import { downloadPdf, downloadPng, type ExportDesignInput } from './lib/exportDesign';
+import { formatCount } from './lib/formatCount';
 import {
   defaultState,
   getSelectedFeatureId,
@@ -2965,6 +2966,7 @@ export default function App() {
           <MeasurementsTable instructions={measurements} />
         </section>
       </section>
+      <AppFooter />
       <input
         ref={importInputRef}
         className="visually-hidden"

@@ -209,7 +209,7 @@ describe('application typography', () => {
         .match(/\.workspace\s*{[^}]*}/s)?.[0] ?? '';
 
     expect(stylesheet).toMatch(
-      /\.app-shell\s*{[^}]*position:\s*fixed;[^}]*inset:\s*0;[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);[^}]*overflow:\s*hidden;/s,
+      /\.app-shell\s*{[^}]*position:\s*fixed;[^}]*inset:\s*0;[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\)\s*auto;[^}]*overflow:\s*hidden;/s,
     );
     expect(stylesheet).toMatch(
       /\.workspace\s*{[^}]*grid-template-columns:\s*minmax\(280px,\s*340px\)\s*minmax\(560px,\s*1440px\);[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\);[^}]*align-items:\s*stretch;[^}]*justify-content:\s*center;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/s,

@@ -302,6 +302,12 @@ describe('Gallery Designer app', () => {
     expect(logo).toBeInTheDocument();
   });
 
+  it('renders the site footer', () => {
+    render(<App />);
+
+    expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+  });
+
   it('marks the root element with the slate palette by default and does not show a theme badge', () => {
     render(<App />);
 

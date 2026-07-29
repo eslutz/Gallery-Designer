@@ -572,7 +572,7 @@ button:not(:disabled):active {
   position: fixed;
   inset: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   width: 100%;
   overflow: hidden;
 }
@@ -586,6 +586,44 @@ button:not(:disabled):active {
   background: var(--topbar-background);
   border-bottom: 1px solid var(--panel-border);
   backdrop-filter: blur(14px);
+}
+
+.app-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 16px;
+  padding: 8px 24px;
+  background: var(--topbar-background);
+  border-top: 1px solid var(--panel-border);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.app-footer-license {
+  margin: 0;
+}
+
+.app-footer-license a {
+  color: var(--text-secondary);
+}
+
+.app-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.app-footer a {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.app-footer a:hover,
+.app-footer a:focus-visible {
+  color: var(--text-primary);
+  text-decoration: underline;
 }
 
 .brand-lockup {
