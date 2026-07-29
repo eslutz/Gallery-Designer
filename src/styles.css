@@ -634,14 +634,21 @@ button:not(:disabled):active {
 }
 
 .app-footer a {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
   color: var(--text-secondary);
   text-decoration: none;
 }
 
-.app-footer a svg {
+/* Only the icon links need inline-flex for icon/label alignment — applying
+   it to .app-footer-license's inline "MIT License" link as well broke its
+   normal text flow (taller line box, and the link's own layout no longer
+   participated in the paragraph's line-wrapping like plain text does). */
+.app-footer-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.app-footer-links a svg {
   flex: 0 0 auto;
   opacity: 0.8;
 }
