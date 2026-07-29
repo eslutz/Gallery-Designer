@@ -959,6 +959,22 @@ describe('Gallery Designer app', () => {
     expect(undo).toBeEnabled();
   });
 
+  it('shuffles to a different arrangement instead of no-op when all art is already placed', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: /Add art piece/i }));
+    await user.click(screen.getByRole('button', { name: /Auto-place pieces/i }));
+
+    await user.click(screen.getByRole('button', { name: /^Shuffle$/i }));
+
+    // Shuffle must re-run placement for every piece (not just ones still in
+    // the tray), or it no-ops with the same "already placed" message
+    // Auto-place shows once nothing is left to place — the bug this test
+    // guards against.
+    expect(screen.getByRole('status')).toHaveTextContent(/Shuffled to layout/i);
+    expect(screen.getByRole('status')).not.toHaveTextContent(/already placed/i);
+  });
+
   it('explains invalid existing placements before auto-placement', async () => {
     localStorage.setItem(
       'gallery-designer-state-v1',

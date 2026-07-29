@@ -1476,9 +1476,15 @@ export default function App() {
   }
 
   function runAutoPlacement(variantIndex: number, mode: 'place' | 'shuffle') {
+    // "Place" only fills pieces that aren't on the wall yet, treating
+    // whatever's already placed as fixed. "Shuffle" is meant to try a
+    // different arrangement, which requires letting every piece move —
+    // passing the current placements as fixed here would make it a no-op
+    // whenever nothing is left unplaced (the bug this comment replaced).
+    const existingPlacements = mode === 'shuffle' ? [] : state.placements;
     const result = autoPlacePieces(state.sections, state.pieces, {
       settings: state.autoPlacementSettings,
-      existingPlacements: state.placements,
+      existingPlacements,
       variantIndex,
       features: {
         ...state.features,
@@ -1505,7 +1511,7 @@ export default function App() {
       return;
     }
 
-    const existingPieceIds = new Set(state.placements.map((placement) => placement.pieceId));
+    const existingPieceIds = new Set(existingPlacements.map((placement) => placement.pieceId));
     const firstNewPlacement = result.placements.find(
       (placement) => !existingPieceIds.has(placement.pieceId),
     );
