@@ -535,7 +535,14 @@ export function WallCanvas({
       </svg>
       {wallRemoveControls.map((control) => {
         const position = wallRemoveControlPositions[control.id];
-        const visible = hoveredWallItemId === control.id;
+        // Hover has no equivalent on touch, so a tap-selected piece would
+        // never reveal its remove control on mobile if this only checked
+        // hover state — fall back to selection so touch users can reach it.
+        const isSelected =
+          control.itemKind === 'artwork'
+            ? selectedPieceIds.includes(control.itemId)
+            : selectedFeatureId === control.itemId;
+        const visible = hoveredWallItemId === control.id || isSelected;
         return (
           <div
             key={control.id}

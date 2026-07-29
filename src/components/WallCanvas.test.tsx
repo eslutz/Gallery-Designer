@@ -157,6 +157,53 @@ describe('WallCanvas', () => {
     expect(screen.getByLabelText('Return Window to staging')).toBeInTheDocument();
   });
 
+  it('shows the remove control for a selected piece even without hover, so touch users can reach it', () => {
+    // Hover has no equivalent on touch — the remove control must also react
+    // to selection so a piece selected by tapping isn't stuck unreachable.
+    const { container } = render(<WallCanvas {...baseProps()} selectedPieceIds={['piece-1']} />);
+
+    const controls = container.querySelectorAll('.wall-piece-remove-control');
+    const selectedControl = screen
+      .getByLabelText('Return Sunset to staging')
+      .closest('.wall-piece-remove-control');
+    const otherControl = screen
+      .getByLabelText('Return Mountains to staging')
+      .closest('.wall-piece-remove-control');
+
+    expect(controls).toHaveLength(2);
+    expect(selectedControl).toHaveClass('is-visible');
+    expect(otherControl).not.toHaveClass('is-visible');
+  });
+
+  it('shows the remove control for a selected feature even without hover', () => {
+    const feature = {
+      id: 'feature-1',
+      type: 'window' as const,
+      name: 'Window',
+      xIn: 20,
+      yIn: 10,
+      widthIn: 30,
+      heightIn: 20,
+      placed: true,
+    };
+    render(
+      <WallCanvas
+        {...baseProps()}
+        autoPlacementSettings={{
+          ...autoPlacementSettings,
+          wallSetupMode: 'full-wall-with-features',
+          wallFeatures: [feature],
+        }}
+        selectedFeatureId="feature-1"
+      />,
+    );
+
+    const control = screen
+      .getByLabelText('Return Window to staging')
+      .closest('.wall-piece-remove-control');
+    expect(control).toHaveClass('is-visible');
+  });
+
   it('renders a selection marquee rect when one is active', () => {
     render(
       <WallCanvas {...baseProps()} selectionMarquee={{ left: 0, top: 0, right: 20, bottom: 20 }} />,
