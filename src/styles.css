@@ -634,8 +634,16 @@ button:not(:disabled):active {
 }
 
 .app-footer a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: var(--text-secondary);
   text-decoration: none;
+}
+
+.app-footer a svg {
+  flex: 0 0 auto;
+  opacity: 0.8;
 }
 
 .app-footer a:hover,
