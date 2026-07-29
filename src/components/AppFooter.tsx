@@ -57,14 +57,17 @@ export function AppFooter() {
             <Globe size={14} aria-hidden="true" focusable="false" />
             ericslutz.dev
           </a>
-          <a href="https://github.com/sponsors/eslutz" target="_blank" rel="noopener noreferrer">
-            <Heart size={14} aria-hidden="true" focusable="false" />
-            GitHub Sponsors
-          </a>
-          <a href="https://coindrop.to/ericslutz_dev" target="_blank" rel="noopener noreferrer">
-            <Coffee size={14} aria-hidden="true" focusable="false" />
-            Coindrop
-          </a>
+          <span className="app-footer-group">
+            <span className="app-footer-group-label">Support my work:</span>
+            <a href="https://github.com/sponsors/eslutz" target="_blank" rel="noopener noreferrer">
+              <Heart size={14} aria-hidden="true" focusable="false" />
+              GitHub Sponsors
+            </a>
+            <a href="https://coindrop.to/ericslutz_dev" target="_blank" rel="noopener noreferrer">
+              <Coffee size={14} aria-hidden="true" focusable="false" />
+              Coindrop
+            </a>
+          </span>
         </nav>
       </div>
     </footer>
