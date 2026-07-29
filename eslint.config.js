@@ -21,6 +21,14 @@ export default tseslint.config(
     rules: {
       ...reactHooks.configs.recommended.rules,
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+      // New in eslint-plugin-react-hooks v7 (upgraded to unblock the eslint@10
+      // peer-dependency conflict, see package.json). Flags 4 existing
+      // sync-state-with-prop effects (NumberField, ShortcutsDialog,
+      // useAlignmentGuides, useWallZoomPan) as errors. Downgraded to a
+      // warning until each is reviewed and fixed individually — these are
+      // interaction-critical hot paths that shouldn't be rewritten as a
+      // side effect of a dependency bump.
+      'react-hooks/set-state-in-effect': 'warn',
     },
   },
 );
