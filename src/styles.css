@@ -635,12 +635,18 @@ button:not(:disabled):active {
 
 /* Wraps the label with its links so the two stay together as one unit
    when .app-footer-links wraps onto a new line, instead of the label
-   ending up orphaned from the links it's describing. */
+   ending up orphaned from the links it's describing. A tighter internal
+   gap than .app-footer-links' 16px, plus extra margin-left on top of that
+   16px gap before it, reads as one distinct group rather than blending
+   into the flat run of links. */
 .app-footer-group {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 16px;
+  gap: 4px 10px;
+  margin-left: 8px;
+  padding-left: 16px;
+  border-left: 1px solid var(--panel-border);
 }
 
 .app-footer-group-label {
