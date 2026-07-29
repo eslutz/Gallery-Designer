@@ -887,12 +887,9 @@ export default function App() {
         ...current.placements.filter((placement) => !movingIds.has(placement.pieceId)),
         ...proposedPlacements,
       ],
-      ...withMessage(
-        current,
-        proposedPlacements.length === 1
-          ? `Moved ${getPieceLabel(current, proposedPlacements[0].pieceId)} on the wall.`
-          : `Moved ${proposedPlacements.length} art pieces as a group.`,
-      ),
+      // No toast here — repositioning an already-placed piece is the most
+      // frequent action in the app, and a toast on every drag/nudge drowns
+      // out the ones worth surfacing (first placement, auto-place, etc).
     }));
     showAlignmentGuides(guides);
   }
@@ -929,10 +926,7 @@ export default function App() {
           ),
           proposedPlacement,
         ],
-        ...withMessage(
-          current,
-          `Moved ${getPieceLabel(current, proposedPlacement.pieceId)} on the wall.`,
-        ),
+        // No toast — see commitPiecePlacementGroup.
       }));
       if (guides.length > 0) {
         showAlignmentGuides(guides);
@@ -1767,7 +1761,8 @@ export default function App() {
             sectionDrag.sectionId,
           ),
         },
-        ...withMessage(current, 'Wall section moved. Sections snap together by shared edges.'),
+        // No toast — this runs on every pointermove while dragging a
+        // section, not just once at drop.
       };
     });
     return true;
@@ -2019,7 +2014,7 @@ export default function App() {
             section.id,
           ),
         },
-        ...withMessage(current, 'Wall section moved. Sections snap together by shared edges.'),
+        // No toast — see updateSectionDrag.
       };
     });
   }
