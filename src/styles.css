@@ -2663,6 +2663,23 @@ th {
     right: 0;
   }
 
+  /* The trigger sits flush-left in .topbar-actions on mobile (see
+     .topbar-actions above), so the desktop right:0 anchor pushes this
+     220px-wide popover off the left edge of the viewport. */
+  .design-switcher-popover {
+    left: 0;
+    right: auto;
+  }
+
+  /* .app-footer-links wraps each group onto its own line at this width,
+     so the divider meant to separate the support group from the link
+     before it has nothing to its left and reads as a stray floating bar. */
+  .app-footer-group {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: none;
+  }
+
   .workspace {
     display: flex;
     flex-direction: column;
