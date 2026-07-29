@@ -1,10 +1,7 @@
 import type { AutoPlacementDiagnostics } from '../lib/autoPlace';
+import { formatCount } from '../lib/formatCount';
 import { formatMeasurement } from '../lib/units';
 import type { Unit } from '../types';
-
-export function formatCount(count: number, singular: string): string {
-  return `${count} ${count === 1 ? singular : `${singular}s`}`;
-}
 
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
