@@ -114,6 +114,7 @@ import {
   validateWallSections,
 } from './lib/wall';
 import { getDefaultWallZoomState, getWallCanvasBaseViewBox } from './lib/wallZoom';
+import { findVerticalScrollContainer, getEdgeScrollDelta } from './lib/edgeAutoScroll';
 import { LONG_PRESS_DELAY_MS, pressMovedTooFar, requiresLongPress } from './lib/longPressDrag';
 import { hasSeenWelcome, setWelcomeSeen } from './lib/welcomeGuide';
 import {
@@ -274,6 +275,13 @@ export default function App() {
    */
   const touchDragArmedRef = useRef(false);
   const [armedStagedItemId, setArmedStagedItemId] = useState<string | null>(null);
+  /** Last pointer position of an active drag, so edge scrolling can keep running
+   *  between pointermove events while a finger is held still at an edge. */
+  const dragAutoScrollRef = useRef<{
+    clientX: number;
+    clientY: number;
+    frameId: number | null;
+  } | null>(null);
   const interactionHandlersRef = useRef<{
     updateWallZoomGesture: (event: PointerEvent) => boolean;
     updateWallPan: (
@@ -283,6 +291,7 @@ export default function App() {
     updateSectionDrag: (event: { clientX: number; clientY: number }) => boolean;
     updateMarquee: (event: { clientX: number; clientY: number }) => boolean;
     updatePointerDrag: (event: { clientX: number; clientY: number }) => void;
+    trackDragAutoScroll: (point: { clientX: number; clientY: number }) => void;
     finishMarquee: () => void;
     finishPieceDrag: (event?: { clientX: number; clientY: number; pointerId?: number }) => void;
     cancelPieceDrag: () => void;
@@ -387,6 +396,7 @@ export default function App() {
       updateSectionDrag,
       updateMarquee,
       updatePointerDrag,
+      trackDragAutoScroll,
       finishMarquee,
       finishPieceDrag,
       cancelPieceDrag,
@@ -487,6 +497,7 @@ export default function App() {
       if (drag) {
         event.preventDefault();
         handlers.updatePointerDrag(event);
+        handlers.trackDragAutoScroll(event);
       }
     }
 
@@ -1995,6 +2006,7 @@ export default function App() {
     ) {
       commitFeaturePlacement(drag.latestFeature);
     }
+    stopDragAutoScroll();
     finishSectionDragUndo();
     dragRef.current = null;
     sectionDragRef.current = null;
@@ -2022,6 +2034,7 @@ export default function App() {
    */
   function cancelPieceDrag() {
     finishWallZoomGesture();
+    stopDragAutoScroll();
     finishSectionDragUndo();
     dragRef.current = null;
     sectionDragRef.current = null;
@@ -2230,6 +2243,72 @@ export default function App() {
       xIn: roundToPrecision(feature.xIn + deltaX),
       yIn: roundToPrecision((feature.yIn ?? getLegacyFeatureYIn(feature)) + deltaY),
     });
+  }
+
+  /**
+   * Keeps the view travelling while a drag rests near the edge of its scroll
+   * container. The wall and the staging tray are often not on screen together,
+   * so a piece dragged out of the tray needs the view to come to it.
+   */
+  function stepDragAutoScroll() {
+    const autoScroll = dragAutoScrollRef.current;
+    if (!autoScroll || !dragRef.current) {
+      stopDragAutoScroll();
+      return;
+    }
+
+    // Anchored on the editor column, not the workspace: the column is the
+    // scroller on desktop and is a *child* of the workspace, so searching from
+    // the workspace upward would walk straight past it. From here the search
+    // finds the column on desktop and continues up to the workspace on mobile,
+    // where the column itself does not scroll.
+    const container = findVerticalScrollContainer(editorColumnRef.current);
+    if (!container) {
+      stopDragAutoScroll();
+      return;
+    }
+
+    const delta = getEdgeScrollDelta(container.getBoundingClientRect(), autoScroll.clientY);
+    if (delta !== 0) {
+      const before = container.scrollTop;
+      container.scrollTop = before + delta;
+      if (container.scrollTop !== before) {
+        // The wall moved under a stationary pointer, so the placement this
+        // gesture resolves to has changed even though the finger has not.
+        updatePointerDrag({ clientX: autoScroll.clientX, clientY: autoScroll.clientY });
+      }
+    }
+
+    autoScroll.frameId = requestAnimationFrame(stepDragAutoScroll);
+  }
+
+  function trackDragAutoScroll(point: { clientX: number; clientY: number }) {
+    if (!dragRef.current) {
+      stopDragAutoScroll();
+      return;
+    }
+    const existing = dragAutoScrollRef.current;
+    if (existing) {
+      existing.clientX = point.clientX;
+      existing.clientY = point.clientY;
+      return;
+    }
+    // Read the coordinates out rather than spreading: `point` is usually a DOM
+    // event, whose clientX/clientY live on the prototype as getters and so do
+    // not survive a spread.
+    dragAutoScrollRef.current = {
+      clientX: point.clientX,
+      clientY: point.clientY,
+      frameId: requestAnimationFrame(stepDragAutoScroll),
+    };
+  }
+
+  function stopDragAutoScroll() {
+    const autoScroll = dragAutoScrollRef.current;
+    if (autoScroll?.frameId !== null && autoScroll?.frameId !== undefined) {
+      cancelAnimationFrame(autoScroll.frameId);
+    }
+    dragAutoScrollRef.current = null;
   }
 
   function updatePointerDrag(event: { clientX: number; clientY: number }) {

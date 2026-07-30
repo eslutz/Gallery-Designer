@@ -1027,6 +1027,52 @@ describe('Gallery Designer app', () => {
     });
   });
 
+  it('scrolls the view toward the wall when a drag is held near the edge', () => {
+    render(<App />);
+
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    mockCanvasProjection(canvas);
+    mockPointerTarget(canvas);
+
+    // jsdom lays nothing out, so the scroll container has to be described by
+    // hand: a real scrollable box with the drag pinned against its top edge.
+    const workspace = document.querySelector('.workspace') as HTMLElement;
+    Object.defineProperty(workspace, 'scrollHeight', { configurable: true, value: 2000 });
+    Object.defineProperty(workspace, 'clientHeight', { configurable: true, value: 500 });
+    workspace.getBoundingClientRect = () =>
+      ({ top: 100, bottom: 600, left: 0, right: 400, width: 400, height: 500 }) as DOMRect;
+    workspace.style.overflowY = 'auto';
+    workspace.scrollTop = 400;
+
+    const frames: FrameRequestCallback[] = [];
+    const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      frames.push(cb);
+      return frames.length;
+    });
+
+    try {
+      const stagedPiece = screen.getByRole('button', { name: 'Drag Piece 1 from staging' });
+      act(() => {
+        fireEvent.pointerDown(stagedPiece, { pointerId: 1, clientX: 50, clientY: 400 });
+        // Held just inside the top edge of the scroll container.
+        window.dispatchEvent(
+          new MouseEvent('pointermove', { clientX: 50, clientY: 110, cancelable: true }),
+        );
+      });
+
+      expect(frames.length).toBeGreaterThan(0);
+      act(() => {
+        // Flush whatever is queued; the auto-scroll frame is not necessarily first.
+        const queued = frames.splice(0, frames.length);
+        for (const frame of queued) frame(0);
+      });
+
+      expect(workspace.scrollTop).toBeLessThan(400);
+    } finally {
+      rafSpy.mockRestore();
+    }
+  });
+
   it('centers the wall remove control on the artwork top-right corner and keeps it visible across the control', () => {
     render(<App />);
     placeStagedPieceOnWall();
