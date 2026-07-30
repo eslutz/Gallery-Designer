@@ -428,14 +428,106 @@ test.describe('with the welcome card already dismissed', () => {
     ).toContainText('Auto-placement placed 2 remaining pieces around 1 piece you positioned.');
   });
 
-  test('mobile staged pieces keep touch drags from becoming page scrolls', async ({ page }) => {
+  test('mobile staged pieces reserve vertical drags while leaving the tray scrollable', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
 
+    // pan-x, not none: the browser keeps the horizontal axis so the tray can be
+    // scrolled from anywhere on a card, while a vertical drag onto the wall
+    // (which sits above the tray) still reaches our pointer handlers.
+    //
+    // Only the declaration is asserted here. touch-action governs *touch* input
+    // exclusively, and this suite's drag helper synthesizes pointerType 'mouse',
+    // so a drag driven from here would exercise the pointer pipeline (already
+    // covered by the two tray-to-wall drags above) without touching the browser
+    // behaviour this rule actually changes. That half needs a real device.
     await expect(page.getByRole('button', { name: 'Drag Piece 1 from staging' })).toHaveCSS(
       'touch-action',
-      'none',
+      'pan-x',
     );
+  });
+
+  test('a plain wheel at fit scale scrolls the editor column instead of panning the wall', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 700 });
+    await page.goto('/');
+
+    const canvas = page.getByRole('img', { name: 'Scaled gallery wall layout' });
+    const canvasBox = await canvas.boundingBox();
+    if (!canvasBox) {
+      throw new Error('Canvas was not visible enough to scroll over.');
+    }
+
+    const initialViewBox = await readCanvasViewBox(page);
+    const scrollBefore = await page
+      .locator('.editor-column')
+      .evaluate((column) => column.scrollTop);
+
+    await page.mouse.move(canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height / 2);
+    await page.mouse.wheel(0, 200);
+
+    // The wall is at fit scale, so there is nothing to pan and the scroll
+    // belongs to the column that holds the canvas.
+    await expect
+      .poll(() => page.locator('.editor-column').evaluate((column) => column.scrollTop))
+      .toBeGreaterThan(scrollBefore);
+    expect(await readCanvasViewBox(page)).toEqual(initialViewBox);
+  });
+
+  test('panning a zoomed wall to its edge releases the remaining scroll to the column', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 700 });
+    await page.goto('/');
+
+    const canvas = page.getByRole('img', { name: 'Scaled gallery wall layout' });
+    const canvasBox = await canvas.boundingBox();
+    if (!canvasBox) {
+      throw new Error('Canvas was not visible enough to pan.');
+    }
+    const centerX = canvasBox.x + canvasBox.width / 2;
+    const centerY = canvasBox.y + canvasBox.height / 2;
+
+    const fitViewBox = await readCanvasViewBox(page);
+    await canvas.dispatchEvent('wheel', {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      deltaY: -240,
+      clientX: centerX,
+      clientY: centerY,
+    });
+    // Zoomed in, so panning is now possible.
+    expect((await readCanvasViewBox(page)).width).toBeLessThan(fitViewBox.width);
+
+    await page.mouse.move(centerX, centerY);
+
+    // Drive the wall down until it is pinned against the bottom of its bounds.
+    let previousY = (await readCanvasViewBox(page)).y;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await page.mouse.wheel(0, 240);
+      const nextY = (await readCanvasViewBox(page)).y;
+      if (nextY === previousY) {
+        break;
+      }
+      previousY = nextY;
+    }
+
+    const pinnedViewBox = await readCanvasViewBox(page);
+    const scrollBefore = await page
+      .locator('.editor-column')
+      .evaluate((column) => column.scrollTop);
+
+    await page.mouse.wheel(0, 240);
+
+    // Nothing left for the wall to absorb, so the column takes over.
+    await expect
+      .poll(() => page.locator('.editor-column').evaluate((column) => column.scrollTop))
+      .toBeGreaterThan(scrollBefore);
+    expect(await readCanvasViewBox(page)).toEqual(pinnedViewBox);
   });
 
   test('zoomed wall canvas supports wheel zoom and touchpad-style panning', async ({ page }) => {

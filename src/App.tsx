@@ -269,6 +269,7 @@ export default function App() {
     updatePointerDrag: (event: { clientX: number; clientY: number }) => void;
     finishMarquee: () => void;
     finishPieceDrag: (event?: { clientX: number; clientY: number; pointerId?: number }) => void;
+    cancelPieceDrag: () => void;
     finishWallPan: (event?: { pointerId?: number }) => void;
     finishWallMousePan: () => void;
     handleWallWheelInput: (event: {
@@ -280,7 +281,7 @@ export default function App() {
       deltaX: number;
       deltaY: number;
       metaKey: boolean;
-    }) => void;
+    }) => boolean;
     handleCanvasKeyDown: (event: KeyboardEvent) => void;
   } | null>(null);
 
@@ -371,6 +372,7 @@ export default function App() {
       updatePointerDrag,
       finishMarquee,
       finishPieceDrag,
+      cancelPieceDrag,
       finishWallPan,
       finishWallMousePan,
       handleWallWheelInput,
@@ -466,6 +468,15 @@ export default function App() {
       interactionHandlersRef.current?.finishMarquee();
     }
 
+    // The browser cancels the pointer when it takes the gesture over to scroll.
+    // Abort rather than commit: the drag never reached a drop, so the piece
+    // should stay put.
+    function handleWindowPointerCancel(event: PointerEvent) {
+      interactionHandlersRef.current?.cancelPieceDrag();
+      interactionHandlersRef.current?.finishWallPan(event);
+      interactionHandlersRef.current?.finishMarquee();
+    }
+
     function handleWindowMouseMove(event: MouseEvent) {
       if (interactionHandlersRef.current?.updateSectionDrag(event)) {
         event.preventDefault();
@@ -483,11 +494,13 @@ export default function App() {
 
     window.addEventListener('pointermove', handleWindowPointerMove);
     window.addEventListener('pointerup', handleWindowPointerUp);
+    window.addEventListener('pointercancel', handleWindowPointerCancel);
     window.addEventListener('mousemove', handleWindowMouseMove);
     window.addEventListener('mouseup', handleWindowMouseUp);
     return () => {
       window.removeEventListener('pointermove', handleWindowPointerMove);
       window.removeEventListener('pointerup', handleWindowPointerUp);
+      window.removeEventListener('pointercancel', handleWindowPointerCancel);
       window.removeEventListener('mousemove', handleWindowMouseMove);
       window.removeEventListener('mouseup', handleWindowMouseUp);
     };
@@ -1880,6 +1893,27 @@ export default function App() {
     } else {
       showAlignmentGuides([]);
     }
+    stopSuppressingTextSelection();
+  }
+
+  /**
+   * Tears down an in-flight drag without committing it, for `pointercancel`.
+   *
+   * The browser fires that whenever it claims a gesture for its own scrolling.
+   * Staged pieces allow horizontal panning (see `.staged-piece` in styles.css),
+   * so every sideways swipe across the tray now cancels the pointer mid-drag.
+   * Without this the drag state would be stranded — piece glued to the pointer,
+   * preview left on screen, text selection still suppressed.
+   */
+  function cancelPieceDrag() {
+    finishWallZoomGesture();
+    finishSectionDragUndo();
+    dragRef.current = null;
+    sectionDragRef.current = null;
+    setCursorInteraction('idle');
+    setWallDragPreview(null);
+    setGroupDragPreview([]);
+    showAlignmentGuides([]);
     stopSuppressingTextSelection();
   }
 

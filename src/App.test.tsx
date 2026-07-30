@@ -891,6 +891,32 @@ describe('Gallery Designer app', () => {
     expect(screen.getByRole('button', { name: 'Drag Piece 1 from staging' })).toBeInTheDocument();
   });
 
+  it('abandons a staged drag on pointercancel instead of placing the piece', () => {
+    render(<App />);
+
+    const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+    mockCanvasProjection(canvas);
+    mockPointerTarget(canvas);
+    const stagedPiece = screen.getByRole('button', { name: 'Drag Piece 1 from staging' });
+
+    // The browser fires pointercancel when it claims the gesture for its own
+    // scrolling — with .staged-piece allowing horizontal pans, that is every
+    // sideways swipe across the tray.
+    act(() => {
+      fireEvent.pointerDown(stagedPiece, { pointerId: 1, clientX: 50, clientY: 50 });
+      window.dispatchEvent(
+        new MouseEvent('pointermove', { clientX: 50, clientY: 50, cancelable: true }),
+      );
+      window.dispatchEvent(new MouseEvent('pointercancel', { clientX: 50, clientY: 50 }));
+    });
+
+    // The piece stays in the tray, and none of the drag state is left stranded.
+    expect(screen.queryByRole('button', { name: /^Move Piece 1$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Drag Piece 1 from staging' })).toBeInTheDocument();
+    expect(document.body).not.toHaveClass('suppress-text-selection');
+    expect(document.querySelector('.wall-drag-preview')).not.toBeInTheDocument();
+  });
+
   it('centers the wall remove control on the artwork top-right corner and keeps it visible across the control', () => {
     render(<App />);
     placeStagedPieceOnWall();
