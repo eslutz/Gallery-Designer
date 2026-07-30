@@ -1664,7 +1664,11 @@ select:focus,
   min-height: 460px;
   padding: 14px;
   overflow: hidden;
-  overscroll-behavior: contain;
+  /* Deliberately not `overscroll-behavior: contain`. This card never scrolls
+     itself, so `contain` only blocked chaining — which would strand every
+     gesture the canvas declines (a wheel at fit scale, or a pan already pinned
+     against the wall bounds). `.editor-column` still contains the chain, so
+     released scroll stops there instead of reaching the page. */
 }
 
 .wall-canvas-shell {
@@ -1782,9 +1786,16 @@ select:focus,
   min-height: 430px;
   background: var(--canvas-background);
   border-radius: 6px;
-  touch-action: none;
+  /* At fit scale there is nothing to pan, so leave vertical scrolling to the
+     surrounding column. `.is-wall-pannable` (set once wallZoom.scale > 1) takes
+     the gesture back below. */
+  touch-action: pan-y;
   -webkit-user-select: none;
   user-select: none;
+}
+
+.app-shell.is-wall-pannable .wall-canvas {
+  touch-action: none;
 }
 
 .wall-canvas * {
@@ -2200,7 +2211,11 @@ select:focus,
   color: var(--text-primary);
   box-shadow: none;
   text-align: center;
-  touch-action: none;
+  /* The tray scrolls horizontally and the wall canvas sits above it, so a drag
+     onto the wall is always an upward gesture. Giving the browser the horizontal
+     axis makes the whole card a scroll surface (it used to be dead, leaving only
+     the ~10px gaps between cards) while vertical stays reserved for dragging. */
+  touch-action: pan-x;
   overflow: visible;
 }
 
