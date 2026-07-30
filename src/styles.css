@@ -1798,6 +1798,15 @@ select:focus,
   touch-action: none;
 }
 
+/* Only the empty canvas background gives scrolling away to the browser. Anything
+   you can actually grab stays a drag surface at every zoom level, otherwise the
+   pan-y above would let a vertical drag on a placed piece scroll the page
+   instead of moving the piece. */
+.wall-canvas .renderable-item,
+.wall-canvas .wall-section-handle {
+  touch-action: none;
+}
+
 .wall-canvas * {
   -webkit-user-select: none;
   user-select: none;
@@ -2211,11 +2220,13 @@ select:focus,
   color: var(--text-primary);
   box-shadow: none;
   text-align: center;
-  /* The tray scrolls horizontally and the wall canvas sits above it, so a drag
-     onto the wall is always an upward gesture. Giving the browser the horizontal
-     axis makes the whole card a scroll surface (it used to be dead, leaving only
-     the ~10px gaps between cards) while vertical stays reserved for dragging. */
-  touch-action: pan-x;
+  /* Reverted from `pan-x`. In theory that let the browser scroll the tray
+     horizontally while vertical stayed reserved for dragging a piece onto the
+     wall — in practice, on iOS Safari it handed the browser gestures we needed,
+     so taps scrolled the view and drag-and-drop stopped working entirely.
+     Directional touch-action is not dependable enough here; making the tray
+     scrollable needs an approach that does not rely on it. */
+  touch-action: none;
   overflow: visible;
 }
 

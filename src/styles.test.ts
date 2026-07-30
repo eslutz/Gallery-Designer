@@ -34,14 +34,18 @@ describe('application typography', () => {
     expect(stylesheet).toMatch(/\.appearance-controls\s*{[^}]*margin-left:\s*auto/s);
   });
 
-  it('reserves vertical touch gestures for staged piece drags while the tray scrolls sideways', () => {
-    expect(stylesheet).toMatch(/\.staged-piece\s*{[^}]*touch-action:\s*pan-x;/s);
+  it('keeps touch panning from taking over staged piece drags', () => {
+    expect(stylesheet).toMatch(/\.staged-piece\s*{[^}]*touch-action:\s*none;/s);
   });
 
-  it('only lets the wall canvas swallow touch scrolling once it is zoomed in', () => {
+  it('only lets the empty wall canvas give up touch scrolling, and only at fit scale', () => {
     expect(stylesheet).toMatch(/\.wall-canvas\s*{[^}]*touch-action:\s*pan-y;/s);
     expect(stylesheet).toMatch(
       /\.app-shell\.is-wall-pannable\s+\.wall-canvas\s*{[^}]*touch-action:\s*none;/s,
+    );
+    // Grabbable items opt back out, or a vertical drag on one would scroll.
+    expect(stylesheet).toMatch(
+      /\.wall-canvas\s+\.renderable-item,\s*\.wall-canvas\s+\.wall-section-handle\s*{[^}]*touch-action:\s*none;/s,
     );
   });
 

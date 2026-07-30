@@ -428,24 +428,17 @@ test.describe('with the welcome card already dismissed', () => {
     ).toContainText('Auto-placement placed 2 remaining pieces around 1 piece you positioned.');
   });
 
-  test('mobile staged pieces reserve vertical drags while leaving the tray scrollable', async ({
-    page,
-  }) => {
+  test('mobile staged pieces keep touch drags from becoming page scrolls', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
 
-    // pan-x, not none: the browser keeps the horizontal axis so the tray can be
-    // scrolled from anywhere on a card, while a vertical drag onto the wall
-    // (which sits above the tray) still reaches our pointer handlers.
-    //
-    // Only the declaration is asserted here. touch-action governs *touch* input
-    // exclusively, and this suite's drag helper synthesizes pointerType 'mouse',
-    // so a drag driven from here would exercise the pointer pipeline (already
-    // covered by the two tray-to-wall drags above) without touching the browser
-    // behaviour this rule actually changes. That half needs a real device.
+    // A brief attempt at `pan-x` here (to make the tray scrollable from anywhere
+    // on a card) broke drag-and-drop outright on iOS Safari, which did not
+    // honour the directional value the way the spec implies. `none` is the only
+    // value that reliably guarantees the gesture reaches our pointer handlers.
     await expect(page.getByRole('button', { name: 'Drag Piece 1 from staging' })).toHaveCSS(
       'touch-action',
-      'pan-x',
+      'none',
     );
   });
 
