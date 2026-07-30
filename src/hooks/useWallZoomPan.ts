@@ -14,6 +14,7 @@ import {
   getDefaultWallZoomState,
   getWallCanvasBaseViewBox,
   getWallZoomedViewBox,
+  resolveWallPan,
   zoomWallStateAroundPoint,
   type WallViewBox,
   type WallZoomState,
@@ -337,31 +338,43 @@ export function useWallZoomPan({
     stopSuppressingTextSelection();
   }
 
-  function panWallByWheel(event: { deltaMode: number; deltaX: number; deltaY: number }) {
+  /** @returns true when the wall absorbed some of the scroll, i.e. the view actually moved. */
+  function panWallByWheel(event: { deltaMode: number; deltaX: number; deltaY: number }): boolean {
     const rect = svgRef.current?.getBoundingClientRect();
     const baseViewBox = wallBaseViewBoxRef.current;
     if (!rect || rect.width <= 0 || rect.height <= 0 || !baseViewBox) {
-      return;
+      return false;
     }
 
+    // Resolved up front rather than inside the updater: the caller needs to know
+    // whether this pan moved anything *before* deciding to preventDefault, and a
+    // wheel event can only be captured or released as a whole.
+    const current = wallZoomRef.current;
+    const currentViewBox = getWallZoomedViewBox(baseViewBox, current);
     const delta = normalizeWheelDelta(event);
-    setWallZoom((current) => {
-      const currentViewBox = getWallZoomedViewBox(baseViewBox, current);
-      const nextCenter = clampWallZoomCenter(
-        baseViewBox,
-        currentViewBox.width,
-        currentViewBox.height,
-        current.centerX + (delta.x / rect.width) * currentViewBox.width,
-        current.centerY + (delta.y / rect.height) * currentViewBox.height,
-      );
-      return {
-        ...current,
-        centerX: nextCenter.centerX,
-        centerY: nextCenter.centerY,
-      };
-    });
+    const pan = resolveWallPan(
+      baseViewBox,
+      currentViewBox.width,
+      currentViewBox.height,
+      current.centerX,
+      current.centerY,
+      current.centerX + (delta.x / rect.width) * currentViewBox.width,
+      current.centerY + (delta.y / rect.height) * currentViewBox.height,
+    );
+
+    if (!pan.absorbed) {
+      return false;
+    }
+
+    // Keep the ref in step with the write so back-to-back wheel events within a
+    // single frame each resolve against the latest center instead of re-deciding
+    // from a stale one.
+    wallZoomRef.current = { ...current, centerX: pan.centerX, centerY: pan.centerY };
+    setWallZoom((latest) => ({ ...latest, centerX: pan.centerX, centerY: pan.centerY }));
+    return true;
   }
 
+  /** @returns true when the wall consumed the wheel event and the caller should capture it. */
   function handleWallWheelInput(event: {
     altKey: boolean;
     clientX: number;
@@ -371,17 +384,23 @@ export function useWallZoomPan({
     deltaX: number;
     deltaY: number;
     metaKey: boolean;
-  }) {
+  }): boolean {
     if (!event.ctrlKey && !event.metaKey && !event.altKey) {
-      panWallByWheel(event);
-      return;
+      // At fit scale there is nothing to pan, so the scroll belongs to whatever
+      // container surrounds the canvas.
+      if (wallZoomRef.current.scale <= 1) {
+        return false;
+      }
+      return panWallByWheel(event);
     }
 
     const baseViewBox = wallBaseViewBoxRef.current;
     if (!baseViewBox) {
-      return;
+      return false;
     }
 
+    // Modifier+wheel always zooms, at every scale — releasing it would let the
+    // browser page-zoom instead.
     const factor = Math.exp(-event.deltaY * 0.0015);
     const focusSvgPoint = clientPointToSvg(event);
     setWallZoom((current) =>
@@ -392,6 +411,7 @@ export function useWallZoomPan({
         focusSvgPoint,
       ),
     );
+    return true;
   }
 
   // Freshness indirection for the two window-level effects below: both effects mount once
@@ -498,9 +518,15 @@ export function useWallZoomPan({
         return;
       }
 
+      // Capture only what the wall actually used. Anything it declines — a plain
+      // wheel at fit scale, or a pan already pinned against the wall bounds —
+      // stays available to the surrounding scroll container.
+      if (!wallHandlersRef.current.handleWallWheelInput(event)) {
+        return;
+      }
+
       event.preventDefault();
       event.stopPropagation();
-      wallHandlersRef.current.handleWallWheelInput(event);
     }
 
     displayPanel.addEventListener('wheel', handleDisplayWheel, { passive: false });

@@ -109,3 +109,54 @@ export function clampViewBoxCenter(
   const maxCenter = baseStart + baseSize - viewBoxSize / 2;
   return Math.min(maxCenter, Math.max(minCenter, center));
 }
+
+/**
+ * Sub-quarter-inch center movement is visually nothing, and float noise from the
+ * client-px -> viewBox-unit conversion lands well under it. Treating those as
+ * "absorbed nothing" is what lets a pinned edge release the gesture instead of
+ * capturing it forever on rounding dust.
+ */
+const WALL_PAN_ABSORPTION_EPSILON_IN = 0.01;
+
+export interface WallPanAbsorption extends Pick<WallZoomState, 'centerX' | 'centerY'> {
+  absorbedX: boolean;
+  absorbedY: boolean;
+  /** True when the pan moved the view on either axis. */
+  absorbed: boolean;
+}
+
+/**
+ * Clamps a requested pan center and reports which axes actually moved.
+ *
+ * Callers use this to decide whether to capture the originating gesture: a pan
+ * that absorbs nothing is one the wall cannot service, so the event should stay
+ * available to the surrounding scroll container (same chaining feel as
+ * `overscroll-behavior` on nested scrollers).
+ */
+export function resolveWallPan(
+  baseViewBox: WallViewBox,
+  viewBoxWidth: number,
+  viewBoxHeight: number,
+  currentCenterX: number,
+  currentCenterY: number,
+  requestedCenterX: number,
+  requestedCenterY: number,
+): WallPanAbsorption {
+  const next = clampWallZoomCenter(
+    baseViewBox,
+    viewBoxWidth,
+    viewBoxHeight,
+    requestedCenterX,
+    requestedCenterY,
+  );
+  const absorbedX = Math.abs(next.centerX - currentCenterX) > WALL_PAN_ABSORPTION_EPSILON_IN;
+  const absorbedY = Math.abs(next.centerY - currentCenterY) > WALL_PAN_ABSORPTION_EPSILON_IN;
+
+  return {
+    centerX: next.centerX,
+    centerY: next.centerY,
+    absorbedX,
+    absorbedY,
+    absorbed: absorbedX || absorbedY,
+  };
+}

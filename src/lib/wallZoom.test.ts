@@ -6,6 +6,7 @@ import {
   getDefaultWallZoomState,
   getWallCanvasBaseViewBox,
   getWallZoomedViewBox,
+  resolveWallPan,
   zoomWallStateAroundPoint,
 } from './wallZoom';
 import type { WallSection } from '../types';
@@ -81,5 +82,63 @@ describe('wall zoom geometry', () => {
 
     expect(next.centerX).toBeCloseTo(start.centerX);
     expect(next.centerY).toBeCloseTo(start.centerY);
+  });
+});
+
+describe('resolveWallPan', () => {
+  // 100x80 wall viewed through a 50x40 window: the center can range over
+  // x 25..75 and y 20..60.
+  const baseViewBox = { x: 0, y: 0, width: 100, height: 80 };
+  const viewBoxWidth = 50;
+  const viewBoxHeight = 40;
+
+  function pan(fromX: number, fromY: number, toX: number, toY: number) {
+    return resolveWallPan(baseViewBox, viewBoxWidth, viewBoxHeight, fromX, fromY, toX, toY);
+  }
+
+  it('absorbs a pan that stays inside the wall bounds', () => {
+    const result = pan(50, 40, 60, 45);
+
+    expect(result).toMatchObject({ centerX: 60, centerY: 45, absorbedX: true, absorbedY: true });
+    expect(result.absorbed).toBe(true);
+  });
+
+  it('absorbs the portion up to the edge when a pan overshoots', () => {
+    const result = pan(70, 40, 999, 40);
+
+    expect(result.centerX).toBe(75);
+    expect(result.absorbedX).toBe(true);
+    expect(result.absorbedY).toBe(false);
+    expect(result.absorbed).toBe(true);
+  });
+
+  it('absorbs nothing once pinned against an edge', () => {
+    const result = pan(75, 40, 999, 40);
+
+    expect(result.centerX).toBe(75);
+    expect(result.absorbedX).toBe(false);
+    expect(result.absorbed).toBe(false);
+  });
+
+  it('reports each axis independently, so a pinned axis does not mask a free one', () => {
+    const result = pan(75, 40, 999, 50);
+
+    expect(result.absorbedX).toBe(false);
+    expect(result.absorbedY).toBe(true);
+    expect(result.absorbed).toBe(true);
+  });
+
+  it('treats sub-epsilon movement as absorbing nothing', () => {
+    const result = pan(50, 40, 50.0001, 40.0001);
+
+    expect(result.absorbedX).toBe(false);
+    expect(result.absorbedY).toBe(false);
+    expect(result.absorbed).toBe(false);
+  });
+
+  it('absorbs nothing when the wall fits entirely in view', () => {
+    const result = resolveWallPan(baseViewBox, 200, 160, 50, 40, 90, 70);
+
+    expect(result).toMatchObject({ centerX: 50, centerY: 40, absorbed: false });
   });
 });
