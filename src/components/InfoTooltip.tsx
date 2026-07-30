@@ -286,7 +286,15 @@ export function TooltipIconButton({
         aria-label={ariaLabel}
         aria-describedby={tooltipId}
         onPointerDown={onPointerDown}
-        onClick={onClick}
+        onClick={(event) => {
+          // On touch devices, tapping fires focus (opening the tooltip) and
+          // click at once, and nothing normally blurs the button afterward —
+          // e.g. these drawer-opening buttons don't steal focus when they
+          // open — so the tooltip would otherwise stay rendered on top of
+          // whatever the click just did.
+          setIsOpen(false);
+          onClick(event);
+        }}
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
             setIsOpen(false);

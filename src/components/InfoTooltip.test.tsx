@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -70,11 +70,38 @@ describe('TooltipIconButton', () => {
     );
 
     const button = screen.getByRole('button', { name: 'Delete piece' });
-    await user.click(button);
-    expect(onClick).toHaveBeenCalledTimes(1);
-
     await user.hover(button);
     expect(screen.getByText('Remove this piece')).toHaveClass('info-tooltip-open');
+
+    await user.click(button);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes its tooltip on click, so it does not linger over whatever the click opened', async () => {
+    // Tapping on touch fires focus (opening the tooltip) and click at once,
+    // and nothing else blurs the button afterward for buttons that open a
+    // drawer/dialog — without this, the tooltip stays rendered on top.
+    const user = userEvent.setup();
+    render(
+      <TooltipIconButton
+        ariaLabel="Auto-placement options"
+        tooltip="Auto-placement options"
+        onClick={vi.fn()}
+      >
+        <span>icon</span>
+      </TooltipIconButton>,
+    );
+
+    const button = screen.getByRole('button', { name: 'Auto-placement options' });
+    act(() => button.focus());
+    expect(screen.getByText('Auto-placement options', { selector: '.info-tooltip' })).toHaveClass(
+      'info-tooltip-open',
+    );
+
+    await user.click(button);
+    expect(
+      screen.getByText('Auto-placement options', { selector: '.info-tooltip' }),
+    ).not.toHaveClass('info-tooltip-open');
   });
 });
 
