@@ -428,17 +428,18 @@ test.describe('with the welcome card already dismissed', () => {
     ).toContainText('Auto-placement placed 2 remaining pieces around 1 piece you positioned.');
   });
 
-  test('mobile staged pieces keep touch drags from becoming page scrolls', async ({ page }) => {
+  test('mobile staged pieces stay scrollable, leaving a long press to start the drag', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
 
-    // A brief attempt at `pan-x` here (to make the tray scrollable from anywhere
-    // on a card) broke drag-and-drop outright on iOS Safari, which did not
-    // honour the directional value the way the spec implies. `none` is the only
-    // value that reliably guarantees the gesture reaches our pointer handlers.
+    // Neither `none` (kills tray scrolling) nor `pan-x` (broke drag-and-drop on
+    // iOS Safari, which ignored the directional value). `manipulation` keeps the
+    // card scrollable and lets a deliberate hold claim the drag instead.
     await expect(page.getByRole('button', { name: 'Drag Piece 1 from staging' })).toHaveCSS(
       'touch-action',
-      'none',
+      'manipulation',
     );
   });
 

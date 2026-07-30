@@ -114,6 +114,7 @@ import {
   validateWallSections,
 } from './lib/wall';
 import { getDefaultWallZoomState, getWallCanvasBaseViewBox } from './lib/wallZoom';
+import { LONG_PRESS_DELAY_MS, pressMovedTooFar, requiresLongPress } from './lib/longPressDrag';
 import { hasSeenWelcome, setWelcomeSeen } from './lib/welcomeGuide';
 import {
   isPlacedWallFeature,
@@ -258,6 +259,21 @@ export default function App() {
   const dragRef = useRef<DragState | null>(null);
   const marqueeRef = useRef<MarqueeState | null>(null);
   const sectionDragRef = useRef<SectionDragState | null>(null);
+  /** A touch resting on a staged card, not yet held long enough to become a drag. */
+  const pendingStagedPressRef = useRef<{
+    pointerId: number;
+    clientX: number;
+    clientY: number;
+    timeoutId: ReturnType<typeof setTimeout>;
+    select: () => void;
+  } | null>(null);
+  /**
+   * True once a long press has armed a drag. Staged cards allow touch panning,
+   * so the browser would otherwise scroll the tray out from under the drag —
+   * the non-passive touchmove listener below reads this to suppress that.
+   */
+  const touchDragArmedRef = useRef(false);
+  const [armedStagedItemId, setArmedStagedItemId] = useState<string | null>(null);
   const interactionHandlersRef = useRef<{
     updateWallZoomGesture: (event: PointerEvent) => boolean;
     updateWallPan: (
@@ -270,6 +286,7 @@ export default function App() {
     finishMarquee: () => void;
     finishPieceDrag: (event?: { clientX: number; clientY: number; pointerId?: number }) => void;
     cancelPieceDrag: () => void;
+    clearPendingStagedPress: () => { select: () => void } | null | undefined;
     finishWallPan: (event?: { pointerId?: number }) => void;
     finishWallMousePan: () => void;
     handleWallWheelInput: (event: {
@@ -373,6 +390,7 @@ export default function App() {
       finishMarquee,
       finishPieceDrag,
       cancelPieceDrag,
+      clearPendingStagedPress,
       finishWallPan,
       finishWallMousePan,
       handleWallWheelInput,
@@ -439,6 +457,16 @@ export default function App() {
       if (!handlers) {
         return;
       }
+      // A finger still deciding between scrolling the tray and picking a piece
+      // up: once it wanders, it was a scroll, so drop the press and stay out of
+      // the browser's way.
+      const pending = pendingStagedPressRef.current;
+      if (pending && getPointerId(event) === pending.pointerId) {
+        if (pressMovedTooFar(pending, event)) {
+          handlers.clearPendingStagedPress();
+        }
+        return;
+      }
       if (handlers.updateWallZoomGesture(event)) {
         event.preventDefault();
         return;
@@ -463,6 +491,9 @@ export default function App() {
     }
 
     function handleWindowPointerUp(event: PointerEvent) {
+      // Released before the hold completed: that was a tap, so just select the
+      // item rather than starting and immediately ending a drag.
+      interactionHandlersRef.current?.clearPendingStagedPress()?.select();
       interactionHandlersRef.current?.finishPieceDrag(event);
       interactionHandlersRef.current?.finishWallPan(event);
       interactionHandlersRef.current?.finishMarquee();
@@ -472,9 +503,20 @@ export default function App() {
     // Abort rather than commit: the drag never reached a drop, so the piece
     // should stay put.
     function handleWindowPointerCancel(event: PointerEvent) {
+      interactionHandlersRef.current?.clearPendingStagedPress();
       interactionHandlersRef.current?.cancelPieceDrag();
       interactionHandlersRef.current?.finishWallPan(event);
       interactionHandlersRef.current?.finishMarquee();
+    }
+
+    // Staged cards allow touch panning so the tray can be scrolled, which means
+    // the browser would happily scroll it mid-drag. Nothing has started moving
+    // yet at the moment a hold arms (that is what "held still" means), so
+    // suppressing it here is still in time to take effect.
+    function blockScrollWhileDragArmed(event: TouchEvent) {
+      if (touchDragArmedRef.current && event.cancelable) {
+        event.preventDefault();
+      }
     }
 
     function handleWindowMouseMove(event: MouseEvent) {
@@ -495,12 +537,14 @@ export default function App() {
     window.addEventListener('pointermove', handleWindowPointerMove);
     window.addEventListener('pointerup', handleWindowPointerUp);
     window.addEventListener('pointercancel', handleWindowPointerCancel);
+    window.addEventListener('touchmove', blockScrollWhileDragArmed, { passive: false });
     window.addEventListener('mousemove', handleWindowMouseMove);
     window.addEventListener('mouseup', handleWindowMouseUp);
     return () => {
       window.removeEventListener('pointermove', handleWindowPointerMove);
       window.removeEventListener('pointerup', handleWindowPointerUp);
       window.removeEventListener('pointercancel', handleWindowPointerCancel);
+      window.removeEventListener('touchmove', blockScrollWhileDragArmed);
       window.removeEventListener('mousemove', handleWindowMouseMove);
       window.removeEventListener('mouseup', handleWindowMouseUp);
     };
@@ -1371,25 +1415,76 @@ export default function App() {
     }
   }
 
+  function scheduleStagedPress(
+    pointerId: number,
+    point: { clientX: number; clientY: number },
+    itemId: string,
+    select: () => void,
+    begin: () => void,
+  ) {
+    clearPendingStagedPress();
+    pendingStagedPressRef.current = {
+      pointerId,
+      clientX: point.clientX,
+      clientY: point.clientY,
+      select,
+      timeoutId: setTimeout(() => {
+        pendingStagedPressRef.current = null;
+        touchDragArmedRef.current = true;
+        setArmedStagedItemId(itemId);
+        begin();
+      }, LONG_PRESS_DELAY_MS),
+    };
+  }
+
+  function clearPendingStagedPress() {
+    const pending = pendingStagedPressRef.current;
+    if (pending) {
+      clearTimeout(pending.timeoutId);
+      pendingStagedPressRef.current = null;
+    }
+    return pending;
+  }
+
   function handleStagedPiecePointerDown(event: React.PointerEvent<HTMLElement>, pieceId: string) {
     const piece = state.pieces.find((candidate) => candidate.id === pieceId);
     if (!piece) {
       return;
     }
-    event.preventDefault();
-    if (typeof event.currentTarget.setPointerCapture === 'function') {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    }
-    selectPiece(pieceId);
 
-    const placement = getPointerPlacement(event, piece);
+    const target = event.currentTarget;
+    const point = { clientX: event.clientX, clientY: event.clientY };
+    const pointerId = event.pointerId;
+    const begin = () => beginStagedPieceDrag(piece, point, pointerId, target);
+
+    if (requiresLongPress(event.pointerType)) {
+      // Don't claim the gesture yet — the card is a scroll surface, and only a
+      // deliberate hold means "pick this up" rather than "scroll the tray".
+      scheduleStagedPress(pointerId, point, pieceId, () => selectPiece(pieceId), begin);
+      return;
+    }
+
+    event.preventDefault();
+    begin();
+  }
+
+  function beginStagedPieceDrag(
+    piece: ArtPiece,
+    point: { clientX: number; clientY: number },
+    pointerId: number,
+    target: HTMLElement,
+  ) {
+    tryCapturePointer(target, pointerId);
+    selectPiece(piece.id);
+
+    const placement = getPointerPlacement(point, piece);
     if (!placement) {
       return;
     }
     const size = getRenderedPieceSize(piece);
     dragRef.current = {
       itemKind: 'piece',
-      itemId: pieceId,
+      itemId: piece.id,
       source: 'staging',
       startPoint: null,
       startPlacement: null,
@@ -1398,17 +1493,17 @@ export default function App() {
       latestFeature: null,
       previewWidthPx: size.widthPx,
       previewHeightPx: size.heightPx,
-      pieceIds: [pieceId],
+      pieceIds: [piece.id],
       startPlacements: [],
       latestPlacements: [placement],
       latestGuides: [],
-      startClientX: event.clientX,
-      startClientY: event.clientY,
+      startClientX: point.clientX,
+      startClientY: point.clientY,
       hasMoved: false,
     };
     setCursorInteraction('dragging-piece');
     startSuppressingTextSelection();
-    showSnappedPreview(placement, piece, size, event);
+    showSnappedPreview(placement, piece, size, point);
   }
 
   function handleStagedFeaturePointerDown(
@@ -1421,20 +1516,38 @@ export default function App() {
     if (!feature) {
       return;
     }
-    event.preventDefault();
-    if (typeof event.currentTarget.setPointerCapture === 'function') {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    }
-    selectFeature(featureId);
 
-    const proposedFeature = getPointerFeaturePlacement(event, feature);
+    const target = event.currentTarget;
+    const point = { clientX: event.clientX, clientY: event.clientY };
+    const pointerId = event.pointerId;
+    const begin = () => beginStagedFeatureDrag(feature, point, pointerId, target);
+
+    if (requiresLongPress(event.pointerType)) {
+      scheduleStagedPress(pointerId, point, featureId, () => selectFeature(featureId), begin);
+      return;
+    }
+
+    event.preventDefault();
+    begin();
+  }
+
+  function beginStagedFeatureDrag(
+    feature: WallFeature,
+    point: { clientX: number; clientY: number },
+    pointerId: number,
+    target: HTMLElement,
+  ) {
+    tryCapturePointer(target, pointerId);
+    selectFeature(feature.id);
+
+    const proposedFeature = getPointerFeaturePlacement(point, feature);
     if (!proposedFeature) {
       return;
     }
     const size = getRenderedFeatureSize(feature);
     dragRef.current = {
       itemKind: 'feature',
-      itemId: featureId,
+      itemId: feature.id,
       source: 'staging',
       startPoint: null,
       startPlacement: null,
@@ -1447,13 +1560,13 @@ export default function App() {
       startPlacements: [],
       latestPlacements: [],
       latestGuides: [],
-      startClientX: event.clientX,
-      startClientY: event.clientY,
+      startClientX: point.clientX,
+      startClientY: point.clientY,
       hasMoved: false,
     };
     setCursorInteraction('dragging-piece');
     startSuppressingTextSelection();
-    showFeatureSnappedPreview(proposedFeature, size, event);
+    showFeatureSnappedPreview(proposedFeature, size, point);
   }
 
   function handleSectionPointerDown(event: React.PointerEvent<SVGGElement>, section: WallSection) {
@@ -1885,6 +1998,8 @@ export default function App() {
     finishSectionDragUndo();
     dragRef.current = null;
     sectionDragRef.current = null;
+    touchDragArmedRef.current = false;
+    setArmedStagedItemId(null);
     setCursorInteraction('idle');
     setWallDragPreview(null);
     setGroupDragPreview([]);
@@ -1910,6 +2025,8 @@ export default function App() {
     finishSectionDragUndo();
     dragRef.current = null;
     sectionDragRef.current = null;
+    touchDragArmedRef.current = false;
+    setArmedStagedItemId(null);
     setCursorInteraction('idle');
     setWallDragPreview(null);
     setGroupDragPreview([]);
@@ -2974,6 +3091,7 @@ export default function App() {
             <StagingTray
               pieces={state.pieces}
               placements={state.placements}
+              dragArmedItemId={armedStagedItemId ?? undefined}
               features={
                 state.autoPlacementSettings.wallSetupMode === 'full-wall-with-features'
                   ? state.autoPlacementSettings.wallFeatures

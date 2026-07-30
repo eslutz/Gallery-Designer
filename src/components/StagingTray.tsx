@@ -13,6 +13,7 @@ export function StagingTray({
   features,
   selectedPieceId,
   selectedFeatureId,
+  dragArmedItemId,
   unit,
   onAutoPlace,
   onShuffle,
@@ -30,6 +31,8 @@ export function StagingTray({
   features: WallFeature[];
   selectedPieceId: string;
   selectedFeatureId: string;
+  /** Id of the staged item a touch long press has claimed for dragging. */
+  dragArmedItemId?: string;
   unit: Unit;
   onAutoPlace: () => void;
   onShuffle: () => void;
@@ -89,6 +92,7 @@ export function StagingTray({
               key={piece.id}
               item={{ kind: 'artwork', artwork: piece }}
               selected={piece.id === selectedPieceId}
+              dragArmed={piece.id === dragArmedItemId}
               unit={unit}
               onSelect={onSelect}
               onPointerDown={onPointerDown}
@@ -101,6 +105,7 @@ export function StagingTray({
               key={feature.id}
               item={{ kind: 'feature', feature }}
               selected={feature.id === selectedFeatureId}
+              dragArmed={feature.id === dragArmedItemId}
               unit={unit}
               onSelect={onFeatureSelect}
               onPointerDown={onFeaturePointerDown}
@@ -118,6 +123,7 @@ export function StagingTray({
 export function StagedItem({
   item,
   selected,
+  dragArmed = false,
   unit,
   onSelect,
   onPointerDown,
@@ -126,6 +132,8 @@ export function StagedItem({
 }: {
   item: StagedItemInput;
   selected: boolean;
+  /** A touch long press has claimed this card for dragging. */
+  dragArmed?: boolean;
   unit: Unit;
   onSelect: (itemId: string) => void;
   onPointerDown: (event: React.PointerEvent<HTMLElement>, itemId: string) => void;
@@ -142,9 +150,14 @@ export function StagedItem({
   return (
     <div className="staged-item-shell">
       <div
-        className={`staged-piece ${item.kind === 'feature' ? 'staged-feature' : ''} ${
-          selected ? 'selected' : ''
-        }`}
+        className={[
+          'staged-piece',
+          item.kind === 'feature' ? 'staged-feature' : '',
+          selected ? 'selected' : '',
+          dragArmed ? 'is-drag-armed' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
         role="button"
         tabIndex={0}
         aria-label={`Drag ${displayLabel} from staging`}

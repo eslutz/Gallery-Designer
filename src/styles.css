@@ -2220,14 +2220,27 @@ select:focus,
   color: var(--text-primary);
   box-shadow: none;
   text-align: center;
-  /* Reverted from `pan-x`. In theory that let the browser scroll the tray
-     horizontally while vertical stayed reserved for dragging a piece onto the
-     wall — in practice, on iOS Safari it handed the browser gestures we needed,
-     so taps scrolled the view and drag-and-drop stopped working entirely.
-     Directional touch-action is not dependable enough here; making the tray
-     scrollable needs an approach that does not rely on it. */
-  touch-action: none;
+  /* `manipulation`, not `none` or `pan-x`: the card stays a scroll surface so
+     the tray can be swiped from anywhere on it, and a deliberate long press is
+     what claims the gesture for dragging instead (see lib/longPressDrag.ts).
+     Directional values were tried here and are not dependable — `pan-x` broke
+     drag-and-drop outright on iOS Safari. `manipulation` only opts out of
+     double-tap zoom, which is the one behaviour every engine agrees on. */
+  touch-action: manipulation;
   overflow: visible;
+  transition: transform 120ms ease;
+}
+
+/* Confirms the long press landed. Without it a hold gives no sign the drag has
+   armed, and the finger is covering the card anyway. */
+.staged-piece.is-drag-armed {
+  transform: scale(1.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staged-piece {
+    transition: none;
+  }
 }
 
 .staged-piece.selected {

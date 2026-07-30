@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import { LIBRARY_KEY, designKey, type DesignLibrary } from './lib/designLibrary';
+import { LONG_PRESS_DELAY_MS, LONG_PRESS_MOVE_TOLERANCE_PX } from './lib/longPressDrag';
 import { setWelcomeSeen } from './lib/welcomeGuide';
 
 /** Reads back the state of the currently-active design, resolving its id via
@@ -915,6 +916,115 @@ describe('Gallery Designer app', () => {
     expect(screen.getByRole('button', { name: 'Drag Piece 1 from staging' })).toBeInTheDocument();
     expect(document.body).not.toHaveClass('suppress-text-selection');
     expect(document.querySelector('.wall-drag-preview')).not.toBeInTheDocument();
+  });
+
+  describe('touch long press on staged pieces', () => {
+    // The tray scrolls horizontally and a card fills nearly all of it, so a
+    // touch is ambiguous. A hold claims the drag; anything shorter, or that
+    // wanders, is left to the browser to scroll with.
+    function touchDownOnStagedPiece(clientX = 50, clientY = 50) {
+      const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+      mockCanvasProjection(canvas);
+      mockPointerTarget(canvas);
+      const stagedPiece = screen.getByRole('button', { name: 'Drag Piece 1 from staging' });
+      act(() => {
+        fireEvent.pointerDown(stagedPiece, {
+          pointerId: 1,
+          pointerType: 'touch',
+          clientX,
+          clientY,
+        });
+      });
+      return stagedPiece;
+    }
+
+    it('does not start a drag until the press is held', () => {
+      vi.useFakeTimers();
+      try {
+        render(<App />);
+        const stagedPiece = touchDownOnStagedPiece();
+
+        expect(stagedPiece).not.toHaveClass('is-drag-armed');
+        expect(document.querySelector('.wall-drag-preview')).not.toBeInTheDocument();
+
+        act(() => {
+          vi.advanceTimersByTime(LONG_PRESS_DELAY_MS);
+        });
+
+        expect(screen.getByRole('button', { name: 'Drag Piece 1 from staging' })).toHaveClass(
+          'is-drag-armed',
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('abandons the press when the finger wanders, so the browser can scroll', () => {
+      vi.useFakeTimers();
+      try {
+        render(<App />);
+        touchDownOnStagedPiece();
+
+        act(() => {
+          window.dispatchEvent(
+            new PointerEvent('pointermove', {
+              pointerId: 1,
+              pointerType: 'touch',
+              clientX: 50 + LONG_PRESS_MOVE_TOLERANCE_PX + 5,
+              clientY: 50,
+            }),
+          );
+          vi.advanceTimersByTime(LONG_PRESS_DELAY_MS * 2);
+        });
+
+        expect(screen.getByRole('button', { name: 'Drag Piece 1 from staging' })).not.toHaveClass(
+          'is-drag-armed',
+        );
+        expect(screen.queryByRole('button', { name: /^Move Piece 1$/i })).not.toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('treats a quick tap as a selection rather than a drag', () => {
+      vi.useFakeTimers();
+      try {
+        render(<App />);
+        touchDownOnStagedPiece();
+
+        act(() => {
+          window.dispatchEvent(new MouseEvent('pointerup', { clientX: 50, clientY: 50 }));
+          vi.advanceTimersByTime(LONG_PRESS_DELAY_MS * 2);
+        });
+
+        // Still in the tray, and the late timer must not fire a drag after release.
+        const stagedPiece = screen.getByRole('button', { name: 'Drag Piece 1 from staging' });
+        expect(stagedPiece).toBeInTheDocument();
+        expect(stagedPiece).not.toHaveClass('is-drag-armed');
+        expect(stagedPiece).toHaveClass('selected');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('still drags immediately for mouse input, which has no scroll conflict', () => {
+      render(<App />);
+      const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });
+      mockCanvasProjection(canvas);
+      mockPointerTarget(canvas);
+      const stagedPiece = screen.getByRole('button', { name: 'Drag Piece 1 from staging' });
+
+      act(() => {
+        fireEvent.pointerDown(stagedPiece, {
+          pointerId: 1,
+          pointerType: 'mouse',
+          clientX: 50,
+          clientY: 50,
+        });
+      });
+
+      expect(document.body).toHaveClass('suppress-text-selection');
+    });
   });
 
   it('centers the wall remove control on the artwork top-right corner and keeps it visible across the control', () => {

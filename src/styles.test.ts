@@ -34,8 +34,8 @@ describe('application typography', () => {
     expect(stylesheet).toMatch(/\.appearance-controls\s*{[^}]*margin-left:\s*auto/s);
   });
 
-  it('keeps touch panning from taking over staged piece drags', () => {
-    expect(stylesheet).toMatch(/\.staged-piece\s*{[^}]*touch-action:\s*none;/s);
+  it('keeps staged pieces scrollable, since a long press claims the drag instead', () => {
+    expect(stylesheet).toMatch(/\.staged-piece\s*{[^}]*touch-action:\s*manipulation;/s);
   });
 
   it('only lets the empty wall canvas give up touch scrolling, and only at fit scale', () => {
