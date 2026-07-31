@@ -423,17 +423,17 @@ describe('Gallery Designer app', () => {
     const user = userEvent.setup();
     const { container } = render(<App />);
 
-    // Row controls are labelled by position, not by name.
-    const duplicateRow = (position: number) =>
-      screen.getByRole('button', { name: `Duplicate Piece ${position}` });
+    // Row controls are labelled by the piece's current name.
+    const duplicateRow = (name: string) =>
+      screen.getByRole('button', { name: `Duplicate ${name}` });
 
     // Reproduces the reported sequence: duplicate the original, duplicate that
     // duplicate, then duplicate the original again. That used to produce
     // "Piece 1 copy copy" alongside a second "Piece 1 copy" — two pieces
     // sharing one name.
-    await user.click(duplicateRow(1));
-    await user.click(duplicateRow(2));
-    await user.click(duplicateRow(1));
+    await user.click(duplicateRow('Piece 1'));
+    await user.click(duplicateRow('Piece 1 copy'));
+    await user.click(duplicateRow('Piece 1'));
 
     const labels = Array.from(container.querySelectorAll('.piece-row')).map((row) => {
       const input = row.querySelector('input[aria-label$="label"]');
@@ -444,6 +444,20 @@ describe('Gallery Designer app', () => {
 
     expect(labels).toEqual(['Piece 1', 'Piece 1 copy', 'Piece 1 copy 2', 'Piece 1 copy 3']);
     expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it('labels row actions by the piece name, not its position in the list', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Duplicate Piece 1' }));
+
+    // A screen reader should hear the name a rename or duplicate actually
+    // produced ("Piece 1 copy"), not a stale position-based label that would
+    // still say "Piece 2" here.
+    expect(screen.getByRole('button', { name: 'Duplicate Piece 1 copy' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove Piece 1 copy' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Duplicate Piece 2' })).not.toBeInTheDocument();
   });
 
   it('uses a staging tray for unplaced pieces and no longer renders a place-on-first-wall action', async () => {
@@ -573,7 +587,7 @@ describe('Gallery Designer app', () => {
     const duplicatePiece = screen.getByRole('button', { name: 'Duplicate Piece 1' });
     const artPanel = screen.getByLabelText('Art piece settings');
     const removePiece = within(artPanel).getByRole('button', { name: 'Remove Piece 1' });
-    const removeFeature = screen.getByRole('button', { name: 'Remove Feature 1' });
+    const removeFeature = screen.getByRole('button', { name: 'Remove Sofa 1' });
     const stagedRemovePiece = screen.getByRole('button', { name: 'Remove Piece 1 from staging' });
     const stagedRemoveFeature = screen.getByRole('button', {
       name: 'Remove Sofa 1 from staging',

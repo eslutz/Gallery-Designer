@@ -219,7 +219,7 @@ export function AutoPlacementControls({
                     </div>
                   )}
                   <TooltipIconButton
-                    ariaLabel={`Remove Feature ${index + 1}`}
+                    ariaLabel={`Remove ${feature.name}`}
                     tooltip={getWallFeatureRemoveTooltip(feature.type)}
                     onClick={(event) => {
                       event.stopPropagation();

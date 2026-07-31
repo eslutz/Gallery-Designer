@@ -2860,7 +2860,7 @@ export default function App() {
                       </div>
                     )}
                     <TooltipIconButton
-                      ariaLabel={`Remove Section ${index + 1}`}
+                      ariaLabel={`Remove ${section.name}`}
                       tooltip="Remove wall section"
                       onClick={(event) => {
                         event.stopPropagation();
@@ -2963,7 +2963,7 @@ export default function App() {
                     )}
                     <span className="row-actions">
                       <TooltipIconButton
-                        ariaLabel={`Duplicate Piece ${index + 1}`}
+                        ariaLabel={`Duplicate ${piece.label}`}
                         tooltip="Duplicate artwork"
                         onClick={(event) => {
                           event.stopPropagation();
@@ -2973,7 +2973,7 @@ export default function App() {
                         <Copy size={16} />
                       </TooltipIconButton>
                       <TooltipIconButton
-                        ariaLabel={`Remove Piece ${index + 1}`}
+                        ariaLabel={`Remove ${piece.label}`}
                         tooltip="Remove artwork"
                         onClick={(event) => {
                           event.stopPropagation();
