@@ -1,3 +1,4 @@
+import { getNextDuplicateName } from './duplicateName';
 import {
   getDefaultState,
   hydratePersistedState,
@@ -210,7 +211,10 @@ export function duplicateDesign(
       ...library.designs,
       {
         id: newId,
-        name: `${source?.name ?? 'Design'} copy`,
+        name: getNextDuplicateName(
+          source?.name ?? 'Design',
+          library.designs.map((design) => design.name),
+        ),
         createdAt: timestamp,
         updatedAt: timestamp,
       },

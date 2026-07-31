@@ -114,6 +114,7 @@ import {
   validateWallSections,
 } from './lib/wall';
 import { getDefaultWallZoomState, getWallCanvasBaseViewBox } from './lib/wallZoom';
+import { getNextDuplicateName } from './lib/duplicateName';
 import { findVerticalScrollContainer, getEdgeScrollDelta } from './lib/edgeAutoScroll';
 import { LONG_PRESS_DELAY_MS, pressMovedTooFar, requiresLongPress } from './lib/longPressDrag';
 import { hasSeenWelcome, setWelcomeSeen } from './lib/welcomeGuide';
@@ -790,7 +791,10 @@ export default function App() {
       const duplicate = {
         ...source,
         id: `piece-${Date.now()}-${current.pieces.length + 1}`,
-        label: `${source.label} copy`,
+        label: getNextDuplicateName(
+          source.label,
+          current.pieces.map((piece) => piece.label),
+        ),
         hookSpec: source.hookSpec ? { ...source.hookSpec } : undefined,
       };
       return {

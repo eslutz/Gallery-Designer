@@ -125,6 +125,19 @@ describe('design library', () => {
     expect(loadDesignState(duplicateId).unit).toBe('cm');
   });
 
+  it('keeps duplicated design names distinct instead of repeating "copy"', () => {
+    const library = loadLibrary();
+
+    const first = duplicateDesign(library, library.activeId);
+    // Duplicating the original again, then duplicating the duplicate.
+    const second = duplicateDesign(first.library, library.activeId);
+    const third = duplicateDesign(second.library, first.id);
+
+    const names = third.library.designs.map((design) => design.name);
+    expect(names).toEqual(['My design', 'My design copy', 'My design copy 2', 'My design copy 3']);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
   it('deletes a non-active design without touching the active one', () => {
     const library = loadLibrary();
     const { library: withSecond, id: secondId } = createDesign(library, 'Second');

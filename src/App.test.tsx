@@ -419,6 +419,33 @@ describe('Gallery Designer app', () => {
     expect(screen.getByDisplayValue('Piece 1 copy')).toBeInTheDocument();
   });
 
+  it('gives every duplicate a distinct name, however the copies are chained', async () => {
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+
+    // Row controls are labelled by position, not by name.
+    const duplicateRow = (position: number) =>
+      screen.getByRole('button', { name: `Duplicate Piece ${position}` });
+
+    // Reproduces the reported sequence: duplicate the original, duplicate that
+    // duplicate, then duplicate the original again. That used to produce
+    // "Piece 1 copy copy" alongside a second "Piece 1 copy" — two pieces
+    // sharing one name.
+    await user.click(duplicateRow(1));
+    await user.click(duplicateRow(2));
+    await user.click(duplicateRow(1));
+
+    const labels = Array.from(container.querySelectorAll('.piece-row')).map((row) => {
+      const input = row.querySelector('input[aria-label$="label"]');
+      return input instanceof HTMLInputElement
+        ? input.value
+        : (row.querySelector('.row-name-readonly')?.textContent ?? '');
+    });
+
+    expect(labels).toEqual(['Piece 1', 'Piece 1 copy', 'Piece 1 copy 2', 'Piece 1 copy 3']);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
   it('uses a staging tray for unplaced pieces and no longer renders a place-on-first-wall action', async () => {
     const user = userEvent.setup();
     render(<App />);
