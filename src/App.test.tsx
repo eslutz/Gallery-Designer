@@ -1007,6 +1007,29 @@ describe('Gallery Designer app', () => {
       }
     });
 
+    it('takes focus on tap without letting the browser scroll the card into view', () => {
+      vi.useFakeTimers();
+      try {
+        render(<App />);
+
+        const workspace = document.querySelector('.workspace') as HTMLElement;
+        Object.defineProperty(workspace, 'scrollHeight', { configurable: true, value: 2000 });
+        Object.defineProperty(workspace, 'clientHeight', { configurable: true, value: 500 });
+        workspace.style.overflowY = 'auto';
+        workspace.scrollTop = 250;
+
+        const stagedPiece = touchDownOnStagedPiece();
+
+        // Focus is wanted — :focus-within is what reveals the card's remove and
+        // place buttons — but the scroll that normally rides along with it
+        // yanked the wall out of view.
+        expect(stagedPiece).toHaveFocus();
+        expect(workspace.scrollTop).toBe(250);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('still drags immediately for mouse input, which has no scroll conflict', () => {
       render(<App />);
       const canvas = screen.getByRole('img', { name: /Scaled gallery wall layout/i });

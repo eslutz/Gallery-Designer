@@ -1426,6 +1426,26 @@ export default function App() {
     }
   }
 
+  /**
+   * Focus a staged card without letting the browser scroll it into view.
+   *
+   * Tapping a card focuses it — that is wanted, since `:focus-within` is what
+   * reveals its remove and place buttons. What is not wanted is the scroll that
+   * normally comes with it, which yanks the wall out of view. Claiming focus
+   * here first makes the browser's own focus a no-op, so nothing scrolls.
+   *
+   * Mouse never hit this because the mouse path calls preventDefault(), which
+   * suppresses focus outright; touch cannot, or the tray would stop scrolling.
+   */
+  function focusWithoutScrolling(target: HTMLElement) {
+    try {
+      target.focus({ preventScroll: true });
+    } catch {
+      // Older engines reject the options object; a focus ring is a fair trade.
+      target.focus();
+    }
+  }
+
   function scheduleStagedPress(
     pointerId: number,
     point: { clientX: number; clientY: number },
@@ -1471,6 +1491,7 @@ export default function App() {
     if (requiresLongPress(event.pointerType)) {
       // Don't claim the gesture yet — the card is a scroll surface, and only a
       // deliberate hold means "pick this up" rather than "scroll the tray".
+      focusWithoutScrolling(target);
       scheduleStagedPress(pointerId, point, pieceId, () => selectPiece(pieceId), begin);
       return;
     }
@@ -1534,6 +1555,7 @@ export default function App() {
     const begin = () => beginStagedFeatureDrag(feature, point, pointerId, target);
 
     if (requiresLongPress(event.pointerType)) {
+      focusWithoutScrolling(target);
       scheduleStagedPress(pointerId, point, featureId, () => selectFeature(featureId), begin);
       return;
     }
