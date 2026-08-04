@@ -93,8 +93,17 @@ export function useWallZoomPan({
   });
 
   // Keeps the pan center glued to the wall's midpoint whenever the base viewbox changes
-  // (e.g. a section is added/removed) while the user is at the default 1x scale.
-  useEffect(() => {
+  // (e.g. a section is added/removed) while the user is at the default 1x scale. Adjusted
+  // directly during render (React's "adjusting state when a prop changes" pattern) rather
+  // than in an effect, so the recenter lands in the same render as the viewbox change.
+  const [prevWallBaseViewBox, setPrevWallBaseViewBox] = useState(wallBaseViewBox);
+  if (
+    wallBaseViewBox.x !== prevWallBaseViewBox.x ||
+    wallBaseViewBox.y !== prevWallBaseViewBox.y ||
+    wallBaseViewBox.width !== prevWallBaseViewBox.width ||
+    wallBaseViewBox.height !== prevWallBaseViewBox.height
+  ) {
+    setPrevWallBaseViewBox(wallBaseViewBox);
     setWallZoom((current) =>
       current.scale === 1
         ? {
@@ -104,7 +113,7 @@ export function useWallZoomPan({
           }
         : current,
     );
-  }, [wallBaseViewBox.x, wallBaseViewBox.y, wallBaseViewBox.width, wallBaseViewBox.height]);
+  }
 
   function clientPointToSvgFromViewBox(event: {
     clientX: number;

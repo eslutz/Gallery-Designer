@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useId, useState } from 'react';
 import {
   displaySizeValue,
   displayValue,
@@ -41,16 +41,13 @@ export function NumberField({
   const display =
     precision === 'size' ? displaySizeValue(valueIn, unit) : displayValue(valueIn, unit);
   const round = precision === 'size' ? roundToSizePrecision : roundToPrecision;
+  // `draft` only matters while the field is focused (it holds the in-progress
+  // edit text, which may be invalid/unparsed); unfocused, the field always
+  // shows `display` directly so it can't drift stale from external changes.
   const [draft, setDraft] = useState(display);
   const [focused, setFocused] = useState(false);
   const inputId = useId();
   const errorId = useId();
-
-  useEffect(() => {
-    if (!focused) {
-      setDraft(display);
-    }
-  }, [display, focused]);
 
   const input = (
     <span className="number-input-with-unit">
@@ -61,14 +58,14 @@ export function NumberField({
         aria-describedby={error ? errorId : undefined}
         disabled={disabled}
         inputMode="decimal"
-        value={draft}
+        value={focused ? draft : display}
         onFocus={() => {
           onEditStart?.();
+          setDraft(display);
           setFocused(true);
         }}
         onBlur={() => {
           setFocused(false);
-          setDraft(display);
           onEditEnd?.();
         }}
         onChange={(event) => {

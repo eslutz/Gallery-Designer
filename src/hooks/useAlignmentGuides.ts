@@ -45,12 +45,26 @@ export function useAlignmentGuides(showAlignmentGuidesFeature: boolean) {
 
   useEffect(() => () => clearAlignmentGuideTimeout(), []);
 
+  // Clearing the pending timeout is a real effect (it touches a ref), but
+  // resetting the guide state itself doesn't need to be: it's adjusted
+  // directly during render, mirroring React's "adjusting state when a prop
+  // changes" pattern, which keeps the reset synchronous with the prop flip
+  // instead of trailing it by an extra render.
   useEffect(() => {
     if (!showAlignmentGuidesFeature) {
       clearAlignmentGuideTimeout();
-      setVisibleAlignmentGuides({ guides: [], isLingering: false });
     }
   }, [showAlignmentGuidesFeature]);
+
+  const [prevShowAlignmentGuidesFeature, setPrevShowAlignmentGuidesFeature] = useState(
+    showAlignmentGuidesFeature,
+  );
+  if (showAlignmentGuidesFeature !== prevShowAlignmentGuidesFeature) {
+    setPrevShowAlignmentGuidesFeature(showAlignmentGuidesFeature);
+    if (!showAlignmentGuidesFeature) {
+      setVisibleAlignmentGuides({ guides: [], isLingering: false });
+    }
+  }
 
   return {
     visibleAlignmentGuides,

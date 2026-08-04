@@ -1,5 +1,5 @@
 import { Keyboard } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   formatShortcutKey,
   isApplePlatform,
@@ -29,11 +29,9 @@ export function ShortcutsDialog({
   onClose: () => void;
   onShowWelcomeGuide: () => void;
 }) {
-  const [apple, setApple] = useState(false);
-
-  useEffect(() => {
-    setApple(isApplePlatform());
-  }, []);
+  // isApplePlatform() reads navigator.platform, a browser-only API — safe to
+  // call directly since this is a client-only SPA (no SSR render pass).
+  const [apple] = useState(isApplePlatform);
 
   return (
     <ModalDialog
