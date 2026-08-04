@@ -9,6 +9,7 @@ import type {
   WallSection,
 } from '../types';
 import type { ApplicationTheme } from './applicationTheme';
+import { fitArtworkLabel, getArtworkLabelLineHeight } from './artworkLabel';
 import { getExportPalette, hexToRgb, type ExportPalette } from './exportTheme';
 import { getHookPoints } from './hooks';
 import { formatMeasurement } from './units';
@@ -330,7 +331,23 @@ function buildDiagramFragment(
       const clipId = `export-piece-${index}`;
       const order = orderByPieceId.get(piece.id);
       const title = order ? `${order}. ${piece.label}` : piece.label;
-      const label = fitPieceLabel(title, pieceWidth, pieceHeight);
+      // Mirrors the interactive canvas's own label fitting (fitArtworkLabel):
+      // word-wrap only, never breaking a word mid-string, falling back to an
+      // unclipped label below the box when nothing fits inside it.
+      const label = fitArtworkLabel(title, piece.widthIn, piece.heightIn);
+      const lineHeightPx = getArtworkLabelLineHeight(label.fontSize) * scale;
+      const fontSizePx = label.fontSize * scale;
+      const labelCenterX = pieceX + pieceWidth / 2;
+      const labelCenterY =
+        label.placement === 'inside' ? pieceY + pieceHeight / 2 : pieceY + pieceHeight + lineHeightPx;
+      const labelMarkup = buildCenteredMultilineText(
+        label.lines,
+        labelCenterX,
+        labelCenterY,
+        fontSizePx,
+        lineHeightPx,
+        palette.textPrimary,
+      );
       const hooks = getHookPoints(piece)
         .map(
           (hook) =>
@@ -338,18 +355,13 @@ function buildDiagramFragment(
         )
         .join('');
       return [
-        `<defs><clipPath id="${clipId}"><rect x="${number(pieceX + 3)}" y="${number(pieceY + 3)}" width="${number(Math.max(0, pieceWidth - 6))}" height="${number(Math.max(0, pieceHeight - 6))}"/></clipPath></defs>`,
+        label.placement === 'inside'
+          ? `<defs><clipPath id="${clipId}"><rect x="${number(pieceX + 3)}" y="${number(pieceY + 3)}" width="${number(Math.max(0, pieceWidth - 6))}" height="${number(Math.max(0, pieceHeight - 6))}"/></clipPath></defs>`
+          : '',
         `<rect x="${number(pieceX)}" y="${number(pieceY)}" width="${number(pieceWidth)}" height="${number(pieceHeight)}" rx="5" fill="${palette.pieceFill}" stroke="${palette.pieceStroke}" stroke-width="3"/>`,
-        `<g clip-path="url(#${clipId})">`,
-        buildCenteredMultilineText(
-          label.lines,
-          pieceX + pieceWidth / 2,
-          pieceY + pieceHeight / 2,
-          label.fontSize,
-          label.lineHeight,
-          palette.pieceStroke,
-        ),
-        '</g>',
+        label.placement === 'inside' ? `<g clip-path="url(#${clipId})">` : '',
+        labelMarkup,
+        label.placement === 'inside' ? '</g>' : '',
         hooks,
       ].join('');
     })
@@ -363,38 +375,6 @@ function buildDiagramFragment(
     featureMarkup,
     placementMarkup,
   ].join('');
-}
-
-interface FittedPieceLabel {
-  lines: string[];
-  fontSize: number;
-  lineHeight: number;
-}
-
-// Shrinks and wraps a piece's diagram label to fit inside its box, so names
-// read in full instead of being cut off by the box's clip path. Falls back
-// to the smallest font size (still wrapped, and still clipped as a safety
-// net) for boxes too small to fit the whole name.
-function fitPieceLabel(title: string, pieceWidth: number, pieceHeight: number): FittedPieceLabel {
-  const maxFontSize = Math.max(9, Math.min(20, pieceWidth / 7, pieceHeight / 3));
-  const minFontSize = 8;
-  const innerWidth = Math.max(0, pieceWidth - 12);
-  const innerHeight = Math.max(0, pieceHeight - 12);
-
-  let best: FittedPieceLabel | null = null;
-  for (let fontSize = maxFontSize; fontSize >= minFontSize; fontSize -= 1) {
-    const averageCharWidth = fontSize * 0.58;
-    const maxChars = Math.max(3, Math.floor(innerWidth / averageCharWidth));
-    const lines = wrapExportText(title, maxChars);
-    const lineHeight = fontSize * 1.2;
-    const totalHeight = lines.length * lineHeight;
-    best = { lines, fontSize, lineHeight };
-    if (totalHeight <= innerHeight || fontSize <= minFontSize) {
-      break;
-    }
-  }
-
-  return best ?? { lines: [title], fontSize: minFontSize, lineHeight: minFontSize * 1.2 };
 }
 
 function buildCenteredMultilineText(

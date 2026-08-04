@@ -159,6 +159,43 @@ describe('buildExportSheetSvg', () => {
     expect(secondRow).toBeGreaterThan(firstRow);
   });
 
+  it('never breaks a single-word diagram label mid-word, popping it outside the box instead', () => {
+    const narrowPiece: ArtPiece = {
+      id: 'piece-narrow',
+      label: 'MCRN',
+      widthIn: 3,
+      heightIn: 12,
+    };
+    const narrowSections: WallSection[] = [
+      { id: 'wall-narrow', name: 'Main Wall', widthIn: 79, heightIn: 60, xIn: 0, yIn: 0 },
+    ];
+    const narrowPlacements: Placement[] = [
+      { pieceId: narrowPiece.id, sectionId: 'wall-narrow', xIn: 5, yIn: 5 },
+    ];
+    const input: ExportDesignInput = {
+      sections: narrowSections,
+      pieces: [narrowPiece],
+      placements: narrowPlacements,
+      measurements: buildMeasurementInstructions(
+        narrowSections,
+        [narrowPiece],
+        narrowPlacements,
+        'in',
+      ),
+      unit: 'in',
+    };
+
+    const { markup } = buildExportSheetSvg(input);
+    const diagramMarkup = markup.slice(
+      markup.indexOf('<rect x="72" y="132"'),
+      markup.indexOf('Piece inventory'),
+    );
+
+    expect(diagramMarkup).toContain('1. MCRN');
+    expect(diagramMarkup).not.toContain('>MCR<');
+    expect(diagramMarkup).not.toContain('>N<');
+  });
+
   it('keeps piece inventory compact and leaves placement instructions to measurements', () => {
     const { markup } = buildExportSheetSvg(makeInput());
     const inventoryMarkup = markup.slice(
