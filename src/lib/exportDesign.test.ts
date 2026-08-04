@@ -150,8 +150,10 @@ describe('buildExportSheetSvg', () => {
 
   it('preserves upper-left-first measurement ordering', () => {
     const { markup } = buildExportSheetSvg(makeInput());
-    const firstRow = markup.indexOf('1. First &lt;Print&gt;');
-    const secondRow = markup.indexOf('2. Second &amp; Print');
+    // Diagram labels wrap onto multiple tspans, so match on the inventory
+    // table's unwrapped piece names instead of a contiguous "N. Label" title.
+    const firstRow = markup.indexOf('First &lt;Print&gt;');
+    const secondRow = markup.indexOf('Second &amp; Print');
 
     expect(firstRow).toBeGreaterThan(-1);
     expect(secondRow).toBeGreaterThan(firstRow);
@@ -237,7 +239,7 @@ describe('buildExportSheetSvg', () => {
       markup.indexOf('Piece inventory'),
     );
     const strokedSectionRectMatches =
-      diagramMarkup.match(/<rect\b[^>]*fill="#f4f6f5"[^>]*stroke="#607080"/g) ?? [];
+      diagramMarkup.match(/<rect\b[^>]*fill="#edf2f6"[^>]*stroke="#8a99a8"/g) ?? [];
     const verticalExteriorLines = Array.from(diagramMarkup.matchAll(/<line\b[^>]*>/g)).filter(
       ([line]) => {
         const x1 = line.match(/x1="([^"]+)"/)?.[1];
@@ -249,11 +251,11 @@ describe('buildExportSheetSvg', () => {
       diagramMarkup.match(/<text x="[^"]+" y="([^"]+)"[^>]*>Main &amp; Entry/)?.[1],
     );
     const mainWallY = Number(
-      diagramMarkup.match(/<rect x="[^"]+" y="([^"]+)"[^>]*fill="#f4f6f5"/)?.[1],
+      diagramMarkup.match(/<rect x="[^"]+" y="([^"]+)"[^>]*fill="#edf2f6"/)?.[1],
     );
 
     expect(strokedSectionRectMatches).toHaveLength(0);
-    expect(diagramMarkup).toContain('stroke="#607080" stroke-width="3"');
+    expect(diagramMarkup).toContain('stroke="#8a99a8" stroke-width="3"');
     expect(verticalExteriorLines).toHaveLength(2);
     expect(mainLabelY).toBeLessThan(mainWallY);
   });
@@ -268,7 +270,7 @@ describe('buildExportSheetSvg', () => {
     );
 
     expect(diagramMarkup).toContain('Blue sectional sofa blocked area');
-    expect(diagramMarkup).toContain('fill="#d6e0e7"');
+    expect(diagramMarkup).toContain('fill="#d7dee7"');
     expect(diagramMarkup).toContain('stroke-dasharray="8 8"');
   });
 
@@ -284,7 +286,7 @@ describe('buildExportSheetSvg', () => {
 
     expect(markup).toContain('Blue sectional sofa blocked area');
     expect(markup).toContain('<title>Blue sectional sofa</title>');
-    expect(markup).toContain('fill="#9fb0bd"');
+    expect(markup).toContain('fill="#aebccb"');
   });
 });
 

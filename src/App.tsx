@@ -2672,6 +2672,7 @@ export default function App() {
       measurements,
       unit: state.unit,
       autoPlacementSettings: state.autoPlacementSettings,
+      theme: state.applicationTheme,
     };
   }
 

@@ -8,6 +8,8 @@ import type {
   WallFeature,
   WallSection,
 } from '../types';
+import type { ApplicationTheme } from './applicationTheme';
+import { getExportPalette, hexToRgb, type ExportPalette } from './exportTheme';
 import { getHookPoints } from './hooks';
 import { formatMeasurement } from './units';
 import {
@@ -43,6 +45,7 @@ export interface ExportDesignInput {
   measurements: MeasurementInstruction[];
   unit: Unit;
   autoPlacementSettings?: AutoPlacementSettings;
+  theme?: ApplicationTheme;
 }
 
 export interface ExportSheetSvg {
@@ -88,7 +91,8 @@ export async function downloadPdf(
   input: ExportDesignInput,
   fileName = 'gallery-wall-layout.pdf',
 ): Promise<void> {
-  const diagram = buildDiagramSvg(input, 1600, 600);
+  const palette = getExportPalette(input.theme);
+  const diagram = buildDiagramSvg(input, 1600, 600, palette);
   const diagramBlob = await renderSvgToPngBlob(diagram);
   const diagramBytes = new Uint8Array(await diagramBlob.arrayBuffer());
   const { default: JsPDF } = await import('jspdf');
@@ -96,7 +100,7 @@ export async function downloadPdf(
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(20);
-  doc.setTextColor(28, 37, 46);
+  doc.setTextColor(...hexToRgb(palette.textPrimary));
   doc.text('Gallery Wall Installation Sheet', PDF_MARGIN, 38);
 
   const fittedDiagram = fitWithin(diagram.width, diagram.height, PDF_CONTENT_WIDTH, 250);
@@ -104,17 +108,19 @@ export async function downloadPdf(
   doc.addImage(diagramBytes, 'PNG', diagramX, 54, fittedDiagram.width, fittedDiagram.height);
 
   let y = 54 + fittedDiagram.height + 28;
-  y = drawPdfInventory(doc, input, y);
+  y = drawPdfInventory(doc, input, y, palette);
   drawPdfMeasurementTable(
     doc,
     buildMeasurementTableRows(input.measurements, { includeDimensions: true }),
     y + 20,
+    palette,
   );
 
   downloadBlob(doc.output('blob'), fileName);
 }
 
 export function buildExportSheetSvg(input: ExportDesignInput): ExportSheetSvg {
+  const palette = getExportPalette(input.theme);
   const inventoryRows = getInventoryRows(input);
   const inventoryHeight = getSvgInventoryTableHeight(inventoryRows);
   const measurementRows = buildMeasurementTableRows(input.measurements, {
@@ -131,9 +137,10 @@ export function buildExportSheetSvg(input: ExportDesignInput): ExportSheetSvg {
     diagramY,
     DIAGRAM_WIDTH,
     DIAGRAM_HEIGHT,
+    palette,
   );
-  const inventory = buildInventorySvg(input, inventoryRows, inventoryY);
-  const measurements = buildMeasurementTableSvg(measurementRows, measurementsY);
+  const inventory = buildInventorySvg(input, inventoryRows, inventoryY, palette);
+  const measurements = buildMeasurementTableSvg(measurementRows, measurementsY, palette);
 
   return {
     width: SHEET_WIDTH,
@@ -141,9 +148,9 @@ export function buildExportSheetSvg(input: ExportDesignInput): ExportSheetSvg {
     markup: [
       `<svg xmlns="http://www.w3.org/2000/svg" width="${SHEET_WIDTH}" height="${height}" viewBox="0 0 ${SHEET_WIDTH} ${height}">`,
       `<rect x="0" y="0" width="${SHEET_WIDTH}" height="${height}" fill="#ffffff"/>`,
-      '<g font-family="Arial, Helvetica, sans-serif" fill="#1c252e">',
+      `<g font-family="Arial, Helvetica, sans-serif" fill="${palette.textPrimary}">`,
       `<text x="${SHEET_MARGIN}" y="72" font-size="38" font-weight="700">Gallery Wall Installation Sheet</text>`,
-      `<text x="${SHEET_MARGIN}" y="104" font-size="18" fill="#566472">Full layout, piece inventory, and hanging measurements</text>`,
+      `<text x="${SHEET_MARGIN}" y="104" font-size="18" fill="${palette.textSecondary}">Full layout, piece inventory, and hanging measurements</text>`,
       diagram,
       inventory,
       measurements,
@@ -217,15 +224,20 @@ export function downloadBlob(blob: Blob, fileName: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
-function buildDiagramSvg(input: ExportDesignInput, width: number, height: number): DiagramSvg {
+function buildDiagramSvg(
+  input: ExportDesignInput,
+  width: number,
+  height: number,
+  palette: ExportPalette,
+): DiagramSvg {
   return {
     width,
     height,
     markup: [
       `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
       `<rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"/>`,
-      '<g font-family="Arial, Helvetica, sans-serif" fill="#1c252e">',
-      buildDiagramFragment(input, 0, 0, width, height),
+      `<g font-family="Arial, Helvetica, sans-serif" fill="${palette.textPrimary}">`,
+      buildDiagramFragment(input, 0, 0, width, height, palette),
       '</g>',
       '</svg>',
     ].join(''),
@@ -238,6 +250,7 @@ function buildDiagramFragment(
   y: number,
   width: number,
   height: number,
+  palette: ExportPalette,
 ): string {
   const bounds = getWallBounds(input.sections);
   const layout = getWallLayout(input.sections);
@@ -266,13 +279,13 @@ function buildDiagramFragment(
       const sectionY = originY + offsetYIn * scale;
       const sectionWidth = section.widthIn * scale;
       const sectionHeight = section.heightIn * scale;
-      return `<rect x="${number(sectionX)}" y="${number(sectionY)}" width="${number(sectionWidth)}" height="${number(sectionHeight)}" fill="#f4f6f5"/>`;
+      return `<rect x="${number(sectionX)}" y="${number(sectionY)}" width="${number(sectionWidth)}" height="${number(sectionHeight)}" fill="${palette.sectionFill}"/>`;
     })
     .join('');
   const exteriorEdgeMarkup = getWallExteriorEdges(input.sections)
     .map(
       (edge) =>
-        `<line x1="${number(originX + edge.x1 * scale)}" y1="${number(originY + edge.y1 * scale)}" x2="${number(originX + edge.x2 * scale)}" y2="${number(originY + edge.y2 * scale)}" stroke="#607080" stroke-width="3"/>`,
+        `<line x1="${number(originX + edge.x1 * scale)}" y1="${number(originY + edge.y1 * scale)}" x2="${number(originX + edge.x2 * scale)}" y2="${number(originY + edge.y2 * scale)}" stroke="${palette.wallEdge}" stroke-width="3"/>`,
     )
     .join('');
   const sectionLabelMarkup = layout
@@ -280,7 +293,7 @@ function buildDiagramFragment(
       const sectionX = originX + offsetXIn * scale;
       const sectionY = originY + offsetYIn * scale;
       const label = `${section.name} - ${formatMeasurement(section.widthIn, input.unit)} x ${formatMeasurement(section.heightIn, input.unit)}`;
-      return `<text x="${number(sectionX + 14)}" y="${number(sectionY - 10)}" font-size="18" font-weight="700" fill="#344454">${escapeXml(label)}</text>`;
+      return `<text x="${number(sectionX + 14)}" y="${number(sectionY - 10)}" font-size="18" font-weight="700" fill="${palette.headerFill}">${escapeXml(label)}</text>`;
     })
     .join('');
   const featureMarkup =
@@ -297,7 +310,7 @@ function buildDiagramFragment(
             const blockedBottom =
               typeof feature.yIn === 'number' ? featureTop + feature.heightIn : bounds.maxY;
             const blockedHeight = blockedBottom - blockedTop;
-            return `<rect x="${number(originX + feature.xIn * scale)}" y="${number(originY + blockedTop * scale)}" width="${number(feature.widthIn * scale)}" height="${number(blockedHeight * scale)}" fill="#d6e0e7" fill-opacity="0.62" stroke="#607080" stroke-width="2" stroke-dasharray="8 8"><title>${escapeXml(feature.name)} blocked area</title></rect><rect x="${number(originX + feature.xIn * scale)}" y="${number(originY + featureTop * scale)}" width="${number(feature.widthIn * scale)}" height="${number(feature.heightIn * scale)}" fill="#9fb0bd" fill-opacity="0.5" stroke="#607080" stroke-width="2"><title>${escapeXml(feature.name)}</title></rect>`;
+            return `<rect x="${number(originX + feature.xIn * scale)}" y="${number(originY + blockedTop * scale)}" width="${number(feature.widthIn * scale)}" height="${number(blockedHeight * scale)}" fill="${palette.featureBlockedFill}" fill-opacity="0.62" stroke="${palette.featureStroke}" stroke-width="2" stroke-dasharray="8 8"><title>${escapeXml(feature.name)} blocked area</title></rect><rect x="${number(originX + feature.xIn * scale)}" y="${number(originY + featureTop * scale)}" width="${number(feature.widthIn * scale)}" height="${number(feature.heightIn * scale)}" fill="${palette.featureFill}" fill-opacity="0.5" stroke="${palette.featureStroke}" stroke-width="2"><title>${escapeXml(feature.name)}</title></rect>`;
           })
           .join('')
       : '';
@@ -315,20 +328,27 @@ function buildDiagramFragment(
       const pieceWidth = piece.widthIn * scale;
       const pieceHeight = piece.heightIn * scale;
       const clipId = `export-piece-${index}`;
-      const fontSize = Math.max(11, Math.min(20, pieceWidth / 8, pieceHeight / 4));
       const order = orderByPieceId.get(piece.id);
       const title = order ? `${order}. ${piece.label}` : piece.label;
+      const label = fitPieceLabel(title, pieceWidth, pieceHeight);
       const hooks = getHookPoints(piece)
         .map(
           (hook) =>
-            `<circle cx="${number(pieceX + hook.xIn * scale)}" cy="${number(pieceY + hook.yIn * scale)}" r="4" fill="#ffffff" stroke="#1c252e" stroke-width="2"/>`,
+            `<circle cx="${number(pieceX + hook.xIn * scale)}" cy="${number(pieceY + hook.yIn * scale)}" r="4" fill="${palette.hookFill}" stroke="${palette.hookStroke}" stroke-width="2"/>`,
         )
         .join('');
       return [
         `<defs><clipPath id="${clipId}"><rect x="${number(pieceX + 3)}" y="${number(pieceY + 3)}" width="${number(Math.max(0, pieceWidth - 6))}" height="${number(Math.max(0, pieceHeight - 6))}"/></clipPath></defs>`,
-        `<rect x="${number(pieceX)}" y="${number(pieceY)}" width="${number(pieceWidth)}" height="${number(pieceHeight)}" rx="5" fill="#d8e0e5" stroke="#1c252e" stroke-width="3"/>`,
+        `<rect x="${number(pieceX)}" y="${number(pieceY)}" width="${number(pieceWidth)}" height="${number(pieceHeight)}" rx="5" fill="${palette.pieceFill}" stroke="${palette.pieceStroke}" stroke-width="3"/>`,
         `<g clip-path="url(#${clipId})">`,
-        `<text x="${number(pieceX + pieceWidth / 2)}" y="${number(pieceY + pieceHeight / 2)}" text-anchor="middle" dominant-baseline="middle" font-size="${number(fontSize)}" font-weight="700" fill="#1c252e">${escapeXml(title)}</text>`,
+        buildCenteredMultilineText(
+          label.lines,
+          pieceX + pieceWidth / 2,
+          pieceY + pieceHeight / 2,
+          label.fontSize,
+          label.lineHeight,
+          palette.pieceStroke,
+        ),
         '</g>',
         hooks,
       ].join('');
@@ -336,7 +356,7 @@ function buildDiagramFragment(
     .join('');
 
   return [
-    `<rect x="${number(x)}" y="${number(y)}" width="${number(width)}" height="${number(height)}" rx="16" fill="#f8faf9" stroke="#c9d1d8" stroke-width="2"/>`,
+    `<rect x="${number(x)}" y="${number(y)}" width="${number(width)}" height="${number(height)}" rx="16" fill="${palette.panelBackground}" stroke="${palette.panelBorder}" stroke-width="2"/>`,
     sectionFillMarkup,
     exteriorEdgeMarkup,
     sectionLabelMarkup,
@@ -345,7 +365,63 @@ function buildDiagramFragment(
   ].join('');
 }
 
-function buildInventorySvg(input: ExportDesignInput, rows: InventoryRow[], startY: number): string {
+interface FittedPieceLabel {
+  lines: string[];
+  fontSize: number;
+  lineHeight: number;
+}
+
+// Shrinks and wraps a piece's diagram label to fit inside its box, so names
+// read in full instead of being cut off by the box's clip path. Falls back
+// to the smallest font size (still wrapped, and still clipped as a safety
+// net) for boxes too small to fit the whole name.
+function fitPieceLabel(title: string, pieceWidth: number, pieceHeight: number): FittedPieceLabel {
+  const maxFontSize = Math.max(9, Math.min(20, pieceWidth / 7, pieceHeight / 3));
+  const minFontSize = 8;
+  const innerWidth = Math.max(0, pieceWidth - 12);
+  const innerHeight = Math.max(0, pieceHeight - 12);
+
+  let best: FittedPieceLabel | null = null;
+  for (let fontSize = maxFontSize; fontSize >= minFontSize; fontSize -= 1) {
+    const averageCharWidth = fontSize * 0.58;
+    const maxChars = Math.max(3, Math.floor(innerWidth / averageCharWidth));
+    const lines = wrapExportText(title, maxChars);
+    const lineHeight = fontSize * 1.2;
+    const totalHeight = lines.length * lineHeight;
+    best = { lines, fontSize, lineHeight };
+    if (totalHeight <= innerHeight || fontSize <= minFontSize) {
+      break;
+    }
+  }
+
+  return best ?? { lines: [title], fontSize: minFontSize, lineHeight: minFontSize * 1.2 };
+}
+
+function buildCenteredMultilineText(
+  lines: string[],
+  cx: number,
+  cy: number,
+  fontSize: number,
+  lineHeight: number,
+  fill: string,
+): string {
+  const startY = cy - ((lines.length - 1) * lineHeight) / 2;
+  const tspans = lines
+    .map(
+      (line, index) =>
+        `<tspan x="${number(cx)}" y="${number(startY + index * lineHeight)}">${escapeXml(line)}</tspan>`,
+    )
+    .join('');
+
+  return `<text text-anchor="middle" dominant-baseline="middle" font-size="${number(fontSize)}" font-weight="700" fill="${fill}">${tspans}</text>`;
+}
+
+function buildInventorySvg(
+  input: ExportDesignInput,
+  rows: InventoryRow[],
+  startY: number,
+  palette: ExportPalette,
+): string {
   const tableX = SHEET_MARGIN;
   const tableWidth = SHEET_WIDTH - SHEET_MARGIN * 2;
   const headerY = startY + 46;
@@ -355,7 +431,7 @@ function buildInventorySvg(input: ExportDesignInput, rows: InventoryRow[], start
   const headerText = headings
     .map(
       (heading, index) =>
-        `<text x="${columnX[index]}" y="${headerY + 32}" font-size="17" font-weight="700" fill="#ffffff">${heading}</text>`,
+        `<text x="${columnX[index]}" y="${headerY + 32}" font-size="17" font-weight="700" fill="${palette.headerText}">${heading}</text>`,
     )
     .join('');
   let nextRowY = headerY + 46;
@@ -364,11 +440,11 @@ function buildInventorySvg(input: ExportDesignInput, rows: InventoryRow[], start
       const rowY = nextRowY;
       const rowHeight = getSvgInventoryRowHeight(row);
       nextRowY += rowHeight;
-      const fill = index % 2 === 0 ? '#f8faf9' : '#eef2f3';
+      const fill = index % 2 === 0 ? palette.rowFillA : palette.rowFillB;
       const size = `${formatMeasurement(row.piece.widthIn, input.unit)} x ${formatMeasurement(row.piece.heightIn, input.unit)}`;
       const values = [String(row.order), row.piece.label, row.section?.name ?? 'Not placed', size];
       return [
-        `<rect x="${tableX}" y="${rowY}" width="${tableWidth}" height="${rowHeight}" fill="${fill}" stroke="#d4dbe0" stroke-width="1"/>`,
+        `<rect x="${tableX}" y="${rowY}" width="${tableWidth}" height="${rowHeight}" fill="${fill}" stroke="${palette.tableBorder}" stroke-width="1"/>`,
         ...values.map((value, valueIndex) =>
           buildSvgMultilineText(
             wrapExportText(value, columnCharWidths[valueIndex]),
@@ -376,7 +452,7 @@ function buildInventorySvg(input: ExportDesignInput, rows: InventoryRow[], start
             rowY + 24,
             16,
             SVG_INVENTORY_TEXT_LINE_HEIGHT,
-            '#1c252e',
+            palette.textPrimary,
           ),
         ),
       ].join('');
@@ -385,7 +461,7 @@ function buildInventorySvg(input: ExportDesignInput, rows: InventoryRow[], start
 
   return [
     `<text x="${tableX}" y="${startY}" font-size="28" font-weight="700">Piece inventory</text>`,
-    `<rect x="${tableX}" y="${headerY}" width="${tableWidth}" height="46" rx="8" fill="#344454"/>`,
+    `<rect x="${tableX}" y="${headerY}" width="${tableWidth}" height="46" rx="8" fill="${palette.headerFill}"/>`,
     headerText,
     body,
   ].join('');
@@ -408,7 +484,11 @@ function getSvgInventoryRowHeight(row: InventoryRow): number {
   );
 }
 
-function buildMeasurementTableSvg(rows: MeasurementTableRow[], startY: number): string {
+function buildMeasurementTableSvg(
+  rows: MeasurementTableRow[],
+  startY: number,
+  palette: ExportPalette,
+): string {
   const tableX = SHEET_MARGIN;
   const tableWidth = SHEET_WIDTH - SHEET_MARGIN * 2;
   const headerY = startY + 46;
@@ -420,22 +500,22 @@ function buildMeasurementTableSvg(rows: MeasurementTableRow[], startY: number): 
       const rowHeight = getSvgMeasurementRowHeight(row);
       const hookLines = wrapSvgHookLines(row);
       nextRowY += rowHeight;
-      const fill = index % 2 === 0 ? '#f8faf9' : '#eef2f3';
+      const fill = index % 2 === 0 ? palette.rowFillA : palette.rowFillB;
       return [
-        `<rect x="${tableX}" y="${rowY}" width="${tableWidth}" height="${rowHeight}" fill="${fill}" stroke="#d4dbe0" stroke-width="1"/>`,
-        `<text x="${columnX[0]}" y="${rowY + 33}" font-size="17" fill="#1c252e">${escapeXml(String(row.order))}</text>`,
-        `<text x="${columnX[1]}" y="${rowY + 30}" font-size="17" font-weight="700" fill="#1c252e">${escapeXml(row.pieceLabel)}</text>`,
-        `<text x="${columnX[1]}" y="${rowY + 54}" font-size="15" fill="#566472">${escapeXml(row.sectionName)}</text>`,
-        `<text x="${columnX[2]}" y="${rowY + 42}" font-size="16" fill="#1c252e">${escapeXml(row.dimensions ?? '')}</text>`,
-        `<text x="${columnX[3]}" y="${rowY + 30}" font-size="16" fill="#1c252e">${escapeXml(`Top: ${row.topReference}`)}</text>`,
-        `<text x="${columnX[3]}" y="${rowY + 56}" font-size="16" fill="#1c252e">${escapeXml(`Side: ${row.sideReference}`)}</text>`,
+        `<rect x="${tableX}" y="${rowY}" width="${tableWidth}" height="${rowHeight}" fill="${fill}" stroke="${palette.tableBorder}" stroke-width="1"/>`,
+        `<text x="${columnX[0]}" y="${rowY + 33}" font-size="17" fill="${palette.textPrimary}">${escapeXml(String(row.order))}</text>`,
+        `<text x="${columnX[1]}" y="${rowY + 30}" font-size="17" font-weight="700" fill="${palette.textPrimary}">${escapeXml(row.pieceLabel)}</text>`,
+        `<text x="${columnX[1]}" y="${rowY + 54}" font-size="15" fill="${palette.textSecondary}">${escapeXml(row.sectionName)}</text>`,
+        `<text x="${columnX[2]}" y="${rowY + 42}" font-size="16" fill="${palette.textPrimary}">${escapeXml(row.dimensions ?? '')}</text>`,
+        `<text x="${columnX[3]}" y="${rowY + 30}" font-size="16" fill="${palette.textPrimary}">${escapeXml(`Top: ${row.topReference}`)}</text>`,
+        `<text x="${columnX[3]}" y="${rowY + 56}" font-size="16" fill="${palette.textPrimary}">${escapeXml(`Side: ${row.sideReference}`)}</text>`,
         buildSvgMultilineText(
           hookLines,
           columnX[4],
           rowY + 28,
           16,
           SVG_MEASUREMENT_HOOK_LINE_HEIGHT,
-          '#566472',
+          palette.textSecondary,
         ),
       ].join('');
     })
@@ -443,10 +523,10 @@ function buildMeasurementTableSvg(rows: MeasurementTableRow[], startY: number): 
 
   return [
     `<text x="${SHEET_MARGIN}" y="${startY}" font-size="28" font-weight="700">Installation measurements</text>`,
-    `<rect x="${tableX}" y="${headerY}" width="${tableWidth}" height="46" rx="8" fill="#344454"/>`,
+    `<rect x="${tableX}" y="${headerY}" width="${tableWidth}" height="46" rx="8" fill="${palette.headerFill}"/>`,
     ...EXPORT_MEASUREMENT_TABLE_HEADERS.map(
       (header, index) =>
-        `<text x="${columnX[index]}" y="${headerY + 32}" font-size="17" font-weight="700" fill="#ffffff">${header}</text>`,
+        `<text x="${columnX[index]}" y="${headerY + 32}" font-size="17" font-weight="700" fill="${palette.headerText}">${header}</text>`,
     ),
     body,
   ].join('');
@@ -563,23 +643,29 @@ function getInventoryRows(input: ExportDesignInput): InventoryRow[] {
   });
 }
 
-function drawPdfInventory(doc: jsPDF, input: ExportDesignInput, startY: number): number {
+function drawPdfInventory(
+  doc: jsPDF,
+  input: ExportDesignInput,
+  startY: number,
+  palette: ExportPalette,
+): number {
   let y = ensurePdfSpace(doc, startY, 46);
+  const textColor = hexToRgb(palette.textPrimary);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
-  doc.setTextColor(28, 37, 46);
+  doc.setTextColor(...textColor);
   doc.text('Piece inventory', PDF_MARGIN, y);
   y += 18;
-  y = drawPdfInventoryHeader(doc, y);
+  y = drawPdfInventoryHeader(doc, y, palette);
 
   for (const row of getInventoryRows(input)) {
     if (y + 19 > PDF_PAGE_HEIGHT - PDF_MARGIN) {
       doc.addPage('letter', 'landscape');
-      y = drawPdfInventoryHeader(doc, PDF_MARGIN);
+      y = drawPdfInventoryHeader(doc, PDF_MARGIN, palette);
     }
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
-    doc.setTextColor(28, 37, 46);
+    doc.setTextColor(...textColor);
     doc.text(String(row.order), PDF_MARGIN + 6, y + 14);
     doc.text(row.piece.label, PDF_MARGIN + 48, y + 14, { maxWidth: 170 });
     doc.text(row.section?.name ?? 'Not placed', PDF_MARGIN + 260, y + 14, { maxWidth: 200 });
@@ -588,19 +674,19 @@ function drawPdfInventory(doc: jsPDF, input: ExportDesignInput, startY: number):
       PDF_MARGIN + 520,
       y + 14,
     );
-    doc.setDrawColor(212, 219, 224);
+    doc.setDrawColor(...hexToRgb(palette.tableBorder));
     doc.line(PDF_MARGIN, y + 18, PDF_PAGE_WIDTH - PDF_MARGIN, y + 18);
     y += 19;
   }
   return y;
 }
 
-function drawPdfInventoryHeader(doc: jsPDF, y: number): number {
-  doc.setFillColor(52, 68, 84);
+function drawPdfInventoryHeader(doc: jsPDF, y: number, palette: ExportPalette): number {
+  doc.setFillColor(...hexToRgb(palette.headerFill));
   doc.rect(PDF_MARGIN, y, PDF_CONTENT_WIDTH, 22, 'F');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
-  doc.setTextColor(255, 255, 255);
+  doc.setTextColor(...hexToRgb(palette.headerText));
   doc.text('Order', PDF_MARGIN + 6, y + 14);
   doc.text('Piece', PDF_MARGIN + 48, y + 14);
   doc.text('Section', PDF_MARGIN + 260, y + 14);
@@ -608,23 +694,29 @@ function drawPdfInventoryHeader(doc: jsPDF, y: number): number {
   return y + 22;
 }
 
-function drawPdfMeasurementTable(doc: jsPDF, rows: MeasurementTableRow[], startY: number): void {
+function drawPdfMeasurementTable(
+  doc: jsPDF,
+  rows: MeasurementTableRow[],
+  startY: number,
+  palette: ExportPalette,
+): void {
   let y = ensurePdfSpace(doc, startY, getPdfMeasurementInitialRequiredHeight(doc, rows));
+  const textColor = hexToRgb(palette.textPrimary);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
-  doc.setTextColor(28, 37, 46);
+  doc.setTextColor(...textColor);
   doc.text('Installation measurements', PDF_MARGIN, y);
   y += PDF_MEASUREMENT_TITLE_HEIGHT;
-  y = drawPdfMeasurementHeader(doc, y);
+  y = drawPdfMeasurementHeader(doc, y, palette);
 
   for (const row of rows) {
     const layout = buildPdfMeasurementRowLayout(doc, row);
     if (y + layout.rowHeight > PDF_PAGE_HEIGHT - PDF_MARGIN) {
       doc.addPage('letter', 'landscape');
-      y = drawPdfMeasurementHeader(doc, PDF_MARGIN);
+      y = drawPdfMeasurementHeader(doc, PDF_MARGIN, palette);
     }
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(28, 37, 46);
+    doc.setTextColor(...textColor);
     doc.setFontSize(8.5);
     drawPdfLines(doc, layout.orderLines, PDF_MARGIN + 6, y + 12);
     doc.setFont('helvetica', 'bold');
@@ -635,18 +727,18 @@ function drawPdfMeasurementTable(doc: jsPDF, rows: MeasurementTableRow[], startY
     drawPdfLines(doc, layout.topLines, PDF_MARGIN + 300, y + 12);
     drawPdfLines(doc, layout.sideLines, PDF_MARGIN + 300, y + 12 + layout.topLines.length * 10);
     drawPdfLines(doc, layout.hookLines, PDF_MARGIN + 555, y + 12);
-    doc.setDrawColor(212, 219, 224);
+    doc.setDrawColor(...hexToRgb(palette.tableBorder));
     doc.line(PDF_MARGIN, y + layout.rowHeight, PDF_PAGE_WIDTH - PDF_MARGIN, y + layout.rowHeight);
     y += layout.rowHeight + PDF_MEASUREMENT_ROW_GAP;
   }
 }
 
-function drawPdfMeasurementHeader(doc: jsPDF, y: number): number {
-  doc.setFillColor(52, 68, 84);
+function drawPdfMeasurementHeader(doc: jsPDF, y: number, palette: ExportPalette): number {
+  doc.setFillColor(...hexToRgb(palette.headerFill));
   doc.rect(PDF_MARGIN, y, PDF_CONTENT_WIDTH, PDF_MEASUREMENT_HEADER_HEIGHT, 'F');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
-  doc.setTextColor(255, 255, 255);
+  doc.setTextColor(...hexToRgb(palette.headerText));
   doc.text(EXPORT_MEASUREMENT_TABLE_HEADERS[0], PDF_MARGIN + 6, y + 14);
   doc.text(EXPORT_MEASUREMENT_TABLE_HEADERS[1], PDF_MARGIN + 48, y + 14);
   doc.text(EXPORT_MEASUREMENT_TABLE_HEADERS[2], PDF_MARGIN + 210, y + 14);
