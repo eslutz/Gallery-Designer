@@ -191,4 +191,4 @@ The Playwright config starts the app on `http://127.0.0.1:5173` automatically.
 - `tests/e2e/gallery.spec.ts` covers browser workflows such as dragging, export downloads, and responsive behavior.
 - `public/` contains static assets, fonts, favicon, and GitHub Pages metadata.
 
-Implementation truth for placement behavior lives in `src/lib/autoPlace.ts`, `src/lib/placement.ts`, and the matching tests.
+The app's placement behavior is defined in `src/lib/autoPlace.ts` and `src/lib/placement.ts`, with corresponding tests verifying those rules.
