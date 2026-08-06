@@ -3,6 +3,37 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "description": "A local-first web app for planning gallery walls to scale.",
+  "license": "MIT",
+  "author": {
+    "name": "Eric Slutz",
+    "url": "https://ericslutz.dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eslutz/Gallery-Designer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/eslutz/Gallery-Designer/issues"
+  },
+  "homepage": "https://gallery-designer.ericslutz.dev/",
+  "keywords": [
+    "art",
+    "gallery-wall",
+    "interior-design",
+    "local-first",
+    "wall-planner"
+  ],
+  "funding": [
+    {
+      "type": "github",
+      "url": "https://github.com/sponsors/eslutz"
+    },
+    {
+      "type": "other",
+      "url": "https://coindrop.to/ericslutz_dev"
+    }
+  ],
   "engines": {
     "node": "24.x"
   },
