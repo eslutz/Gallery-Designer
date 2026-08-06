@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { parseDesignFile, serializeDesignFile } from './designFile';
+import {
+  parseDesignFile,
+  parseDesignLibraryBackup,
+  serializeDesignFile,
+  serializeDesignLibraryBackup,
+} from './designFile';
+import type { DesignLibrary } from './designLibrary';
 import type {
   ArtPiece,
   AutoPlacementSettings,
@@ -95,6 +101,103 @@ describe('design JSON files', () => {
       autoPlacementSettings,
       selectedPieceIds: ['piece-1'],
     });
+  });
+
+  it('round-trips a complete design-library backup', () => {
+    const state = parseDesignFile(
+      JSON.stringify({
+        sections: [{ id: 'section-1', name: 'Section 1', widthIn: 96, heightIn: 84 }],
+        pieces: [{ id: 'piece-1', label: 'Piece 1', widthIn: 16, heightIn: 20 }],
+        placements: [],
+        selectedPieceIds: ['piece-1'],
+      }),
+    );
+    const library: DesignLibrary = {
+      activeId: 'design-2',
+      designs: [
+        {
+          id: 'design-1',
+          name: 'Living room',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-02T00:00:00.000Z',
+        },
+        {
+          id: 'design-2',
+          name: 'Hallway',
+          createdAt: '2026-01-03T00:00:00.000Z',
+          updatedAt: '2026-01-04T00:00:00.000Z',
+        },
+      ],
+    };
+    const json = serializeDesignLibraryBackup(library, {
+      'design-1': state,
+      'design-2': { ...state, unit: 'cm' },
+    });
+
+    expect(JSON.parse(json)).toMatchObject({
+      app: 'gallery-designer',
+      kind: 'design-library-backup',
+      version: 1,
+      activeId: 'design-2',
+    });
+    expect(parseDesignLibraryBackup(json)).toEqual({
+      library,
+      states: {
+        'design-1': state,
+        'design-2': { ...state, unit: 'cm' },
+      },
+    });
+  });
+
+  it('rejects a backup with duplicate design ids', () => {
+    const backup = {
+      app: 'gallery-designer',
+      kind: 'design-library-backup',
+      version: 1,
+      activeId: 'design-1',
+      designs: [
+        {
+          id: 'design-1',
+          name: 'One',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          state: { sections: [], pieces: [], placements: [] },
+        },
+        {
+          id: 'design-1',
+          name: 'Duplicate',
+          createdAt: '2026-01-02T00:00:00.000Z',
+          updatedAt: '2026-01-02T00:00:00.000Z',
+          state: { sections: [], pieces: [], placements: [] },
+        },
+      ],
+    };
+
+    expect(() => parseDesignLibraryBackup(JSON.stringify(backup))).toThrow(
+      'Backup contains duplicate design ids.',
+    );
+  });
+
+  it('rejects a backup whose active design is missing', () => {
+    const backup = {
+      app: 'gallery-designer',
+      kind: 'design-library-backup',
+      version: 1,
+      activeId: 'missing',
+      designs: [
+        {
+          id: 'design-1',
+          name: 'One',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          state: { sections: [], pieces: [], placements: [] },
+        },
+      ],
+    };
+
+    expect(() => parseDesignLibraryBackup(JSON.stringify(backup))).toThrow(
+      'Backup active design is missing from the design list.',
+    );
   });
 
   it('loads legacy single selection and filters duplicate or missing multi-selection ids', () => {

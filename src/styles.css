@@ -2472,6 +2472,52 @@ select:focus,
   flex-wrap: wrap;
 }
 
+.json-export-split {
+  position: relative;
+  display: inline-flex;
+}
+
+.json-export-split .json-export-primary {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.json-export-split .json-export-menu-trigger {
+  min-width: 34px;
+  padding: 8px 7px;
+  border-left: 1px solid var(--secondary-border);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.json-export-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 190px;
+  padding: 4px;
+  background: var(--panel-background);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  box-shadow: var(--panel-shadow);
+}
+
+.json-export-menu button {
+  padding: 8px 10px;
+  color: var(--text-primary);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+}
+
+.json-export-menu button:hover,
+.json-export-menu button:focus-visible {
+  background: var(--secondary-background);
+}
+
 .issue-list {
   display: grid;
   gap: 6px;

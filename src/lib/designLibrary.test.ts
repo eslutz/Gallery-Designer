@@ -9,6 +9,7 @@ import {
   loadDesignState,
   loadLibrary,
   nextDesignName,
+  replaceDesignLibrary,
   renameDesign,
   saveDesignState,
   setActiveDesign,
@@ -208,5 +209,22 @@ describe('design library', () => {
       pieceCount: 0,
       sectionCount: 0,
     });
+  });
+
+  it('replaces the persisted library and removes designs that are not in the backup', () => {
+    const existing = loadLibrary();
+    const { library: withSecond, id: secondId } = createDesign(existing, 'Second');
+    const replacement = {
+      activeId: 'restored',
+      designs: [{ id: 'restored', name: 'Restored', createdAt: 'created', updatedAt: 'updated' }],
+    };
+
+    replaceDesignLibrary(replacement, { restored: toPersistedState(defaultState) });
+
+    expect(loadLibrary()).toEqual(replacement);
+    expect(localStorage.getItem(designKey(existing.activeId))).toBeNull();
+    expect(localStorage.getItem(designKey(secondId))).toBeNull();
+    expect(loadDesignState('restored').sections).toEqual(defaultState.sections);
+    expect(withSecond.designs).toHaveLength(2);
   });
 });

@@ -4,6 +4,7 @@ import {
   hydratePersistedState,
   isPersistedGalleryState,
   toPersistedState,
+  type PersistedGalleryState,
   type GalleryState,
 } from './galleryState';
 
@@ -151,6 +152,27 @@ export function saveDesignState(id: string, state: GalleryState): void {
   } catch {
     // Persistence is a convenience; a full or unavailable store must not
     // break editing.
+  }
+}
+
+export function replaceDesignLibrary(
+  library: DesignLibrary,
+  states: Record<string, PersistedGalleryState>,
+): void {
+  const previous = readRawLibrary();
+  for (const design of library.designs) {
+    const state = states[design.id];
+    if (!state) {
+      throw new Error(`Missing state for design "${design.name}".`);
+    }
+    localStorage.setItem(designKey(design.id), JSON.stringify(state));
+  }
+  saveLibrary(library);
+
+  for (const design of previous?.designs ?? []) {
+    if (!library.designs.some((candidate) => candidate.id === design.id)) {
+      localStorage.removeItem(designKey(design.id));
+    }
   }
 }
 

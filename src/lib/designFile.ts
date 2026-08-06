@@ -12,6 +12,7 @@ import type {
 } from '../types';
 import { normalizeHookSpec } from './hooks';
 import { normalizeWallSections } from './wall';
+import type { DesignLibrary } from './designLibrary';
 
 export interface DesignFileState {
   unit: Unit;
@@ -25,6 +26,11 @@ export interface DesignFileState {
   selectedPieceIds: string[];
 }
 
+export interface DesignLibraryBackup {
+  library: DesignLibrary;
+  states: Record<string, DesignFileState>;
+}
+
 interface DesignFilePayload extends DesignFileState {
   app: 'gallery-designer';
   version: 1;
@@ -33,9 +39,19 @@ interface DesignFilePayload extends DesignFileState {
 }
 
 export function serializeDesignFile(state: DesignFileState): string {
-  const payload: DesignFilePayload = {
-    app: 'gallery-designer',
-    version: 1,
+  return `${JSON.stringify(
+    {
+      app: 'gallery-designer',
+      version: 1,
+      ...serializeDesignState(state),
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+function serializeDesignState(state: DesignFileState): Omit<DesignFilePayload, 'app' | 'version'> {
+  return {
     exportedAt: new Date().toISOString(),
     unit: state.unit,
     themeMode: state.themeMode,
@@ -48,7 +64,103 @@ export function serializeDesignFile(state: DesignFileState): string {
     selectedPieceIds: state.selectedPieceIds,
     selectedPieceId: state.selectedPieceIds.at(-1) ?? '',
   };
+}
+
+export function serializeDesignLibraryBackup(
+  library: DesignLibrary,
+  states: Record<string, DesignFileState>,
+): string {
+  const payload = {
+    app: 'gallery-designer' as const,
+    kind: 'design-library-backup' as const,
+    version: 1 as const,
+    exportedAt: new Date().toISOString(),
+    activeId: library.activeId,
+    designs: library.designs.map((design) => ({
+      ...design,
+      state: states[design.id],
+    })),
+  };
+
   return `${JSON.stringify(payload, null, 2)}\n`;
+}
+
+export function parseDesignLibraryBackup(raw: string): DesignLibraryBackup {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('Design library backup is not valid JSON.');
+  }
+
+  if (!isRecord(parsed)) {
+    throw new Error('Design library backup is not an object.');
+  }
+  if (parsed.app !== 'gallery-designer' || parsed.kind !== 'design-library-backup') {
+    throw new Error('JSON file is not a design library backup.');
+  }
+  if (parsed.version !== 1) {
+    throw new Error('Unsupported design library backup version.');
+  }
+  if (typeof parsed.activeId !== 'string') {
+    throw new Error('Backup is missing its active design.');
+  }
+  if (!Array.isArray(parsed.designs) || parsed.designs.length === 0) {
+    throw new Error('Backup must contain at least one design.');
+  }
+
+  const designs = parsed.designs.map(parseBackupDesign);
+  const ids = new Set<string>();
+  for (const design of designs) {
+    if (ids.has(design.id)) {
+      throw new Error('Backup contains duplicate design ids.');
+    }
+    ids.add(design.id);
+  }
+  if (!ids.has(parsed.activeId)) {
+    throw new Error('Backup active design is missing from the design list.');
+  }
+
+  return {
+    library: {
+      activeId: parsed.activeId,
+      designs: designs.map((design) => ({
+        id: design.id,
+        name: design.name,
+        createdAt: design.createdAt,
+        updatedAt: design.updatedAt,
+      })),
+    },
+    states: Object.fromEntries(designs.map((design) => [design.id, design.state])),
+  };
+}
+
+function parseBackupDesign(value: unknown): DesignLibrary['designs'][number] & {
+  state: DesignFileState;
+} {
+  if (!isRecord(value)) {
+    throw new Error('Backup contains an invalid design.');
+  }
+  if (
+    typeof value.id !== 'string' ||
+    typeof value.name !== 'string' ||
+    typeof value.createdAt !== 'string' ||
+    typeof value.updatedAt !== 'string'
+  ) {
+    throw new Error('Backup contains an invalid design summary.');
+  }
+  if (!isRecord(value.state)) {
+    throw new Error(`Backup design "${value.name}" is missing its state.`);
+  }
+
+  const state = parseDesignFile(JSON.stringify(value.state));
+  return {
+    id: value.id,
+    name: value.name,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+    state,
+  };
 }
 
 export function parseDesignFile(raw: string): DesignFileState {

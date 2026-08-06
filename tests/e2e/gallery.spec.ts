@@ -45,6 +45,25 @@ test.describe('with the welcome card already dismissed', () => {
     await expect(latestUpdate).toContainText('PDF export generated.');
   });
 
+  test('downloads current-design and all-design JSON files from the export menu', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Advanced', exact: true }).click();
+    await page.getByRole('button', { name: 'JSON export options' }).click();
+
+    const currentDownloadPromise = page.waitForEvent('download');
+    await page.getByRole('menuitem', { name: 'Export current design' }).click();
+    const currentDownload = await currentDownloadPromise;
+    expect(currentDownload.suggestedFilename()).toBe('gallery-wall-design.json');
+
+    await page.getByRole('button', { name: 'JSON export options' }).click();
+    const backupDownloadPromise = page.waitForEvent('download');
+    await page.getByRole('menuitem', { name: 'Export all designs' }).click();
+    const backupDownload = await backupDownloadPromise;
+    expect(backupDownload.suggestedFilename()).toBe('gallery-designer-backup.json');
+  });
+
   test('paginates eight installation instructions without a nearly empty trailing page', async ({
     page,
   }) => {

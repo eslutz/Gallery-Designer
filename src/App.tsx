@@ -33,6 +33,7 @@ import { MeasurementsTable } from './components/MeasurementsTable';
 import { MessageToast } from './components/MessageToast';
 import { NumberField } from './components/NumberField';
 import { PlacementSettingsDrawer } from './components/PlacementSettingsDrawer';
+import { RestoreLibraryDialog } from './components/RestoreLibraryDialog';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { StagingTray } from './components/StagingTray';
 import { WallCanvas } from './components/WallCanvas';
@@ -57,9 +58,17 @@ import {
   saveDesignState,
   setActiveDesign,
   touchDesign,
+  replaceDesignLibrary,
   type DesignLibrary,
 } from './lib/designLibrary';
-import { parseDesignFile, serializeDesignFile } from './lib/designFile';
+import {
+  parseDesignFile,
+  parseDesignLibraryBackup,
+  serializeDesignFile,
+  serializeDesignLibraryBackup,
+  type DesignFileState,
+  type DesignLibraryBackup,
+} from './lib/designFile';
 import { downloadPdf, downloadPng, type ExportDesignInput } from './lib/exportDesign';
 import { formatCount } from './lib/formatCount';
 import {
@@ -67,6 +76,7 @@ import {
   getSelectedFeatureId,
   getSelectedPieceIds,
   pieceSelection,
+  toPersistedState,
   withMessage,
   type GalleryState,
 } from './lib/galleryState';
@@ -236,6 +246,9 @@ export default function App() {
   const [settingsDrawerOpen, setSettingsDrawerOpen] = useState(false);
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
   const [manageDesignsOpen, setManageDesignsOpen] = useState(false);
+  const [pendingLibraryBackup, setPendingLibraryBackup] = useState<DesignLibraryBackup | null>(
+    null,
+  );
   const [showWelcomeCard, setShowWelcomeCard] = useState(
     () => !hasSeenWelcome() && state.placements.length === 0,
   );
@@ -2718,16 +2731,41 @@ export default function App() {
 
   function exportJson() {
     const json = serializeDesignFile({ ...state, selectedPieceIds });
+    downloadJson('gallery-wall-design.json', json);
+    setState((current) => ({ ...current, ...withMessage(current, 'JSON design file exported.') }));
+  }
+
+  function downloadJson(filename: string, json: string) {
     const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'gallery-wall-design.json';
+    link.download = filename;
     document.body.append(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    setState((current) => ({ ...current, ...withMessage(current, 'JSON design file exported.') }));
+  }
+
+  function toDesignFileState(galleryState: GalleryState): DesignFileState {
+    return toPersistedState(galleryState);
+  }
+
+  function exportAllJson() {
+    saveDesignState(library.activeId, latestStateRef.current);
+    const states = Object.fromEntries(
+      library.designs.map((design) => [
+        design.id,
+        design.id === library.activeId
+          ? toDesignFileState(latestStateRef.current)
+          : toDesignFileState(loadDesignState(design.id)),
+      ]),
+    );
+    downloadJson('gallery-designer-backup.json', serializeDesignLibraryBackup(library, states));
+    setState((current) => ({
+      ...current,
+      ...withMessage(current, 'All designs backup exported.'),
+    }));
   }
 
   async function importJson(event: React.ChangeEvent<HTMLInputElement>) {
@@ -2738,9 +2776,22 @@ export default function App() {
     }
 
     try {
-      const { selectedPieceIds: importedSelectedPieceIds, ...importedRest } = parseDesignFile(
-        await file.text(),
-      );
+      const raw = await file.text();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = null;
+      }
+      if (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        (parsed as Record<string, unknown>).kind === 'design-library-backup'
+      ) {
+        setPendingLibraryBackup(parseDesignLibraryBackup(raw));
+        return;
+      }
+      const { selectedPieceIds: importedSelectedPieceIds, ...importedRest } = parseDesignFile(raw);
       // recordUndoSnapshot()'s default parameter closes over the state from
       // the render that created this callback, which is stale once we're past
       // the await — read the live value via the ref instead so an edit made
@@ -2763,6 +2814,19 @@ export default function App() {
         ),
       }));
     }
+  }
+
+  function confirmLibraryRestore() {
+    if (!pendingLibraryBackup) return;
+    const backup = pendingLibraryBackup;
+    replaceDesignLibrary(backup.library, backup.states);
+    const next = loadDesignState(backup.library.activeId);
+    setLibrary(backup.library);
+    setState({ ...next, ...withMessage(state, 'All designs restored from backup.') });
+    latestStateRef.current = next;
+    clearUndoHistory();
+    setSelectedSectionId('');
+    setPendingLibraryBackup(null);
   }
 
   const appShellClassName = [
@@ -3262,10 +3326,17 @@ export default function App() {
         onExportPng={exportPng}
         onExportPdf={exportPdf}
         onExportJson={exportJson}
+        onExportAllJson={exportAllJson}
         onImportClick={() => importInputRef.current?.click()}
         onUnitChange={updateUnit}
         onEditStart={beginFieldEdit}
         onEditEnd={finishFieldEdit}
+      />
+      <RestoreLibraryDialog
+        open={pendingLibraryBackup !== null}
+        designCount={pendingLibraryBackup?.library.designs.length ?? 0}
+        onCancel={() => setPendingLibraryBackup(null)}
+        onConfirm={confirmLibraryRestore}
       />
       <PlacementSettingsDrawer
         open={settingsDrawerOpen}

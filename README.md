@@ -8,8 +8,8 @@ Gallery Designer is a browser-based tool for planning a gallery wall to scale. Y
 - Add art pieces with exact dimensions and optional hook positions.
 - Place pieces manually or let the auto-placement solver arrange them.
 - Work with wall furniture and features when planning a full wall.
-- Export PNG or PDF installation plans with measurements, or export JSON to back up the editable design.
-- Keep work local with autosave in browser storage; save multiple designs and switch between them.
+- Export PNG or PDF installation plans with measurements. Export the current design as JSON, or back up all saved designs in one file.
+- Keep work local with autosave in browser storage. Save multiple designs and switch between them.
 
 ## Core Features
 
@@ -27,7 +27,7 @@ Gallery Designer is a browser-based tool for planning a gallery wall to scale. Y
 3. Add hook positions if you want installation measurements for the hanging hardware, not just the frame.
 4. Drag pieces onto the wall for a manual layout, or run auto-placement.
 5. Review the measurement table and adjust spacing, margins, or features as needed.
-6. Export JSON to back up the editable design, or export PNG/PDF installation plans with measurements.
+6. Export the current design as JSON, or export an all-design backup. Export PNG/PDF installation plans with measurements.
 
 ### Keyboard Shortcuts
 
@@ -108,7 +108,7 @@ Current feature defaults:
 
 Gallery Designer can export:
 
-- JSON for exporting or backing up the editable design
+- JSON for exporting the current design or backing up and restoring all saved designs
 - PNG and PDF for visual installation plans with measurement instructions
 
 Measurement instructions follow the actual app logic:

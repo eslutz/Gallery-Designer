@@ -30,6 +30,7 @@ export function AdvancedDrawer({
   onExportPng,
   onExportPdf,
   onExportJson,
+  onExportAllJson,
   onImportClick,
   onUnitChange,
   onEditStart,
@@ -52,6 +53,7 @@ export function AdvancedDrawer({
   onExportPng: () => void;
   onExportPdf: () => void;
   onExportJson: () => void;
+  onExportAllJson: () => void;
   onImportClick: () => void;
   onUnitChange: (unit: Unit) => void;
   onEditStart: () => void;
@@ -162,6 +164,7 @@ export function AdvancedDrawer({
           onExportPng={onExportPng}
           onExportPdf={onExportPdf}
           onExportJson={onExportJson}
+          onExportAllJson={onExportAllJson}
           onImportClick={onImportClick}
         />
       </aside>

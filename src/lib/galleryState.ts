@@ -62,6 +62,13 @@ export interface GalleryState {
   messageRevision: number;
 }
 
+export type PersistedGalleryState = Omit<
+  GalleryState,
+  'selection' | 'message' | 'messageTone' | 'messageRevision'
+> & {
+  selectedPieceIds: string[];
+};
+
 export function withMessage(current: GalleryState, message: string, tone: MessageTone = 'info') {
   return { message, messageTone: tone, messageRevision: current.messageRevision + 1 };
 }
@@ -70,7 +77,7 @@ export function withMessage(current: GalleryState, message: string, tone: Messag
 // fields, which are write-then-discarded on load anyway) never hit
 // localStorage. Only `selectedPieceIds` — projected from `selection` — is
 // persisted, matching the format written before this field existed.
-export function toPersistedState(state: GalleryState) {
+export function toPersistedState(state: GalleryState): PersistedGalleryState {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to exclude them
   const { selection, message, messageTone, messageRevision, ...rest } = state;
   return { ...rest, selectedPieceIds: getSelectedPieceIds(selection) };
