@@ -1,0 +1,73 @@
+import { Keyboard } from 'lucide-react';
+import { useState } from 'react';
+import {
+  formatShortcutKey,
+  isApplePlatform,
+  shortcutGroups,
+  type ShortcutKey,
+} from './keyboardShortcuts';
+import { ModalDialog } from '../../shared/ui/ModalDialog';
+
+function ShortcutKeys({ keys, apple }: { keys: ShortcutKey[]; apple: boolean }) {
+  return (
+    <span className="shortcut-keys">
+      {keys.map((key, index) => (
+        <kbd key={index} className="shortcut-key">
+          {formatShortcutKey(key, apple)}
+        </kbd>
+      ))}
+    </span>
+  );
+}
+
+export function ShortcutsDialog({
+  open,
+  onClose,
+  onShowWelcomeGuide,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onShowWelcomeGuide: () => void;
+}) {
+  // isApplePlatform() reads navigator.platform, a browser-only API — safe to
+  // call directly since this is a client-only SPA (no SSR render pass).
+  const [apple] = useState(isApplePlatform);
+
+  return (
+    <ModalDialog
+      open={open}
+      onClose={onClose}
+      title="Keyboard shortcuts"
+      titleIcon={<Keyboard size={18} />}
+      size="lg"
+      footer={
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => {
+            onClose();
+            onShowWelcomeGuide();
+          }}
+        >
+          Show welcome guide
+        </button>
+      }
+    >
+      {shortcutGroups.map((group) => (
+        <section key={group.title} className="shortcut-group" aria-label={group.title}>
+          <h3>{group.title}</h3>
+          <dl className="shortcut-list">
+            {group.shortcuts.map((shortcut) => (
+              <div className="shortcut-row" key={shortcut.description}>
+                <dt>
+                  <ShortcutKeys keys={shortcut.keys} apple={apple} />
+                </dt>
+                <dd>{shortcut.description}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ))}
+    </ModalDialog>
+  );
+}

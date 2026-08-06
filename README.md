@@ -185,10 +185,12 @@ The Playwright config starts the app on `http://127.0.0.1:5173` automatically.
 
 ### Project orientation
 
-- `src/App.tsx` owns the editor UI and reducer state.
+- `src/app/App.tsx` owns the editor UI and reducer state.
 - `src/types.ts` contains shared domain types.
-- `src/lib/` contains deterministic geometry, placement, measurement, snapping, persistence, and export logic.
+- `src/editor/` contains domain-owned wall, placement, staging, design, export, measurement, interaction, state, and onboarding modules.
+- `src/shared/` contains reusable UI primitives and formatting helpers.
+- `src/app/` contains application bootstrap, chrome, theme configuration, and global styles.
 - `tests/e2e/gallery.spec.ts` covers browser workflows such as dragging, export downloads, and responsive behavior.
 - `public/` contains static assets, fonts, favicon, and GitHub Pages metadata.
 
-The app's placement behavior is defined in `src/lib/autoPlace.ts` and `src/lib/placement.ts`, with corresponding tests verifying those rules.
+The app's placement behavior is defined in `src/editor/placement/autoPlace.ts` and `src/editor/placement/placement.ts`, with corresponding tests verifying those rules.

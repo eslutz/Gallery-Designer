@@ -1,9 +1,9 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
-import { ErrorBoundary } from './components/ErrorBoundary';
-import { DEFAULT_APPLICATION_THEME } from './lib/applicationTheme';
-import './styles.css';
+import App from './app/App';
+import { ErrorBoundary } from './app/ErrorBoundary';
+import { DEFAULT_APPLICATION_THEME } from './app/appTheme';
+import './app/styles.css';
 
 document.documentElement.dataset.palette = DEFAULT_APPLICATION_THEME;
 

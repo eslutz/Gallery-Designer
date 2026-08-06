@@ -1,0 +1,341 @@
+import { describe, expect, it } from 'vitest';
+import {
+  parseDesignFile,
+  parseDesignLibraryBackup,
+  serializeDesignFile,
+  serializeDesignLibraryBackup,
+} from './designFile';
+import type { DesignLibrary } from './designLibrary';
+import type {
+  ArtPiece,
+  AutoPlacementSettings,
+  EditorFeatures,
+  Placement,
+  WallSection,
+} from '../../types';
+
+describe('design JSON files', () => {
+  it('round-trips wall sections, pieces, placements, unit, and selection', () => {
+    const sections: WallSection[] = [
+      {
+        id: 'main',
+        name: 'Main',
+        widthIn: 96.25,
+        heightIn: 84.5,
+        xIn: 0,
+        yIn: 0,
+      },
+    ];
+    const pieces: ArtPiece[] = [
+      { id: 'piece-1', label: 'Piece 1', widthIn: 16.25, heightIn: 20.5 },
+    ];
+    const placements: Placement[] = [
+      { pieceId: 'piece-1', sectionId: 'main', xIn: 12.375, yIn: 8.25 },
+    ];
+    const features: EditorFeatures = {
+      snapToGrid: true,
+      gridSizeIn: 2.5,
+      snapToAlignment: false,
+      showAlignmentGuides: false,
+      alignmentToleranceIn: 1.5,
+      wallEdgeBuffer: true,
+      wallEdgeBufferGapIn: 3,
+      artPieceBuffer: true,
+      artPieceBufferGapIn: 4,
+      measurementReferenceMode: 'absolute',
+    };
+    const autoPlacementSettings: AutoPlacementSettings = {
+      wallSetupMode: 'full-wall-with-features',
+      context: { kind: 'blank', viewingPosture: 'seated' },
+      layoutPreference: 'row',
+      wallFeatures: [
+        {
+          id: 'desk',
+          type: 'file-cabinet',
+          name: 'File cabinet',
+          xIn: 8,
+          yIn: 20,
+          widthIn: 72,
+          heightIn: 30,
+          placed: true,
+          clearanceOverrideIn: 10,
+        },
+        {
+          id: 'lamp',
+          type: 'lamp',
+          name: 'Lamp',
+          xIn: 0,
+          yIn: 0,
+          widthIn: 14,
+          heightIn: 36,
+          placed: false,
+        },
+      ],
+    };
+
+    const json = serializeDesignFile({
+      unit: 'in',
+      themeMode: 'dark',
+      applicationTheme: 'slate',
+      sections,
+      pieces,
+      placements,
+      features,
+      autoPlacementSettings,
+      selectedPieceIds: ['piece-1'],
+    });
+
+    expect(JSON.parse(json)).toMatchObject({
+      selectedPieceIds: ['piece-1'],
+      selectedPieceId: 'piece-1',
+    });
+
+    expect(parseDesignFile(json)).toEqual({
+      unit: 'in',
+      themeMode: 'dark',
+      applicationTheme: 'slate',
+      sections,
+      pieces,
+      placements,
+      features,
+      autoPlacementSettings,
+      selectedPieceIds: ['piece-1'],
+    });
+  });
+
+  it('round-trips a complete design-library backup', () => {
+    const state = parseDesignFile(
+      JSON.stringify({
+        sections: [{ id: 'section-1', name: 'Section 1', widthIn: 96, heightIn: 84 }],
+        pieces: [{ id: 'piece-1', label: 'Piece 1', widthIn: 16, heightIn: 20 }],
+        placements: [],
+        selectedPieceIds: ['piece-1'],
+      }),
+    );
+    const library: DesignLibrary = {
+      activeId: 'design-2',
+      designs: [
+        {
+          id: 'design-1',
+          name: 'Living room',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-02T00:00:00.000Z',
+        },
+        {
+          id: 'design-2',
+          name: 'Hallway',
+          createdAt: '2026-01-03T00:00:00.000Z',
+          updatedAt: '2026-01-04T00:00:00.000Z',
+        },
+      ],
+    };
+    const json = serializeDesignLibraryBackup(library, {
+      'design-1': state,
+      'design-2': { ...state, unit: 'cm' },
+    });
+
+    expect(JSON.parse(json)).toMatchObject({
+      app: 'gallery-designer',
+      kind: 'design-library-backup',
+      version: 1,
+      activeId: 'design-2',
+    });
+    expect(parseDesignLibraryBackup(json)).toEqual({
+      library,
+      states: {
+        'design-1': state,
+        'design-2': { ...state, unit: 'cm' },
+      },
+    });
+  });
+
+  it('rejects a backup with duplicate design ids', () => {
+    const backup = {
+      app: 'gallery-designer',
+      kind: 'design-library-backup',
+      version: 1,
+      activeId: 'design-1',
+      designs: [
+        {
+          id: 'design-1',
+          name: 'One',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          state: { sections: [], pieces: [], placements: [] },
+        },
+        {
+          id: 'design-1',
+          name: 'Duplicate',
+          createdAt: '2026-01-02T00:00:00.000Z',
+          updatedAt: '2026-01-02T00:00:00.000Z',
+          state: { sections: [], pieces: [], placements: [] },
+        },
+      ],
+    };
+
+    expect(() => parseDesignLibraryBackup(JSON.stringify(backup))).toThrow(
+      'Backup contains duplicate design ids.',
+    );
+  });
+
+  it('rejects a backup whose active design is missing', () => {
+    const backup = {
+      app: 'gallery-designer',
+      kind: 'design-library-backup',
+      version: 1,
+      activeId: 'missing',
+      designs: [
+        {
+          id: 'design-1',
+          name: 'One',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          state: { sections: [], pieces: [], placements: [] },
+        },
+      ],
+    };
+
+    expect(() => parseDesignLibraryBackup(JSON.stringify(backup))).toThrow(
+      'Backup active design is missing from the design list.',
+    );
+  });
+
+  it('loads legacy single selection and filters duplicate or missing multi-selection ids', () => {
+    const base = {
+      sections: [
+        {
+          id: 'section-1',
+          name: 'Section 1',
+          widthIn: 96,
+          heightIn: 84,
+        },
+      ],
+      pieces: [
+        { id: 'piece-1', label: 'Piece 1', widthIn: 16, heightIn: 20 },
+        { id: 'piece-2', label: 'Piece 2', widthIn: 12, heightIn: 18 },
+      ],
+      placements: [],
+    };
+
+    expect(
+      parseDesignFile(JSON.stringify({ ...base, selectedPieceId: 'piece-2' })).selectedPieceIds,
+    ).toEqual(['piece-2']);
+    expect(
+      parseDesignFile(
+        JSON.stringify({
+          ...base,
+          selectedPieceId: 'piece-1',
+          selectedPieceIds: ['piece-2', 'missing', 'piece-2', 'piece-1'],
+        }),
+      ).selectedPieceIds,
+    ).toEqual(['piece-2', 'piece-1']);
+  });
+
+  it('migrates a pre-shared-top-offset two-hook piece onto a single topOffsetIn', () => {
+    const parsed = parseDesignFile(
+      JSON.stringify({
+        sections: [{ id: 'section-1', name: 'Section 1', widthIn: 96, heightIn: 84 }],
+        pieces: [
+          {
+            id: 'piece-1',
+            label: 'Piece 1',
+            widthIn: 16,
+            heightIn: 20,
+            hookSpec: {
+              count: 2,
+              leftTopOffsetIn: 4,
+              leftSideOffsetIn: 5,
+              rightTopOffsetIn: 7,
+              rightSideOffsetIn: 6,
+            },
+          },
+        ],
+        placements: [],
+      }),
+    );
+
+    expect(parsed.pieces[0].hookSpec).toEqual({
+      count: 2,
+      topOffsetIn: 4,
+      leftSideOffsetIn: 5,
+      rightSideOffsetIn: 6,
+    });
+  });
+
+  it('rejects invalid design JSON with a clear error', () => {
+    expect(() => parseDesignFile('{"unit":"yards"}')).toThrow('Design file is missing sections.');
+  });
+
+  it('rejects a top-level JSON array instead of silently defaulting its fields', () => {
+    expect(() => parseDesignFile('[{"sections":[]}]')).toThrow('Design file is not an object.');
+  });
+
+  it('defaults missing theme settings to system and slate', () => {
+    const parsed = parseDesignFile(
+      JSON.stringify({
+        sections: [
+          {
+            id: 'section-1',
+            name: 'Section 1',
+            widthIn: 96,
+            heightIn: 84,
+          },
+        ],
+        pieces: [{ id: 'piece-1', label: 'Piece 1', widthIn: 16, heightIn: 20 }],
+        placements: [],
+      }),
+    );
+
+    expect(parsed.themeMode).toBe('system');
+    expect(parsed.applicationTheme).toBe('slate');
+    expect(parsed.autoPlacementSettings).toEqual({
+      wallSetupMode: 'available-sections',
+      context: { kind: 'blank', viewingPosture: 'seated' },
+      layoutPreference: 'auto',
+      wallFeatures: [],
+    });
+    expect(parsed.features.measurementReferenceMode).toBe('relative');
+    expect(parsed.features.showAlignmentGuides).toBe(true);
+  });
+
+  it('keeps legacy wall features valid when placement fields are missing', () => {
+    const parsed = parseDesignFile(
+      JSON.stringify({
+        sections: [
+          {
+            id: 'section-1',
+            name: 'Section 1',
+            widthIn: 96,
+            heightIn: 84,
+          },
+        ],
+        pieces: [{ id: 'piece-1', label: 'Piece 1', widthIn: 16, heightIn: 20 }],
+        placements: [],
+        autoPlacementSettings: {
+          wallSetupMode: 'full-wall-with-features',
+          context: { kind: 'blank', viewingPosture: 'seated' },
+          layoutPreference: 'row',
+          wallFeatures: [
+            {
+              id: 'sofa',
+              type: 'sofa',
+              name: 'Sofa',
+              xIn: 12,
+              widthIn: 84,
+              heightIn: 30,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(parsed.autoPlacementSettings.wallFeatures[0]).toEqual({
+      id: 'sofa',
+      type: 'sofa',
+      name: 'Sofa',
+      xIn: 12,
+      widthIn: 84,
+      heightIn: 30,
+    });
+  });
+});
