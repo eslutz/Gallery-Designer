@@ -8,12 +8,12 @@ Gallery Designer is a browser-based tool for planning a gallery wall to scale. Y
 - Add art pieces with exact dimensions and optional hook positions.
 - Place pieces manually or let the auto-placement solver arrange them.
 - Work with wall furniture and features when planning a full wall.
-- Export the design as JSON, PNG, or PDF with installation measurements.
-- Keep work local with autosave in browser storage.
+- Export PNG or PDF installation plans with measurements, or export JSON to back up the editable design.
+- Keep work local with autosave in browser storage; save multiple designs and switch between them.
 
 ## Core Features
 
-- Local-first state: designs autosave in browser `localStorage`.
+- Local-first state: multiple designs autosave in browser `localStorage`, and the design switcher lets you move between them.
 - Continuous wall canvas: connected sections behave like one unfolded wall surface.
 - Manual layout tools: drag artwork, zoom and pan the wall, and refine placement visually.
 - Measurement support: hook metadata and exportable hanging instructions are built in.
@@ -27,7 +27,7 @@ Gallery Designer is a browser-based tool for planning a gallery wall to scale. Y
 3. Add hook positions if you want installation measurements for the hanging hardware, not just the frame.
 4. Drag pieces onto the wall for a manual layout, or run auto-placement.
 5. Review the measurement table and adjust spacing, margins, or features as needed.
-6. Export the finished plan as JSON, PNG, or PDF.
+6. Export JSON to back up the editable design, or export PNG/PDF installation plans with measurements.
 
 ### Keyboard Shortcuts
 
@@ -108,9 +108,8 @@ Current feature defaults:
 
 Gallery Designer can export:
 
-- JSON for saving and reloading a design
-- PNG for a visual snapshot
-- PDF for a visual layout plus measurement instructions
+- JSON for exporting or backing up the editable design
+- PNG and PDF for visual installation plans with measurement instructions
 
 Measurement instructions follow the actual app logic:
 
@@ -128,7 +127,7 @@ Security vulnerabilities should not be reported in public issues. Use GitHub Sec
 
 ## Developer Notes
 
-Gallery Designer is a local-first Vite/React app. There is no backend, account setup, database, or external service required for local development. Designs autosave to the browser's `localStorage`, and PNG/PDF export runs entirely in the browser.
+Gallery Designer is a local-first Vite/React app. There is no backend, account setup, database, or external service required for local development. Multiple designs autosave to the browser's `localStorage` and can be switched from the design switcher. PNG/PDF installation-plan export runs entirely in the browser; JSON exports an editable backup.
 
 ### Prerequisites
 
