@@ -71,7 +71,7 @@ export function WallCanvas({
   onPointerMove,
   onPointerUp,
 }: {
-  svgRef: React.RefObject<SVGSVGElement>;
+  svgRef: React.RefObject<SVGSVGElement | null>;
   sections: WallSection[];
   pieces: ArtPiece[];
   placements: Placement[];

@@ -339,7 +339,9 @@ function buildDiagramFragment(
       const fontSizePx = label.fontSize * scale;
       const labelCenterX = pieceX + pieceWidth / 2;
       const labelCenterY =
-        label.placement === 'inside' ? pieceY + pieceHeight / 2 : pieceY + pieceHeight + lineHeightPx;
+        label.placement === 'inside'
+          ? pieceY + pieceHeight / 2
+          : pieceY + pieceHeight + lineHeightPx;
       const labelMarkup = buildCenteredMultilineText(
         label.lines,
         labelCenterX,
